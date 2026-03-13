@@ -7,325 +7,134 @@ import {
 } from "react";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { autoCorpus, lumpCorpus, freqToMonthly } from "../utils/finance";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext(null);
 
-const DEFAULTS = {
-  abhav: {
-    incomes: [{ id: 1, name: "Salary", amount: 80000, type: "salary" }],
-    expenses: [
-      { id: 1, name: "Rent share", amount: 12000, category: "Housing" },
-      { id: 2, name: "Groceries", amount: 4000, category: "Food" },
-      { id: 3, name: "Transport", amount: 3000, category: "Transport" },
-      { id: 4, name: "Entertainment", amount: 2000, category: "Entertainment" },
-    ],
-    investments: [
-      {
-        id: 1,
-        name: "Nifty 50 SIP",
-        amount: 10000,
-        type: "Mutual Fund",
-        returnPct: 12,
-        frequency: "monthly",
-        existingCorpus: 20000,
-        startDate: "2024-01-01",
-      },
-      {
-        id: 2,
-        name: "PPF",
-        amount: 4000,
-        type: "PPF",
-        returnPct: 7.1,
-        frequency: "monthly",
-        existingCorpus: 50000,
-        startDate: "2023-04-01",
-      },
-    ],
-    goals: [
-      {
-        id: 1,
-        name: "Emergency Fund",
-        target: 300000,
-        saved: 80000,
-        emoji: "🛡️",
-        color: "#e05c5c",
-        deadline: "2026-06",
-      },
-      {
-        id: 2,
-        name: "New Car",
-        target: 800000,
-        saved: 20000,
-        emoji: "🚗",
-        color: "#9b7fe8",
-        deadline: "2028-01",
-      },
-    ],
-    debts: [
-      {
-        id: 1,
-        name: "Personal Loan",
-        outstanding: 200000,
-        emi: 8500,
-        rate: 12,
-        tenure: 24,
-      },
-    ],
-    transactions: [
-      {
-        id: 1,
-        date: "2025-02-28",
-        desc: "Salary credit",
-        amount: 80000,
-        type: "income",
-        category: "Salary",
-      },
-      {
-        id: 2,
-        date: "2025-02-15",
-        desc: "SIP - Nifty 50",
-        amount: -10000,
-        type: "investment",
-        category: "Investment",
-      },
-      {
-        id: 3,
-        date: "2025-02-01",
-        desc: "Rent share",
-        amount: -12000,
-        type: "expense",
-        category: "Housing",
-      },
-    ],
-    recurringRules: [
-      {
-        id: 1,
-        desc: "Salary credit",
-        amount: 80000,
-        type: "income",
-        category: "Salary",
-        dayOfMonth: 28,
-        active: true,
-      },
-      {
-        id: 2,
-        desc: "Nifty 50 SIP",
-        amount: -10000,
-        type: "investment",
-        category: "Investment",
-        dayOfMonth: 15,
-        active: true,
-      },
-      {
-        id: 3,
-        desc: "Rent share",
-        amount: -12000,
-        type: "expense",
-        category: "Housing",
-        dayOfMonth: 1,
-        active: true,
-      },
-    ],
-    budgetAlerts: [
-      { id: 1, category: "Food", limit: 8000, active: true },
-      { id: 2, category: "Entertainment", limit: 3000, active: true },
-      { id: 3, category: "Shopping", limit: 5000, active: true },
-    ],
-    assets: [
-      { id: 1, name: "Savings Account", value: 150000, type: "cash" },
-      { id: 2, name: "Nifty 50 corpus", value: 20000, type: "investment" },
-      { id: 3, name: "PPF corpus", value: 50000, type: "investment" },
-    ],
-    liabilities: [
-      { id: 1, name: "Personal Loan", value: 200000, type: "loan" },
-    ],
-    taxInfo: {
-      regime: "new",
-      basicSalary: 80000,
-      hra: 15000,
-      lta: 5000,
-      elss: 10000,
-      ppf: 4000,
-      nps: 2000,
-      homeLoanInterest: 0,
-      medicalInsurance: 3000,
-    },
-  },
-  aanya: {
-    incomes: [{ id: 1, name: "Salary", amount: 65000, type: "salary" }],
-    expenses: [
-      { id: 1, name: "Rent share", amount: 12000, category: "Housing" },
-      { id: 2, name: "Groceries", amount: 4000, category: "Food" },
-      { id: 3, name: "Personal care", amount: 3000, category: "Personal Care" },
-      { id: 4, name: "Online shopping", amount: 3000, category: "Shopping" },
-    ],
-    investments: [
-      {
-        id: 1,
-        name: "ELSS SIP",
-        amount: 8000,
-        type: "Mutual Fund",
-        returnPct: 13,
-        frequency: "monthly",
-        existingCorpus: 15000,
-        startDate: "2024-03-01",
-      },
-      {
-        id: 2,
-        name: "Gold ETF",
-        amount: 2000,
-        type: "Gold",
-        returnPct: 8,
-        frequency: "weekly",
-        existingCorpus: 10000,
-        startDate: "2024-06-01",
-      },
-    ],
-    goals: [
-      {
-        id: 1,
-        name: "Emergency Fund",
-        target: 300000,
-        saved: 60000,
-        emoji: "🛡️",
-        color: "#e05c5c",
-        deadline: "2026-06",
-      },
-      {
-        id: 2,
-        name: "Anniversary Trip",
-        target: 200000,
-        saved: 30000,
-        emoji: "✈️",
-        color: "#c9a84c",
-        deadline: "2025-12",
-      },
-    ],
-    debts: [],
-    transactions: [
-      {
-        id: 1,
-        date: "2025-02-28",
-        desc: "Salary credit",
-        amount: 65000,
-        type: "income",
-        category: "Salary",
-      },
-      {
-        id: 2,
-        date: "2025-02-15",
-        desc: "ELSS SIP",
-        amount: -8000,
-        type: "investment",
-        category: "Investment",
-      },
-      {
-        id: 3,
-        date: "2025-02-01",
-        desc: "Rent share",
-        amount: -12000,
-        type: "expense",
-        category: "Housing",
-      },
-    ],
-    recurringRules: [
-      {
-        id: 1,
-        desc: "Salary credit",
-        amount: 65000,
-        type: "income",
-        category: "Salary",
-        dayOfMonth: 28,
-        active: true,
-      },
-      {
-        id: 2,
-        desc: "ELSS SIP",
-        amount: -8000,
-        type: "investment",
-        category: "Investment",
-        dayOfMonth: 15,
-        active: true,
-      },
-    ],
-    budgetAlerts: [
-      { id: 1, category: "Shopping", limit: 4000, active: true },
-      { id: 2, category: "Food", limit: 7000, active: true },
-    ],
-    assets: [
-      { id: 1, name: "Savings Account", value: 120000, type: "cash" },
-      { id: 2, name: "ELSS corpus", value: 15000, type: "investment" },
-      { id: 3, name: "Gold ETF", value: 10000, type: "investment" },
-    ],
-    liabilities: [],
-    taxInfo: {
-      regime: "new",
-      basicSalary: 65000,
-      hra: 12000,
-      lta: 4000,
-      elss: 8000,
-      ppf: 0,
-      nps: 0,
-      homeLoanInterest: 0,
-      medicalInsurance: 3000,
-    },
-  },
-  shared: {
-    goals: [
-      {
-        id: 1,
-        name: "Home Down Payment",
-        target: 2000000,
-        abhavSaved: 100000,
-        aanyaSaved: 80000,
-        emoji: "🏠",
-        color: "#4caf82",
-        deadline: "2030-01",
-      },
-      {
-        id: 2,
-        name: "Child Education Fund",
-        target: 3000000,
-        abhavSaved: 0,
-        aanyaSaved: 0,
-        emoji: "👶",
-        color: "#5b9cf6",
-        deadline: "2040-01",
-      },
-      {
-        id: 3,
-        name: "Europe Trip",
-        target: 350000,
-        abhavSaved: 50000,
-        aanyaSaved: 30000,
-        emoji: "🌍",
-        color: "#c9a84c",
-        deadline: "2025-12",
-      },
-    ],
-    profile: {
-      householdName: "Abhav & Aanya",
-      city: "Bengaluru",
-      savingsTarget: 25,
-    },
-    netWorthHistory: [],
-  },
+const EMPTY_PERSON = {
+  incomes: [],
+  expenses: [],
+  investments: [],
+  goals: [],
+  debts: [],
+  transactions: [],
+  recurringRules: [],
+  budgetAlerts: [],
+  assets: [],
+  liabilities: [],
+  taxInfo: {},
 };
 
-function applyRecurring(transactions, rules) {
-  if (!rules || !rules.length) return transactions;
+const EMPTY_SHARED = {
+  goals: [],
+  profile: { householdName: "", city: "", savingsTarget: 25 },
+  netWorthHistory: [],
+};
+
+const DEFAULTS = {
+  abhav: { ...EMPTY_PERSON },
+  aanya: { ...EMPTY_PERSON },
+  shared: { ...EMPTY_SHARED },
+};
+
+// Builds virtual recurring rules from incomes, expenses, and SIP investments.
+// These are derived at runtime — no need to store them in Firestore.
+function autoRecurringRules(data) {
+  const rules = [];
+  let id = -1; // negative IDs to avoid clashing with manual rules
+
+  // Income rules
+  for (const inc of data.incomes || []) {
+    rules.push({
+      id: id--,
+      desc: inc.name,
+      amount: inc.amount,
+      type: "income",
+      category: "Salary",
+      dayOfMonth: 28,
+      active: true,
+      auto: true,
+      sourceType: "income",
+    });
+  }
+
+  // Expense rules
+  for (const exp of data.expenses || []) {
+    rules.push({
+      id: id--,
+      desc: exp.name,
+      amount: -Math.abs(exp.amount),
+      type: "expense",
+      category: exp.category || "Others",
+      dayOfMonth: 1,
+      active: true,
+      auto: true,
+      sourceType: "expense",
+    });
+  }
+
+  // SIP investment rules (skip FD, lump-sum, and one-time types)
+  for (const inv of data.investments || []) {
+    if (inv.type === "FD" || inv.frequency === "onetime") continue;
+    // yearly SIPs only fire once a year — still show in recurring list but
+    // the transaction generation handles them differently below
+    rules.push({
+      id: id--,
+      desc: inv.name,
+      amount: -Math.abs(inv.amount),
+      type: "investment",
+      category: "Investment",
+      dayOfMonth: inv.deductionDate || 15,
+      frequency: inv.frequency || "monthly",
+      active: true,
+      auto: true,
+      sourceType: "investment",
+    });
+  }
+
+  // Debt EMI rules
+  for (const debt of data.debts || []) {
+    rules.push({
+      id: id--,
+      desc: debt.name + " EMI",
+      amount: -Math.abs(debt.emi),
+      type: "expense",
+      category: "EMI",
+      dayOfMonth: 5,
+      active: true,
+      auto: true,
+      sourceType: "debt",
+    });
+  }
+
+  return rules;
+}
+
+function applyRecurring(data) {
+  const transactions = data.transactions || [];
+  // Manual rules (user-created, stored in Firestore)
+  const manualRules = (data.recurringRules || []).filter((r) => !r.auto);
+  // Auto rules derived from budget + investments + debts
+  const autoRules = autoRecurringRules(data);
+  const allRules = [...autoRules, ...manualRules];
+
+  if (!allRules.length) return transactions;
   const now = new Date();
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const result = [...transactions];
   let maxId = Math.max(0, ...transactions.map((t) => t.id ?? 0));
-  for (const rule of rules) {
+
+  for (const rule of allRules) {
     if (!rule.active) continue;
+    // Skip yearly SIPs outside their month (assume January deduction)
+    if (rule.frequency === "yearly" && now.getMonth() !== 0) continue;
+
     const dateStr = `${ym}-${String(rule.dayOfMonth).padStart(2, "0")}`;
     if (new Date(dateStr) > now) continue;
+
     const exists = transactions.some(
-      (t) =>
-        t.date === dateStr && t.desc === rule.desc && t.recurringId === rule.id,
+      (t) => t.date === dateStr && t.desc === rule.desc && t.auto,
     );
     if (!exists) {
       maxId++;
@@ -363,17 +172,13 @@ export function DataProvider({ children }) {
       });
       const unsub = onSnapshot(ref, (snap) => {
         const data = snap.exists() ? snap.data() : defaultData;
-        if (data.recurringRules && data.transactions) {
-          const updated = applyRecurring(
-            data.transactions,
-            data.recurringRules,
-          );
-          if (updated.length !== data.transactions.length) {
-            const newData = { ...data, transactions: updated };
-            setter(newData);
-            setDoc(ref, newData);
-            return;
-          }
+        // Auto-derive recurring transactions from incomes/expenses/investments/debts
+        const updated = applyRecurring(data);
+        if (updated.length !== (data.transactions || []).length) {
+          const newData = { ...data, transactions: updated };
+          setter(newData);
+          setDoc(ref, newData);
+          return;
         }
         setter(data);
       });
@@ -397,7 +202,20 @@ export function DataProvider({ children }) {
   const updatePerson = useCallback(
     (person, key, value) => {
       const current = person === "abhav" ? abhav : aanya;
-      const updated = { ...current, [key]: value };
+      let updated = { ...current, [key]: value };
+
+      // When any data source that feeds recurring rules changes,
+      // invalidate this month's auto-generated transactions and re-derive.
+      if (["incomes", "expenses", "investments", "debts"].includes(key)) {
+        const now = new Date();
+        const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const withoutAutoThisMonth = (updated.transactions || []).filter(
+          (t) => !(t.auto && t.date?.startsWith(ym)),
+        );
+        updated = { ...updated, transactions: withoutAutoThisMonth };
+        updated = { ...updated, transactions: applyRecurring(updated) };
+      }
+
       if (person === "abhav") setAbhav(updated);
       else setAanya(updated);
       save(person, updated);
@@ -414,21 +232,73 @@ export function DataProvider({ children }) {
     [shared, save],
   );
 
+  const resetData = useCallback(async () => {
+    if (!user) return;
+    const uid = user.uid;
+    const emptyAbhav = { ...EMPTY_PERSON };
+    const emptyAanya = { ...EMPTY_PERSON };
+    const emptyShared = { ...EMPTY_SHARED };
+    await Promise.all([
+      setDoc(doc(db, "households", uid, "data", "abhav"), emptyAbhav),
+      setDoc(doc(db, "households", uid, "data", "aanya"), emptyAanya),
+      setDoc(doc(db, "households", uid, "data", "shared"), emptyShared),
+    ]);
+  }, [user]);
+
+  // Need onboarding when both persons have zero incomes (fresh state)
+  const needsOnboarding =
+    !loading &&
+    abhav &&
+    aanya &&
+    shared &&
+    abhav.incomes?.length === 0 &&
+    aanya.incomes?.length === 0 &&
+    !shared.profile?.householdName;
+
   const takeSnapshot = useCallback(() => {
     if (!abhav || !aanya) return;
     const now = new Date();
     const label = `${now.toLocaleString("default", { month: "short" })} ${now.getFullYear()}`;
-    const netWorth = (data) => {
-      const assets = (data.assets || []).reduce(
+
+    // Compute net worth the same way NetWorth page does:
+    // auto-assets from investments + manual assets − auto-liabilities from debts − manual liabilities
+    const computeNW = (data) => {
+      // Investment corpus values (auto)
+      const invTotal = (data.investments || []).reduce((s, inv) => {
+        if (inv.type === "FD") {
+          const start = inv.startDate ? new Date(inv.startDate) : now;
+          const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+          return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
+        }
+        return (
+          s +
+          autoCorpus(
+            inv.existingCorpus || 0,
+            inv.amount || 0,
+            inv.returnPct || 0,
+            inv.startDate,
+            inv.frequency,
+          )
+        );
+      }, 0);
+      // Manual assets (savings account, property, etc.)
+      const manualAssets = (data.assets || []).reduce(
         (s, a) => s + (a.value || 0),
         0,
       );
-      const liabilities = (data.liabilities || []).reduce(
+      // Debt outstanding (auto)
+      const debtTotal = (data.debts || []).reduce(
+        (s, d) => s + (d.outstanding || 0),
+        0,
+      );
+      // Manual liabilities (credit card, mortgage, etc.)
+      const manualLiab = (data.liabilities || []).reduce(
         (s, l) => s + (l.value || 0),
         0,
       );
-      return assets - liabilities;
+      return invTotal + manualAssets - (debtTotal + manualLiab);
     };
+
     const snap = {
       label,
       month: now.getMonth() + 1,
@@ -437,17 +307,17 @@ export function DataProvider({ children }) {
       abhavIncome: (abhav.incomes || []).reduce((s, x) => s + x.amount, 0),
       abhavExpenses: (abhav.expenses || []).reduce((s, x) => s + x.amount, 0),
       abhavInvestments: (abhav.investments || []).reduce(
-        (s, x) => s + x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+        (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
       ),
       aanyaIncome: (aanya.incomes || []).reduce((s, x) => s + x.amount, 0),
       aanyaExpenses: (aanya.expenses || []).reduce((s, x) => s + x.amount, 0),
       aanyaInvestments: (aanya.investments || []).reduce(
-        (s, x) => s + x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+        (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
       ),
-      abhavNetWorth: netWorth(abhav),
-      aanyaNetWorth: netWorth(aanya),
+      abhavNetWorth: Math.round(computeNW(abhav)),
+      aanyaNetWorth: Math.round(computeNW(aanya)),
     };
     const history = (shared?.netWorthHistory || []).filter(
       (s) => !(s.month === snap.month && s.year === snap.year),
@@ -467,9 +337,11 @@ export function DataProvider({ children }) {
         aanya,
         shared,
         loading,
+        needsOnboarding,
         updatePerson,
         updateShared,
         takeSnapshot,
+        resetData,
       }}
     >
       {children}
@@ -478,3 +350,4 @@ export function DataProvider({ children }) {
 }
 
 export const useData = () => useContext(DataContext);
+export { autoRecurringRules };

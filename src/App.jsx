@@ -17,6 +17,7 @@ import {
   HouseholdTransactions,
   HouseholdDebts,
 } from "./pages/OtherPages";
+import Onboarding from "./pages/Onboarding";
 
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -208,9 +209,11 @@ function AppInner() {
     aanya,
     shared,
     loading,
+    needsOnboarding,
     updatePerson,
     updateShared,
     takeSnapshot,
+    resetData,
   } = useData();
   const { logout } = useAuth();
   const [page, setPage] = useState("dashboard");
@@ -218,9 +221,12 @@ function AppInner() {
 
   useEffect(() => {
     document.title = `${PAGE_TITLES[page] || "WealthOS"} — WealthOS`;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [page]);
 
   if (loading || !abhav || !aanya) return <LoadingSkeleton />;
+
+  if (needsOnboarding) return <Onboarding />;
 
   const isHousehold = profile === "household";
   const personName =
@@ -341,6 +347,7 @@ function AppInner() {
             sharedData={shared}
             updateShared={updateShared}
             logout={logout}
+            resetData={resetData}
           />
         );
       default:

@@ -10,8 +10,17 @@ import {
   BarChart,
   Bar,
   Legend,
+  ComposedChart,
+  Line,
 } from "recharts";
-import { fmt, fmtCr, totalCorpus, CAT_COLORS } from "../utils/finance";
+import {
+  fmt,
+  fmtCr,
+  totalCorpus,
+  lumpCorpus,
+  CAT_COLORS,
+  freqToMonthly,
+} from "../utils/finance";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
 function personStats(data) {
@@ -28,7 +37,7 @@ function personStats(data) {
   const expenses = data.expenses?.reduce((s, x) => s + x.amount, 0) ?? 0;
   const investments =
     data.investments?.reduce(
-      (s, x) => s + x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+      (s, x) => s + freqToMonthly(x.amount, x.frequency),
       0,
     ) ?? 0;
   const debts = data.debts?.reduce((s, x) => s + x.emi, 0) ?? 0;
@@ -38,17 +47,23 @@ function personStats(data) {
       ? Math.round(((investments + Math.max(0, savings)) / income) * 100)
       : 0;
   const corpus20 =
-    data.investments?.reduce(
-      (s, x) =>
+    data.investments?.reduce((s, x) => {
+      if (x.frequency === "onetime") {
+        return (
+          s +
+          lumpCorpus((x.existingCorpus || 0) + (x.amount || 0), x.returnPct, 20)
+        );
+      }
+      return (
         s +
         totalCorpus(
           x.existingCorpus || 0,
-          x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+          freqToMonthly(x.amount, x.frequency),
           x.returnPct,
           20,
-        ),
-      0,
-    ) ?? 0;
+        )
+      );
+    }, 0) ?? 0;
   return {
     income,
     expenses,
@@ -100,6 +115,288 @@ function HealthRing({ score }) {
       >
         {score}
       </div>
+    </div>
+  );
+}
+
+// ── Monthly Cash Flow aggregation ──
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function buildCashFlow(abhavTxns, aanyaTxns) {
+  const map = {}; // key: "2026-03" → { income, expenses, investments, emis }
+
+  const process = (txns) => {
+    for (const t of txns || []) {
+      if (!t.date) continue;
+      const ym = t.date.slice(0, 7); // "YYYY-MM"
+      if (!map[ym])
+        map[ym] = { income: 0, expenses: 0, investments: 0, emis: 0 };
+      const amt = Math.abs(t.amount);
+      if (t.amount > 0) {
+        map[ym].income += amt;
+      } else if (t.type === "investment") {
+        map[ym].investments += amt;
+      } else if (t.category === "EMI") {
+        map[ym].emis += amt;
+      } else {
+        map[ym].expenses += amt;
+      }
+    }
+  };
+
+  process(abhavTxns);
+  process(aanyaTxns);
+
+  return Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([ym, d]) => {
+      const [y, m] = ym.split("-");
+      const net = d.income - d.expenses - d.investments - d.emis;
+      return {
+        label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y.slice(2)}`,
+        ym,
+        ...d,
+        outflows: d.expenses + d.investments + d.emis,
+        net,
+      };
+    });
+}
+
+function MonthlyCashFlow({ abhav, aanya }) {
+  const data = buildCashFlow(abhav?.transactions, aanya?.transactions);
+  if (data.length === 0) return null;
+
+  // Savings streak: consecutive months with positive net (from latest)
+  let streak = 0;
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (data[i].net > 0) streak++;
+    else break;
+  }
+
+  const latest = data[data.length - 1];
+
+  return (
+    <div className="card section-gap">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1rem",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          📊 Monthly Cash Flow
+        </div>
+        {streak > 0 && (
+          <div
+            style={{
+              fontSize: 12,
+              background: "var(--green-dim)",
+              color: "var(--green)",
+              padding: "3px 10px",
+              borderRadius: 6,
+              fontWeight: 500,
+            }}
+          >
+            🔥 {streak} month{streak > 1 ? "s" : ""} positive streak
+          </div>
+        )}
+      </div>
+
+      {/* Current month summary */}
+      {latest && (
+        <div className="grid-4" style={{ marginBottom: "1.25rem" }}>
+          <div className="metric-card" style={{ padding: "0.75rem" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Income
+            </div>
+            <div
+              style={{ fontSize: 15, fontWeight: 600, color: "var(--green)" }}
+            >
+              {fmt(latest.income)}
+            </div>
+          </div>
+          <div className="metric-card" style={{ padding: "0.75rem" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Expenses
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--red)" }}>
+              {fmt(latest.expenses)}
+            </div>
+          </div>
+          <div className="metric-card" style={{ padding: "0.75rem" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Invest + EMIs
+            </div>
+            <div
+              style={{ fontSize: 15, fontWeight: 600, color: "var(--gold)" }}
+            >
+              {fmt(latest.investments + latest.emis)}
+            </div>
+          </div>
+          <div className="metric-card" style={{ padding: "0.75rem" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              Net cash
+            </div>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 600,
+                color: latest.net >= 0 ? "var(--green)" : "var(--red)",
+              }}
+            >
+              {latest.net >= 0 ? "+" : "−"}
+              {fmt(Math.abs(latest.net))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chart */}
+      {data.length > 1 && (
+        <div style={{ height: 220, marginBottom: "1.25rem" }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={data}
+              margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
+            >
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "#55535e" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis hide />
+              <Tooltip
+                formatter={(v, name) => [fmt(v), name]}
+                contentStyle={{
+                  background: "#13131a",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+              />
+              <Bar
+                dataKey="income"
+                name="Income"
+                fill="#4caf82"
+                radius={[4, 4, 0, 0]}
+                opacity={0.7}
+              />
+              <Bar
+                dataKey="outflows"
+                name="Outflows"
+                fill="#e05c5c"
+                radius={[4, 4, 0, 0]}
+                opacity={0.7}
+              />
+              <Line
+                dataKey="net"
+                name="Net Cash"
+                type="monotone"
+                stroke="#c9a84c"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#c9a84c" }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Monthly breakdown table */}
+      <div style={{ overflowX: "auto" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: "0 4px 8px",
+            borderBottom: "1px solid var(--border)",
+            fontSize: 11,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".06em",
+            minWidth: 480,
+            position: "sticky",
+            top: 0,
+            background: "var(--bg-card)",
+            zIndex: 1,
+          }}
+        >
+          <span style={{ width: 60 }}>Month</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Income</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Expenses</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Invest</span>
+          <span style={{ flex: 1, textAlign: "right" }}>EMIs</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Net</span>
+        </div>
+        {[...data].reverse().map((d) => (
+          <div
+            key={d.ym}
+            className="data-row"
+            style={{
+              padding: "8px 4px",
+              minWidth: 480,
+              borderRadius: 4,
+            }}
+          >
+            <span style={{ width: 60, fontWeight: 500 }}>{d.label}</span>
+            <span
+              style={{ flex: 1, textAlign: "right", color: "var(--green)" }}
+            >
+              {fmt(d.income)}
+            </span>
+            <span style={{ flex: 1, textAlign: "right", color: "var(--red)" }}>
+              {fmt(d.expenses)}
+            </span>
+            <span style={{ flex: 1, textAlign: "right", color: "var(--gold)" }}>
+              {fmt(d.investments)}
+            </span>
+            <span
+              style={{
+                flex: 1,
+                textAlign: "right",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {fmt(d.emis)}
+            </span>
+            <span
+              style={{
+                flex: 1,
+                textAlign: "right",
+                fontWeight: 600,
+                color: d.net >= 0 ? "var(--green)" : "var(--red)",
+              }}
+            >
+              {d.net >= 0 ? "+" : "−"}
+              {fmt(Math.abs(d.net))}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {data.length <= 1 && (
+        <div className="tip" style={{ marginTop: "0.75rem" }}>
+          💡 Cash flow history builds automatically as recurring transactions
+          fire each month. After 2+ months you'll see the trend chart.
+        </div>
+      )}
     </div>
   );
 }
@@ -649,6 +946,9 @@ export default function Dashboard({ abhav, aanya, shared }) {
             ` Boost your household savings rate to 25%+ to retire even earlier.`}
         </div>
       </div>
+
+      {/* Monthly Cash Flow */}
+      <MonthlyCashFlow abhav={abhav} aanya={aanya} />
     </div>
   );
 }

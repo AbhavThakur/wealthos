@@ -19,6 +19,7 @@ import {
   projectionData,
   ltcgTax,
   lumpCorpus,
+  freqToMonthly,
 } from "../utils/finance";
 import { Plus, Trash2, Edit3, Check, X } from "lucide-react";
 import { useConfirm } from "../App";
@@ -40,11 +41,11 @@ function ordinalSuffix(n) {
 
 // Field visibility helpers by investment type
 const isFD = (t) => t === "FD";
-// Weekly SIP: market instruments only
+// Weekly/Yearly SIP: market instruments only
 const hasSIPFreq = (t) => ["Mutual Fund", "Stocks", "Gold"].includes(t);
-// Deduction date: auto-debit SIPs and NPS
-const hasDeductionDate = (t) =>
-  ["Mutual Fund", "Stocks", "Gold", "NPS"].includes(t);
+// Deduction date: auto-debit SIPs and NPS (not FD or one-time)
+const hasDeductionDate = (t, freq) =>
+  freq !== "onetime" && ["Mutual Fund", "Stocks", "Gold", "NPS"].includes(t);
 // Investment app (Zerodha, Groww etc.): market instruments only
 const hasInvestmentApp = (t) => ["Mutual Fund", "Stocks", "Gold"].includes(t);
 
@@ -54,13 +55,13 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
   const { confirm, dialog } = useConfirm();
 
   const isFDInv = isFD(inv.type);
-  const effMonthly = isFDInv
-    ? 0
-    : inv.amount * (inv.frequency === "weekly" ? 4.33 : 1);
+  const isOneTimeInv = inv.frequency === "onetime";
+  const effMonthly =
+    isFDInv || isOneTimeInv ? 0 : freqToMonthly(inv.amount, inv.frequency);
 
-  // FD: compound growth on lump-sum principal; others: SIP-based auto corpus
+  // FD/onetime: compound growth on lump-sum principal; others: SIP-based auto corpus
   const fdYrsElapsed =
-    isFDInv && inv.startDate
+    (isFDInv || isOneTimeInv) && inv.startDate
       ? Math.max(
           0,
           (new Date() - new Date(inv.startDate)) / (365.25 * 24 * 3600 * 1000),
@@ -68,13 +69,19 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
       : 0;
   const currentVal = isFDInv
     ? lumpCorpus(inv.amount || 0, inv.returnPct || 0, fdYrsElapsed)
-    : autoCorpus(
-        inv.existingCorpus || 0,
-        inv.amount,
-        inv.returnPct,
-        inv.startDate,
-        inv.frequency,
-      );
+    : isOneTimeInv
+      ? lumpCorpus(
+          (inv.existingCorpus || 0) + (inv.amount || 0),
+          inv.returnPct || 0,
+          fdYrsElapsed,
+        )
+      : autoCorpus(
+          inv.existingCorpus || 0,
+          inv.amount,
+          inv.returnPct,
+          inv.startDate,
+          inv.frequency,
+        );
 
   // FD maturity value (based on start + end date)
   const fdTenureYrs =
@@ -93,7 +100,9 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
   // Actual performance
   const totalInvested = isFDInv
     ? inv.amount || 0
-    : Number(inv.totalInvested) || 0;
+    : isOneTimeInv
+      ? (inv.amount || 0) + (inv.existingCorpus || 0)
+      : Number(inv.totalInvested) || 0;
   const actualGain = totalInvested > 0 ? currentVal - totalInvested : null;
   const actualReturnPct =
     totalInvested > 0
@@ -109,13 +118,29 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
   }
   const corpus10 = isFDInv
     ? null
-    : totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, 10);
+    : isOneTimeInv
+      ? lumpCorpus(
+          (inv.existingCorpus || 0) + (inv.amount || 0),
+          inv.returnPct,
+          10,
+        )
+      : totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, 10);
   const corpus20 = isFDInv
     ? null
-    : totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, 20);
+    : isOneTimeInv
+      ? lumpCorpus(
+          (inv.existingCorpus || 0) + (inv.amount || 0),
+          inv.returnPct,
+          20,
+        )
+      : totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, 20);
   const gains20 =
     corpus20 != null
-      ? corpus20 - ((inv.existingCorpus || 0) + effMonthly * 12 * 20)
+      ? corpus20 -
+        ((isOneTimeInv
+          ? (inv.existingCorpus || 0) + (inv.amount || 0)
+          : inv.existingCorpus || 0) +
+          effMonthly * 12 * 20)
       : 0;
   const taxOnGains =
     !isFDInv && (inv.type === "Mutual Fund" || inv.type === "Stocks")
@@ -123,7 +148,7 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
       : 0;
   const postTax20 = corpus20 != null ? corpus20 - taxOnGains : 0;
 
-  // Chart: FD shows yearly compound growth to maturity; others: 20yr SIP projection
+  // Chart: FD shows yearly compound growth to maturity; onetime: lump sum growth; others: 20yr SIP projection
   const chartData = isFDInv
     ? (() => {
         const tenureYrs = Math.max(1, Math.ceil(fdTenureYrs ?? 5));
@@ -135,13 +160,22 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
           invested: Math.round(inv.amount || 0),
         }));
       })()
-    : projectionData(
-        inv.existingCorpus || 0,
-        inv.amount,
-        inv.returnPct,
-        20,
-        inv.frequency,
-      );
+    : isOneTimeInv
+      ? (() => {
+          const base = (inv.existingCorpus || 0) + (inv.amount || 0);
+          return Array.from({ length: 21 }, (_, i) => ({
+            year: `Y${i}`,
+            corpus: Math.round(lumpCorpus(base, inv.returnPct || 0, i)),
+            invested: Math.round(base),
+          }));
+        })()
+      : projectionData(
+          inv.existingCorpus || 0,
+          inv.amount,
+          inv.returnPct,
+          20,
+          inv.frequency,
+        );
 
   const save = () => {
     onUpdate({
@@ -164,7 +198,7 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
           <div className="grid-2" style={{ marginBottom: 12 }}>
             {[
               { key: "name", label: "Investment name", type: "text" },
-              ...(!isFD(form.type)
+              ...(!isFD(form.type) && form.frequency !== "onetime"
                 ? [
                     {
                       key: "existingCorpus",
@@ -177,9 +211,11 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                 key: "amount",
                 label: isFD(form.type)
                   ? "Principal (₹)"
-                  : form.frequency === "weekly"
-                    ? "Weekly SIP (₹)"
-                    : "Monthly SIP (₹)",
+                  : form.frequency === "onetime"
+                    ? "Purchase amount (₹)"
+                    : form.frequency === "weekly"
+                      ? "Weekly SIP (₹)"
+                      : "Monthly SIP (₹)",
                 type: "number",
               },
               {
@@ -196,7 +232,7 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                 type: "text",
                 placeholder: "e.g. HDFC, SBI",
               },
-              ...(!isFD(form.type)
+              ...(!isFD(form.type) && form.frequency !== "onetime"
                 ? [
                     {
                       key: "totalInvested",
@@ -274,6 +310,8 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                 >
                   <option value="monthly">Monthly</option>
                   <option value="weekly">Weekly</option>
+                  <option value="yearly">Yearly</option>
+                  <option value="onetime">One-time</option>
                 </select>
               </div>
             )}
@@ -337,7 +375,7 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                 />
               </div>
             )}
-            {hasDeductionDate(form.type) && (
+            {hasDeductionDate(form.type, form.frequency) && (
               <div>
                 <label
                   style={{
@@ -413,6 +451,16 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                   >
                     ₹{inv.amount.toLocaleString("en-IN")} principal
                   </span>
+                ) : isOneTimeInv ? (
+                  <span
+                    className="tag"
+                    style={{
+                      background: "var(--purple-dim)",
+                      color: "var(--purple)",
+                    }}
+                  >
+                    ₹{inv.amount.toLocaleString("en-IN")} one-time
+                  </span>
                 ) : (
                   <span
                     className="tag"
@@ -459,7 +507,7 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
                       {inv.bankName}
                     </span>
                   )}
-                  {!isFDInv && inv.deductionDate && (
+                  {!isFDInv && !isOneTimeInv && inv.deductionDate && (
                     <span
                       className="tag"
                       style={{
@@ -517,38 +565,52 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
           <div className="grid-4" style={{ marginBottom: "1rem" }}>
             <div className="metric-card">
               <div className="metric-label">
-                {isFDInv ? "Principal" : "Current Value"}
+                {isFDInv
+                  ? "Principal"
+                  : isOneTimeInv
+                    ? "Purchase amount"
+                    : "Current Value"}
               </div>
               <div
                 className="metric-value"
                 style={{ fontSize: 18, color: personColor }}
               >
-                {isFDInv ? fmt(inv.amount || 0) : fmtCr(currentVal)}
+                {isFDInv || isOneTimeInv
+                  ? fmt(inv.amount || 0)
+                  : fmtCr(currentVal)}
               </div>
               <div className="metric-sub">
-                {isFDInv ? "Deposited" : "Auto-calculated"}
+                {isFDInv
+                  ? "Deposited"
+                  : isOneTimeInv
+                    ? "One-time"
+                    : "Auto-calculated"}
               </div>
             </div>
             <div className="metric-card">
               <div className="metric-label">
-                {isFDInv ? "Value today" : "Monthly equiv."}
+                {isFDInv || isOneTimeInv ? "Value today" : "Monthly equiv."}
               </div>
               <div
                 className="metric-value"
                 style={{
                   fontSize: 18,
-                  color: isFDInv ? "var(--gold)" : undefined,
+                  color: isFDInv || isOneTimeInv ? "var(--gold)" : undefined,
                 }}
               >
-                {isFDInv ? fmtCr(currentVal) : fmt(effMonthly)}
+                {isFDInv || isOneTimeInv ? fmtCr(currentVal) : fmt(effMonthly)}
               </div>
               <div className="metric-sub">
-                {isFDInv ? "With interest" : inv.frequency}
+                {isFDInv || isOneTimeInv ? "With growth" : inv.frequency}
               </div>
             </div>
             <div className="metric-card">
               <div className="metric-label">
-                {isFDInv ? "Maturity value" : "10-year corpus"}
+                {isFDInv
+                  ? "Maturity value"
+                  : isOneTimeInv
+                    ? "10-year value"
+                    : "10-year corpus"}
               </div>
               <div
                 className="metric-value"
@@ -566,7 +628,11 @@ function SIPCard({ inv, onUpdate, onDelete, personColor }) {
             </div>
             <div className="metric-card">
               <div className="metric-label">
-                {isFDInv ? "Interest earned" : "20-year corpus"}
+                {isFDInv
+                  ? "Interest earned"
+                  : isOneTimeInv
+                    ? "20-year value"
+                    : "20-year corpus"}
               </div>
               <div
                 className="metric-value"
@@ -826,8 +892,7 @@ export default function Investments({
   };
 
   const totalMonthly = filteredInvestments.reduce(
-    (s, x) =>
-      isFD(x.type) ? s : s + x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+    (s, x) => (isFD(x.type) ? s : s + freqToMonthly(x.amount, x.frequency)),
     0,
   );
   const totalCurrent = filteredInvestments.reduce((s, x) => {
@@ -863,11 +928,17 @@ export default function Investments({
           : 5;
       return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
     }
+    if (x.frequency === "onetime") {
+      return (
+        s +
+        lumpCorpus((x.existingCorpus || 0) + (x.amount || 0), x.returnPct, 20)
+      );
+    }
     return (
       s +
       totalCorpus(
         x.existingCorpus || 0,
-        x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+        freqToMonthly(x.amount, x.frequency),
         x.returnPct,
         20,
       )
@@ -902,10 +973,21 @@ export default function Investments({
             {fmt(totalMonthly)}
           </div>
           <div className="metric-sub">
-            {filteredInvestments.filter((x) => x.frequency === "weekly").length}{" "}
-            weekly ·{" "}
-            {filteredInvestments.filter((x) => x.frequency !== "weekly").length}{" "}
+            {filteredInvestments.filter((x) => x.frequency === "weekly")
+              .length > 0 &&
+              `${filteredInvestments.filter((x) => x.frequency === "weekly").length} weekly · `}
+            {
+              filteredInvestments.filter(
+                (x) =>
+                  !isFD(x.type) &&
+                  x.frequency !== "weekly" &&
+                  x.frequency !== "onetime",
+              ).length
+            }{" "}
             monthly
+            {filteredInvestments.filter((x) => x.frequency === "onetime")
+              .length > 0 &&
+              ` · ${filteredInvestments.filter((x) => x.frequency === "onetime").length} one-time`}
           </div>
         </div>
         <div className="metric-card">
@@ -1056,9 +1138,11 @@ export default function Investments({
               >
                 {isFD(newInv.type)
                   ? "Principal (\u20b9)"
-                  : newInv.frequency === "weekly"
-                    ? "Weekly SIP amount (\u20b9)"
-                    : "Monthly SIP amount (\u20b9)"}
+                  : newInv.frequency === "onetime"
+                    ? "Purchase amount (\u20b9)"
+                    : newInv.frequency === "weekly"
+                      ? "Weekly SIP amount (\u20b9)"
+                      : "Monthly SIP amount (\u20b9)"}
               </label>
               <input
                 type="number"
@@ -1069,7 +1153,7 @@ export default function Investments({
                 }
               />
             </div>
-            {!isFD(newInv.type) && (
+            {!isFD(newInv.type) && newInv.frequency !== "onetime" && (
               <div>
                 <label
                   style={{
@@ -1122,7 +1206,11 @@ export default function Investments({
                   marginBottom: 4,
                 }}
               >
-                {isFD(newInv.type) ? "FD start date" : "SIP start date"}
+                {isFD(newInv.type)
+                  ? "FD start date"
+                  : newInv.frequency === "onetime"
+                    ? "Purchase date"
+                    : "SIP start date"}
               </label>
               <input
                 type="date"
@@ -1197,7 +1285,7 @@ export default function Investments({
                 }
               />
             </div>
-            {hasDeductionDate(newInv.type) && (
+            {hasDeductionDate(newInv.type, newInv.frequency) && (
               <div>
                 <label
                   style={{
@@ -1224,7 +1312,7 @@ export default function Investments({
                 </select>
               </div>
             )}
-            {!isFD(newInv.type) && (
+            {!isFD(newInv.type) && newInv.frequency !== "onetime" && (
               <div>
                 <label
                   style={{
@@ -1287,15 +1375,33 @@ export default function Investments({
                     </span>
                   )}
                 </>
+              ) : newInv.frequency === "onetime" ? (
+                <>
+                  <span>
+                    Purchase:{" "}
+                    <strong style={{ color: personColor }}>
+                      {fmt(Number(newInv.amount))}
+                    </strong>
+                  </span>
+                  <span>
+                    20yr value:{" "}
+                    <strong style={{ color: "var(--green)" }}>
+                      {fmtCr(
+                        lumpCorpus(
+                          Number(newInv.amount),
+                          Number(newInv.returnPct),
+                          20,
+                        ),
+                      )}
+                    </strong>
+                  </span>
+                </>
               ) : (
                 <>
                   <span>
                     Monthly equiv:{" "}
                     <strong style={{ color: personColor }}>
-                      {fmt(
-                        newInv.amount *
-                          (newInv.frequency === "weekly" ? 4.33 : 1),
-                      )}
+                      {fmt(freqToMonthly(newInv.amount, newInv.frequency))}
                     </strong>
                   </span>
                   <span>
@@ -1304,8 +1410,10 @@ export default function Investments({
                       {fmtCr(
                         totalCorpus(
                           Number(newInv.existingCorpus),
-                          Number(newInv.amount) *
-                            (newInv.frequency === "weekly" ? 4.33 : 1),
+                          freqToMonthly(
+                            Number(newInv.amount),
+                            newInv.frequency,
+                          ),
                           Number(newInv.returnPct),
                           20,
                         ),
@@ -1390,8 +1498,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
 
   const calcM = (list) => ({
     monthly: list.reduce(
-      (s, x) =>
-        isFD(x.type) ? s : s + x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+      (s, x) => (isFD(x.type) ? s : s + freqToMonthly(x.amount, x.frequency)),
       0,
     ),
     current: list.reduce((s, x) => {
@@ -1428,11 +1535,17 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
             : 5;
         return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
       }
+      if (x.frequency === "onetime") {
+        return (
+          s +
+          lumpCorpus((x.existingCorpus || 0) + (x.amount || 0), x.returnPct, 20)
+        );
+      }
       return (
         s +
         totalCorpus(
           x.existingCorpus || 0,
-          x.amount * (x.frequency === "weekly" ? 4.33 : 1),
+          freqToMonthly(x.amount, x.frequency),
           x.returnPct,
           20,
         )
@@ -1680,7 +1793,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           <div className="grid-2" style={{ marginBottom: 12 }}>
             {[
               { key: "name", label: "Investment name", type: "text" },
-              ...(!isFD(newInv.type)
+              ...(!isFD(newInv.type) && newInv.frequency !== "onetime"
                 ? [
                     {
                       key: "existingCorpus",
@@ -1693,9 +1806,11 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 key: "amount",
                 label: isFD(newInv.type)
                   ? "Principal (₹)"
-                  : newInv.frequency === "weekly"
-                    ? "Weekly SIP (₹)"
-                    : "Monthly SIP (₹)",
+                  : newInv.frequency === "onetime"
+                    ? "Purchase amount (₹)"
+                    : newInv.frequency === "weekly"
+                      ? "Weekly SIP (₹)"
+                      : "Monthly SIP (₹)",
                 type: "number",
               },
               {
@@ -1714,7 +1829,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 type: "text",
                 placeholder: "e.g. HDFC, SBI, Axis",
               },
-              ...(!isFD(newInv.type)
+              ...(!isFD(newInv.type) && newInv.frequency !== "onetime"
                 ? [
                     {
                       key: "totalInvested",
@@ -1787,6 +1902,8 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 >
                   <option value="monthly">Monthly SIP</option>
                   <option value="weekly">Weekly SIP</option>
+                  <option value="yearly">Yearly SIP</option>
+                  <option value="onetime">One-time</option>
                 </select>
               </div>
             )}
@@ -1799,7 +1916,11 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                   marginBottom: 4,
                 }}
               >
-                {isFD(newInv.type) ? "FD start date" : "SIP start date"}
+                {isFD(newInv.type)
+                  ? "FD start date"
+                  : newInv.frequency === "onetime"
+                    ? "Purchase date"
+                    : "SIP start date"}
               </label>
               <input
                 type="date"
@@ -1855,7 +1976,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 </select>
               </div>
             )}
-            {hasDeductionDate(newInv.type) && (
+            {hasDeductionDate(newInv.type, newInv.frequency) && (
               <div>
                 <label
                   style={{
@@ -1923,15 +2044,33 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                     </span>
                   )}
                 </>
+              ) : newInv.frequency === "onetime" ? (
+                <>
+                  <span>
+                    Purchase:{" "}
+                    <strong style={{ color: pColor(addFor) }}>
+                      {fmt(Number(newInv.amount))}
+                    </strong>
+                  </span>
+                  <span>
+                    20yr value:{" "}
+                    <strong style={{ color: "var(--green)" }}>
+                      {fmtCr(
+                        lumpCorpus(
+                          Number(newInv.amount),
+                          Number(newInv.returnPct),
+                          20,
+                        ),
+                      )}
+                    </strong>
+                  </span>
+                </>
               ) : (
                 <>
                   <span>
                     Monthly equiv:{" "}
                     <strong style={{ color: pColor(addFor) }}>
-                      {fmt(
-                        newInv.amount *
-                          (newInv.frequency === "weekly" ? 4.33 : 1),
-                      )}
+                      {fmt(freqToMonthly(newInv.amount, newInv.frequency))}
                     </strong>
                   </span>
                   <span>
@@ -1940,8 +2079,10 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                       {fmtCr(
                         totalCorpus(
                           Number(newInv.existingCorpus),
-                          Number(newInv.amount) *
-                            (newInv.frequency === "weekly" ? 4.33 : 1),
+                          freqToMonthly(
+                            Number(newInv.amount),
+                            newInv.frequency,
+                          ),
                           Number(newInv.returnPct),
                           20,
                         ),

@@ -8,50 +8,126 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Legend,
 } from "recharts";
-import { fmtCr, nextId } from "../utils/finance";
+import { fmtCr, fmt, nextId, autoCorpus, lumpCorpus } from "../utils/finance";
 import { Camera, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../App";
 
-const ASSET_TYPES = [
+const MANUAL_ASSET_TYPES = [
   "cash",
-  "investment",
   "property",
-  "gold",
+  "gold_physical",
   "vehicle",
   "other",
 ];
-const LIABILITY_TYPES = ["loan", "credit_card", "mortgage", "other"];
+const MANUAL_LIABILITY_TYPES = ["credit_card", "mortgage", "other"];
+
+/* ---------- auto-derive from investments & debts sections ---------- */
+function autoAssets(data) {
+  return (data?.investments || []).map((inv) => {
+    const isFDType = inv.type === "FD";
+    const isOneTime = inv.frequency === "onetime";
+    let value;
+    if (isFDType) {
+      const now = new Date();
+      const start = inv.startDate ? new Date(inv.startDate) : now;
+      const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+      value = lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
+    } else if (isOneTime) {
+      const now = new Date();
+      const start = inv.startDate ? new Date(inv.startDate) : now;
+      const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+      value = lumpCorpus(
+        (inv.existingCorpus || 0) + (inv.amount || 0),
+        inv.returnPct || 0,
+        elapsed,
+      );
+    } else {
+      value = autoCorpus(
+        inv.existingCorpus || 0,
+        inv.amount || 0,
+        inv.returnPct || 0,
+        inv.startDate,
+        inv.frequency,
+      );
+    }
+    return {
+      name: inv.name,
+      value: Math.round(value),
+      type: inv.type,
+      auto: true,
+    };
+  });
+}
+
+function autoLiabilities(data) {
+  return (data?.debts || []).map((d) => ({
+    name: d.name,
+    value: d.outstanding || 0,
+    type: "loan",
+    auto: true,
+  }));
+}
 
 function calcNetWorth(data) {
-  const assets = (data?.assets || []).reduce((s, a) => s + (a.value || 0), 0);
-  const liabilities = (data?.liabilities || []).reduce(
-    (s, l) => s + (l.value || 0),
-    0,
-  );
-  return { assets, liabilities, net: assets - liabilities };
+  const invAssets = autoAssets(data);
+  const debtLiabilities = autoLiabilities(data);
+  const manualAssets = (data?.assets || []).filter((a) => !a.auto);
+  const manualLiabilities = (data?.liabilities || []).filter((l) => !l.auto);
+
+  const totalAssets =
+    invAssets.reduce((s, a) => s + a.value, 0) +
+    manualAssets.reduce((s, a) => s + (a.value || 0), 0);
+  const totalLiabilities =
+    debtLiabilities.reduce((s, l) => s + l.value, 0) +
+    manualLiabilities.reduce((s, l) => s + (l.value || 0), 0);
+
+  return {
+    assets: totalAssets,
+    liabilities: totalLiabilities,
+    net: totalAssets - totalLiabilities,
+    invAssets,
+    debtLiabilities,
+    manualAssets,
+    manualLiabilities,
+  };
 }
 
 function AssetsEditor({ person, data, color, updatePerson, confirm }) {
-  const assets = data?.assets || [];
-  const liabilities = data?.liabilities || [];
+  const nw = calcNetWorth(data);
 
   const addAsset = () =>
     updatePerson(person, "assets", [
-      ...assets,
-      { id: nextId(assets), name: "New asset", value: 0, type: "cash" },
+      ...(data?.assets || []),
+      { id: nextId(data?.assets || []), name: "", value: 0, type: "cash" },
     ]);
   const addLiability = () =>
     updatePerson(person, "liabilities", [
-      ...liabilities,
+      ...(data?.liabilities || []),
       {
-        id: nextId(liabilities),
-        name: "New liability",
+        id: nextId(data?.liabilities || []),
+        name: "",
         value: 0,
-        type: "loan",
+        type: "credit_card",
       },
     ]);
+
+  const autoRowStyle = {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    marginBottom: 6,
+    opacity: 0.7,
+    fontSize: 13,
+  };
+  const tagStyle = {
+    fontSize: 9,
+    background: "var(--bg-card2)",
+    padding: "1px 6px",
+    borderRadius: 4,
+    color: "var(--text-muted)",
+    flexShrink: 0,
+  };
 
   return (
     <div>
@@ -75,45 +151,39 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
           {person === "abhav" ? "Abhav" : "Aanya"}
         </div>
         <div style={{ marginLeft: "auto", fontSize: 13 }}>
-          Net worth:{" "}
-          <strong style={{ color }}>{fmtCr(calcNetWorth(data).net)}</strong>
+          Net worth: <strong style={{ color }}>{fmtCr(nw.net)}</strong>
         </div>
       </div>
 
+      {/* ── ASSETS ── */}
       <div style={{ marginBottom: "1rem" }}>
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
+            fontSize: 12,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".06em",
             marginBottom: 8,
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: ".06em",
-            }}
-          >
-            Assets
-          </div>
-          <button
-            className="btn-ghost"
-            style={{
-              padding: "4px 10px",
-              fontSize: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            onClick={addAsset}
-          >
-            <Plus size={11} /> Add
-          </button>
+          Assets
         </div>
-        {assets.map((a) => (
+
+        {/* Auto from Investments */}
+        {nw.invAssets.map((a, i) => (
+          <div key={`inv-${i}`} style={autoRowStyle}>
+            <span style={{ flex: 2 }}>{a.name}</span>
+            <span style={tagStyle}>from Investments</span>
+            <span
+              style={{ flex: 1, textAlign: "right", color: "var(--green)" }}
+            >
+              {fmt(a.value)}
+            </span>
+          </div>
+        ))}
+
+        {/* Manual assets */}
+        {nw.manualAssets.map((a) => (
           <div
             key={a.id}
             style={{
@@ -125,11 +195,12 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
           >
             <input
               value={a.name}
+              placeholder="Asset name"
               onChange={(e) =>
                 updatePerson(
                   person,
                   "assets",
-                  assets.map((x) =>
+                  (data?.assets || []).map((x) =>
                     x.id === a.id ? { ...x, name: e.target.value } : x,
                   ),
                 )
@@ -142,14 +213,14 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                 updatePerson(
                   person,
                   "assets",
-                  assets.map((x) =>
+                  (data?.assets || []).map((x) =>
                     x.id === a.id ? { ...x, type: e.target.value } : x,
                   ),
                 )
               }
               style={{ flex: 1 }}
             >
-              {ASSET_TYPES.map((t) => (
+              {MANUAL_ASSET_TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -160,7 +231,7 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                 updatePerson(
                   person,
                   "assets",
-                  assets.map((x) =>
+                  (data?.assets || []).map((x) =>
                     x.id === a.id ? { ...x, value: Number(e.target.value) } : x,
                   ),
                 )
@@ -176,7 +247,7 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                   updatePerson(
                     person,
                     "assets",
-                    assets.filter((x) => x.id !== a.id),
+                    (data?.assets || []).filter((x) => x.id !== a.id),
                   );
               }}
             >
@@ -184,53 +255,61 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
             </button>
           </div>
         ))}
+
+        <button
+          className="btn-ghost"
+          style={{
+            padding: "4px 10px",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            marginTop: 4,
+          }}
+          onClick={addAsset}
+        >
+          <Plus size={11} /> Add manual asset
+        </button>
         <div
           style={{
             textAlign: "right",
             fontSize: 13,
             color: "var(--green)",
             fontWeight: 500,
-            marginTop: 4,
+            marginTop: 8,
           }}
         >
-          Total: {fmtCr(calcNetWorth(data).assets)}
+          Total assets: {fmtCr(nw.assets)}
         </div>
       </div>
 
+      {/* ── LIABILITIES ── */}
       <div>
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
+            fontSize: 12,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".06em",
             marginBottom: 8,
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: ".06em",
-            }}
-          >
-            Liabilities
-          </div>
-          <button
-            className="btn-ghost"
-            style={{
-              padding: "4px 10px",
-              fontSize: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            onClick={addLiability}
-          >
-            <Plus size={11} /> Add
-          </button>
+          Liabilities
         </div>
-        {liabilities.map((l) => (
+
+        {/* Auto from Debts */}
+        {nw.debtLiabilities.map((l, i) => (
+          <div key={`debt-${i}`} style={autoRowStyle}>
+            <span style={{ flex: 2 }}>{l.name}</span>
+            <span style={tagStyle}>from Debts</span>
+            <span style={{ flex: 1, textAlign: "right", color: "var(--red)" }}>
+              {fmt(l.value)}
+            </span>
+          </div>
+        ))}
+
+        {/* Manual liabilities */}
+        {nw.manualLiabilities.map((l) => (
           <div
             key={l.id}
             style={{
@@ -242,11 +321,12 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
           >
             <input
               value={l.name}
+              placeholder="Liability name"
               onChange={(e) =>
                 updatePerson(
                   person,
                   "liabilities",
-                  liabilities.map((x) =>
+                  (data?.liabilities || []).map((x) =>
                     x.id === l.id ? { ...x, name: e.target.value } : x,
                   ),
                 )
@@ -259,14 +339,14 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                 updatePerson(
                   person,
                   "liabilities",
-                  liabilities.map((x) =>
+                  (data?.liabilities || []).map((x) =>
                     x.id === l.id ? { ...x, type: e.target.value } : x,
                   ),
                 )
               }
               style={{ flex: 1 }}
             >
-              {LIABILITY_TYPES.map((t) => (
+              {MANUAL_LIABILITY_TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -277,7 +357,7 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                 updatePerson(
                   person,
                   "liabilities",
-                  liabilities.map((x) =>
+                  (data?.liabilities || []).map((x) =>
                     x.id === l.id ? { ...x, value: Number(e.target.value) } : x,
                   ),
                 )
@@ -293,7 +373,7 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
                   updatePerson(
                     person,
                     "liabilities",
-                    liabilities.filter((x) => x.id !== l.id),
+                    (data?.liabilities || []).filter((x) => x.id !== l.id),
                   );
               }}
             >
@@ -301,17 +381,33 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
             </button>
           </div>
         ))}
-        {liabilities.length > 0 && (
+
+        <button
+          className="btn-ghost"
+          style={{
+            padding: "4px 10px",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            marginTop: 4,
+          }}
+          onClick={addLiability}
+        >
+          <Plus size={11} /> Add manual liability
+        </button>
+
+        {(nw.debtLiabilities.length > 0 || nw.manualLiabilities.length > 0) && (
           <div
             style={{
               textAlign: "right",
               fontSize: 13,
               color: "var(--red)",
               fontWeight: 500,
-              marginTop: 4,
+              marginTop: 8,
             }}
           >
-            Total: {fmtCr(calcNetWorth(data).liabilities)}
+            Total liabilities: {fmtCr(nw.liabilities)}
           </div>
         )}
       </div>

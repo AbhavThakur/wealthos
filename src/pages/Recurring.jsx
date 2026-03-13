@@ -1,9 +1,133 @@
 import { useState } from "react";
 import { fmt, nextId, EXPENSE_CATEGORIES } from "../utils/finance";
-import { Plus, Trash2, Bell, BellOff, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Bell, BellOff, RefreshCw, Link } from "lucide-react";
 import { useConfirm } from "../App";
+import { autoRecurringRules } from "../context/DataContext";
 
 const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
+
+const sourceLabel = {
+  income: "from Budget → Income",
+  expense: "from Budget → Expenses",
+  investment: "from Investments",
+  debt: "from Debts → EMI",
+};
+
+function RuleRow({ r, isAuto, onToggle, onDelete }) {
+  const typeColor =
+    r.type === "income"
+      ? "var(--green)"
+      : r.type === "investment"
+        ? "var(--gold)"
+        : "var(--red)";
+  const typeDim =
+    r.type === "income"
+      ? "var(--green-dim)"
+      : r.type === "investment"
+        ? "var(--gold-dim)"
+        : "var(--red-dim)";
+  const freqLabel =
+    r.frequency === "weekly"
+      ? "Every week"
+      : r.frequency === "yearly"
+        ? "Every year"
+        : `Day ${r.dayOfMonth} every month`;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 0",
+        borderBottom: "1px solid var(--border)",
+        opacity: r.active ? 1 : 0.45,
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: typeDim,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        {isAuto ? (
+          <Link size={13} color={typeColor} />
+        ) : (
+          <RefreshCw size={14} color={typeColor} />
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 500, fontSize: 13 }}>{r.desc}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {freqLabel} · {r.category}
+          {isAuto && (
+            <span
+              style={{
+                marginLeft: 6,
+                fontSize: 10,
+                background: "var(--bg-card2)",
+                padding: "1px 6px",
+                borderRadius: 4,
+              }}
+            >
+              {sourceLabel[r.sourceType] || "auto-synced"}
+            </span>
+          )}
+        </div>
+      </div>
+      <span
+        className={`tag ${r.type === "income" ? "tag-green" : r.type === "investment" ? "tag-gold" : "tag-red"}`}
+      >
+        {r.type}
+      </span>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color:
+            r.amount > 0
+              ? "var(--green)"
+              : r.type === "investment"
+                ? "var(--gold)"
+                : "var(--red)",
+          minWidth: 80,
+          textAlign: "right",
+        }}
+      >
+        {r.amount > 0 ? "+" : ""}
+        {fmt(r.amount)}
+      </div>
+      {!isAuto && (
+        <>
+          <button
+            className="btn-icon"
+            onClick={() => onToggle(r.id)}
+            aria-label={r.active ? `Pause ${r.desc}` : `Resume ${r.desc}`}
+          >
+            {r.active ? (
+              <Bell size={14} color="var(--green)" />
+            ) : (
+              <BellOff size={14} />
+            )}
+          </button>
+          <button
+            className="btn-danger"
+            aria-label={`Delete ${r.desc}`}
+            onClick={() => onDelete(r.id)}
+          >
+            <Trash2 size={13} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function RecurringManager({
   data,
@@ -11,7 +135,8 @@ export function RecurringManager({
   personColor,
   updatePerson,
 }) {
-  const rules = data?.recurringRules || [];
+  const manualRules = (data?.recurringRules || []).filter((r) => !r.auto);
+  const autoRules = autoRecurringRules(data || {});
   const [showAdd, setShowAdd] = useState(false);
   const [n, setN] = useState({
     desc: "",
@@ -30,10 +155,10 @@ export function RecurringManager({
         ? Math.abs(Number(n.amount))
         : -Math.abs(Number(n.amount));
     updatePerson("recurringRules", [
-      ...rules,
+      ...manualRules,
       {
         ...n,
-        id: nextId(rules),
+        id: nextId(manualRules),
         amount: amt,
         dayOfMonth: Number(n.dayOfMonth),
       },
@@ -52,13 +177,16 @@ export function RecurringManager({
   const toggle = (id) =>
     updatePerson(
       "recurringRules",
-      rules.map((r) => (r.id === id ? { ...r, active: !r.active } : r)),
+      manualRules.map((r) => (r.id === id ? { ...r, active: !r.active } : r)),
     );
-  const remove = (id) =>
-    updatePerson(
-      "recurringRules",
-      rules.filter((r) => r.id !== id),
-    );
+  const remove = async (id) => {
+    const rule = manualRules.find((r) => r.id === id);
+    if (await confirm("Delete rule?", `Remove "${rule?.desc}" recurring rule?`))
+      updatePerson(
+        "recurringRules",
+        manualRules.filter((r) => r.id !== id),
+      );
+  };
 
   return (
     <div>
@@ -80,10 +208,33 @@ export function RecurringManager({
           lineHeight: 1.6,
         }}
       >
-        These auto-add to your transaction log each month on the set date.
-        Perfect for salary, SIPs, rent, and subscriptions.
+        Auto-synced from your Budget, Investments (SIPs), and Debts (EMIs). You
+        can also add custom recurring items below.
       </div>
 
+      {/* Auto-synced rules */}
+      {autoRules.length > 0 && (
+        <div className="card section-gap">
+          <div className="card-title" style={{ marginBottom: "0.75rem" }}>
+            🔗 Auto-synced rules
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: "0.75rem",
+            }}
+          >
+            These are derived from your Budget, Investments, and Debts — update
+            them there and they sync here automatically.
+          </div>
+          {autoRules.map((r, i) => (
+            <RuleRow key={`auto-${i}`} r={r} isAuto />
+          ))}
+        </div>
+      )}
+
+      {/* Manual rules */}
       <div className="card section-gap">
         <div
           style={{
@@ -94,7 +245,7 @@ export function RecurringManager({
           }}
         >
           <div className="card-title" style={{ marginBottom: 0 }}>
-            Active rules
+            Custom recurring rules
           </div>
           <button
             className="btn-primary"
@@ -127,7 +278,7 @@ export function RecurringManager({
                   Description
                 </label>
                 <input
-                  placeholder="e.g. Salary credit"
+                  placeholder="e.g. Netflix subscription"
                   value={n.desc}
                   onChange={(e) => setN({ ...n, desc: e.target.value })}
                 />
@@ -145,7 +296,7 @@ export function RecurringManager({
                 </label>
                 <input
                   type="number"
-                  placeholder="e.g. 5000"
+                  placeholder="e.g. 649"
                   value={n.amount}
                   onChange={(e) => setN({ ...n, amount: e.target.value })}
                 />
@@ -221,120 +372,35 @@ export function RecurringManager({
           </div>
         )}
 
-        {rules.length === 0 && !showAdd && (
+        {manualRules.length === 0 && !showAdd && (
           <div
             style={{
               textAlign: "center",
-              padding: "2rem",
+              padding: "1.5rem",
               color: "var(--text-muted)",
               fontSize: 13,
             }}
           >
-            No recurring rules yet. Add your salary, SIPs, and rent.
+            No custom rules yet. Use this for subscriptions or payments not
+            tracked in Budget/Investments/Debts.
           </div>
         )}
 
-        {rules.map((r) => (
-          <div
+        {manualRules.map((r) => (
+          <RuleRow
             key={r.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "10px 0",
-              borderBottom: "1px solid var(--border)",
-              opacity: r.active ? 1 : 0.45,
-            }}
-          >
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background:
-                  r.type === "income"
-                    ? "var(--green-dim)"
-                    : r.type === "investment"
-                      ? "var(--gold-dim)"
-                      : "var(--red-dim)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <RefreshCw
-                size={14}
-                color={
-                  r.type === "income"
-                    ? "var(--green)"
-                    : r.type === "investment"
-                      ? "var(--gold)"
-                      : "var(--red)"
-                }
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 500, fontSize: 13 }}>{r.desc}</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Every month on day {r.dayOfMonth} · {r.category}
-              </div>
-            </div>
-            <span
-              className={`tag ${r.type === "income" ? "tag-green" : r.type === "investment" ? "tag-gold" : "tag-red"}`}
-            >
-              {r.type}
-            </span>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color:
-                  r.amount > 0
-                    ? "var(--green)"
-                    : r.type === "investment"
-                      ? "var(--gold)"
-                      : "var(--red)",
-                minWidth: 80,
-                textAlign: "right",
-              }}
-            >
-              {r.amount > 0 ? "+" : ""}
-              {fmt(r.amount)}
-            </div>
-            <button
-              className="btn-icon"
-              onClick={() => toggle(r.id)}
-              aria-label={r.active ? `Pause ${r.desc}` : `Resume ${r.desc}`}
-            >
-              {r.active ? (
-                <Bell size={14} color="var(--green)" />
-              ) : (
-                <BellOff size={14} />
-              )}
-            </button>
-            <button
-              className="btn-danger"
-              aria-label={`Delete ${r.desc}`}
-              onClick={async () => {
-                if (
-                  await confirm(
-                    "Delete rule?",
-                    `Remove "${r.desc}" recurring rule?`,
-                  )
-                )
-                  remove(r.id);
-              }}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
+            r={r}
+            isAuto={false}
+            onToggle={toggle}
+            onDelete={remove}
+          />
         ))}
       </div>
 
       <div className="tip">
-        💡 Recurring rules auto-fire on the correct date each month when you
-        open the app. No manual entry needed for salary, SIPs, or rent.
+        💡 Auto-synced rules update automatically when you change your Budget,
+        Investments, or Debts. Add custom rules for subscriptions like Netflix,
+        Spotify, gym memberships, etc.
       </div>
       {dialog}
     </div>

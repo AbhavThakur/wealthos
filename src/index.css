@@ -47,11 +47,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border-hover);
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 input,
 select,
@@ -68,8 +75,10 @@ textarea {
   width: 100%;
 }
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.08);
 }
 select option {
   background: var(--bg-card);
@@ -82,6 +91,13 @@ button {
   font-size: 13px;
   transition: all 0.15s;
 }
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
 .btn-primary {
   background: var(--gold);
   color: #0c0c0f;
@@ -90,6 +106,12 @@ button {
 }
 .btn-primary:hover {
   background: var(--gold-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(201, 168, 76, 0.2);
+}
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 .btn-ghost {
   background: transparent;
@@ -125,6 +147,12 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.card:hover {
+  border-color: var(--border-hover);
 }
 .card-title {
   font-family: var(--font-display);
@@ -136,6 +164,15 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem 1.25rem;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.metric-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .metric-label {
   font-size: 11px;
@@ -244,6 +281,28 @@ button {
 }
 .section-gap {
   margin-bottom: 1.25rem;
+}
+
+/* ── Chart tooltip (reusable) ── */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ── Table rows ── */
+.data-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.data-row:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 @media (max-width: 900px) {
   .grid-4 {
@@ -420,7 +479,9 @@ input[type="number"] {
     align-items: center;
     justify-content: space-between;
     padding: 0.6rem 0.75rem;
-    background: var(--bg-card);
+    background: rgba(19, 19, 26, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -431,10 +492,12 @@ input[type="number"] {
     padding: 1rem !important;
     max-width: 100% !important;
   }
-  .grid-2,
   .grid-3,
   .grid-4 {
     grid-template-columns: 1fr !important;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr 1fr !important;
   }
   .card {
     padding: 1rem;
@@ -457,5 +520,141 @@ input[type="number"] {
   }
   .card-title {
     font-size: 15px;
+  }
+  .grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Onboarding ── */
+.onboarding-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: var(--bg);
+}
+.onboarding-progress {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 1.5rem;
+}
+.onboarding-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  transition:
+    background 0.25s,
+    border-color 0.25s;
+}
+.onboarding-dot.active {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+.onboarding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem 2.5rem;
+  width: 100%;
+  max-width: 580px;
+  animation: fadeSlideUp 0.35s ease-out;
+}
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.onboarding-step {
+  text-align: center;
+}
+.onboarding-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+.onboarding-fields {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.onboarding-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.onboarding-label input,
+.onboarding-label select {
+  width: 100%;
+}
+.onboarding-sublabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.onboarding-preview {
+  font-size: 13px;
+  color: var(--gold);
+  padding: 6px 10px;
+  background: var(--gold-dim);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+.onboarding-summary {
+  text-align: left;
+  background: var(--bg-card2);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 auto;
+  max-width: 400px;
+}
+.onboarding-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 5px 0;
+  color: var(--text-secondary);
+}
+.onboarding-summary-row strong {
+  color: var(--text-primary);
+}
+.onboarding-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 600px) {
+  .onboarding-card {
+    padding: 1.5rem 1.25rem;
   }
 }

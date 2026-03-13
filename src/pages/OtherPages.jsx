@@ -1636,15 +1636,24 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   );
 }
 
-export function Settings({ sharedData, updateShared }) {
+export function Settings({ sharedData, updateShared, resetData }) {
   const profile = sharedData?.profile || {};
   const [p, setP] = useState(profile);
   const [saved, setSaved] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const save = () => {
     updateShared("profile", p);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    await resetData();
+    setShowReset(false);
+    setResetting(false);
   };
 
   return (
@@ -1734,6 +1743,68 @@ export function Settings({ sharedData, updateShared }) {
             Stack: React + Vite + Firebase + Recharts
           </div>
         </div>
+      </div>
+
+      {/* Danger zone */}
+      <div
+        className="card section-gap"
+        style={{ border: "1px solid var(--red, #e05c5c)" }}
+      >
+        <div className="card-title" style={{ color: "var(--red, #e05c5c)" }}>
+          Danger Zone
+        </div>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-secondary)",
+            lineHeight: 1.6,
+            marginBottom: 12,
+          }}
+        >
+          This will permanently delete <strong>all</strong> your data — incomes,
+          expenses, investments, goals, debts, transactions, and net worth
+          history. You'll be taken back to the onboarding flow.
+        </p>
+        {!showReset ? (
+          <button
+            onClick={() => setShowReset(true)}
+            style={{
+              background: "transparent",
+              color: "var(--red, #e05c5c)",
+              border: "1px solid var(--red, #e05c5c)",
+              borderRadius: "var(--radius-sm)",
+              padding: "8px 20px",
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Reset All Data
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "var(--red, #e05c5c)" }}>
+              Are you sure?
+            </span>
+            <button
+              onClick={handleReset}
+              disabled={resetting}
+              style={{
+                background: "var(--red, #e05c5c)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                padding: "8px 20px",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {resetting ? "Resetting…" : "Yes, delete everything"}
+            </button>
+            <button className="btn-ghost" onClick={() => setShowReset(false)}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
