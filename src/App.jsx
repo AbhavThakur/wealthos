@@ -8,14 +8,14 @@ import Budget, { HouseholdBudget } from "./pages/Budget";
 import Investments, { HouseholdInvestments } from "./pages/Investments";
 import Goals from "./pages/Goals";
 import NetWorth from "./pages/NetWorth";
-import { RecurringManager, BudgetAlerts } from "./pages/Recurring";
+import { BudgetAlerts } from "./pages/Recurring";
 import {
   Debts,
-  Transactions,
   TaxPlanner,
   Settings,
-  HouseholdTransactions,
   HouseholdDebts,
+  CashFlow,
+  HouseholdCashFlow,
 } from "./pages/OtherPages";
 import Onboarding from "./pages/Onboarding";
 
@@ -26,8 +26,7 @@ const PAGE_TITLES = {
   goals: "Goals",
   networth: "Net Worth",
   debts: "Debts & EMIs",
-  transactions: "Transactions",
-  recurring: "Recurring",
+  cashflow: "Cash Flow",
   alerts: "Budget Alerts",
   tax: "Tax Planner",
   settings: "Settings",
@@ -325,18 +324,16 @@ function AppInner() {
         ) : (
           both(Debts)
         );
-      case "transactions":
+      case "cashflow":
         return isHousehold ? (
-          <HouseholdTransactions
+          <HouseholdCashFlow
             abhav={abhav}
             aanya={aanya}
             updatePerson={updatePerson}
           />
         ) : (
-          both(Transactions)
+          both(CashFlow)
         );
-      case "recurring":
-        return both(RecurringManager);
       case "alerts":
         return both(BudgetAlerts);
       case "tax":

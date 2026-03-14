@@ -100,6 +100,26 @@ export const EXPENSE_CATEGORIES = [
   "Personal Care",
   "Others",
 ];
+
+// Sub-categories keyed by parent category.
+// Expenses with a matching category will show a sub-category picker.
+export const EXPENSE_SUBCATEGORIES = {
+  Food: ["Groceries", "Dining Out", "Coffee / Snacks", "Food Delivery"],
+  Transport: [
+    "Fuel",
+    "Cab / Auto",
+    "Public Transport",
+    "Vehicle EMI",
+    "Parking",
+  ],
+  Housing: ["Rent / EMI", "Maintenance", "Furnishing", "Household Help"],
+  Utilities: ["Electricity", "Internet", "Mobile Recharge", "Gas / Water"],
+  Entertainment: ["OTT / Streaming", "Movies / Events", "Games", "Hobbies"],
+  Healthcare: ["Doctor / Clinic", "Medicines", "Lab Tests", "Gym / Wellness"],
+  Shopping: ["Clothing", "Electronics", "Home & Kitchen", "Accessories"],
+  Education: ["Fees / Tuition", "Books / Courses", "Stationery"],
+  "Personal Care": ["Salon / Grooming", "Skincare / Cosmetics"],
+};
 export const INVESTMENT_TYPES = [
   "Mutual Fund",
   "PPF",
