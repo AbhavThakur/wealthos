@@ -21,7 +21,7 @@ import {
   CAT_COLORS,
   freqToMonthly,
 } from "../utils/finance";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 
 function personStats(data) {
   if (!data)
@@ -401,6 +401,161 @@ function MonthlyCashFlow({ abhav, aanya }) {
   );
 }
 
+// ── Raise nudge ─────────────────────────────────────────────────────────────
+const NUDGE_DAYS = 45; // show nudge for 45 days after a raise
+
+function latestRaise(personData, name, color) {
+  if (!personData?.incomes) return null;
+  let best = null;
+  for (const inc of personData.incomes) {
+    for (const h of inc.salaryHistory || []) {
+      if (!best || h.date > best.date) {
+        best = { ...h, incName: inc.name, name, color };
+      }
+    }
+  }
+  return best;
+}
+
+function RaiseNudge({ abhav, aanya }) {
+  const candidates = [
+    latestRaise(abhav, "Abhav", "var(--abhav)"),
+    latestRaise(aanya, "Aanya", "var(--aanya)"),
+  ].filter(Boolean);
+
+  if (candidates.length === 0) return null;
+
+  const today = new Date();
+  const recent = candidates
+    .filter((r) => {
+      const days = (today - new Date(r.date)) / (1000 * 60 * 60 * 24);
+      return days >= 0 && days <= NUDGE_DAYS && r.to > r.from;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  if (recent.length === 0) return null;
+
+  return (
+    <>
+      {recent.map((r) => {
+        const raise = r.to - r.from;
+        const pct = r.from > 0 ? ((raise / r.from) * 100).toFixed(1) : null;
+        // Suggest putting ~30% of the raise into SIPs
+        const suggestedSIP = Math.round((raise * 0.3) / 500) * 500;
+        return (
+          <div
+            key={`${r.name}-${r.date}`}
+            className="card section-gap"
+            style={{
+              background: `linear-gradient(135deg, rgba(201,168,76,0.08), transparent)`,
+              border: "1px solid var(--gold-border, rgba(201,168,76,0.25))",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+              <div
+                style={{
+                  fontSize: 28,
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  marginTop: 2,
+                }}
+              >
+                🎉
+              </div>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
+                  }}
+                >
+                  <Sparkles size={14} color="var(--gold)" />
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>
+                    <span style={{ color: r.color }}>{r.name}</span> got a
+                    raise!
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      background: "var(--green-dim)",
+                      color: "var(--green)",
+                      padding: "2px 8px",
+                      borderRadius: 6,
+                      fontWeight: 500,
+                    }}
+                  >
+                    +{fmt(raise)}/mo{pct ? ` (+${pct}%)` : ""}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-secondary)",
+                    marginBottom: r.note ? 4 : 0,
+                  }}
+                >
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {r.incName}
+                  </span>
+                  : {fmt(r.from)} →{" "}
+                  <strong style={{ color: r.color }}>{fmt(r.to)}</strong>
+                  <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                    · {r.date}
+                  </span>
+                </div>
+                {r.note && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      fontStyle: "italic",
+                      marginBottom: 8,
+                    }}
+                  >
+                    “{r.note}”
+                  </div>
+                )}
+                {suggestedSIP > 0 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: "10px 14px",
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ color: "var(--text-muted)" }}>
+                      💡 Consider increasing your SIP by
+                    </span>{" "}
+                    <strong style={{ color: "var(--gold)" }}>
+                      {fmt(suggestedSIP)}/month
+                    </strong>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {" "}
+                      — 30% of your raise. You’ll barely notice it and it
+                      compounds to{" "}
+                    </span>
+                    <strong style={{ color: "var(--green)" }}>
+                      {fmtCr(totalCorpus(0, suggestedSIP, 12, 20))}
+                    </strong>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {" "}
+                      in 20 years.
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export default function Dashboard({ abhav, aanya, shared }) {
   const a = personStats(abhav);
   const b = personStats(aanya);
@@ -533,6 +688,9 @@ export default function Dashboard({ abhav, aanya, shared }) {
           </div>
         ))}
       </div>
+
+      {/* Raise nudge — appears for 45 days after a salary increase is logged */}
+      <RaiseNudge abhav={abhav} aanya={aanya} />
 
       {/* Side-by-side personal stats */}
       <div className="grid-2 section-gap">

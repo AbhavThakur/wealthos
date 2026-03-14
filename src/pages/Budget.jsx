@@ -5,7 +5,7 @@ import {
   EXPENSE_CATEGORIES,
   INCOME_TYPES,
 } from "../utils/finance";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { useConfirm } from "../App";
 
 export default function Budget({
@@ -18,6 +18,58 @@ export default function Budget({
   const expenses = data?.expenses || [];
   const [tab, setTab] = useState("overview");
   const { confirm, dialog } = useConfirm();
+  // per-income-id expanded state + pending salary-change form
+  const [expandedHistory, setExpandedHistory] = useState({});
+  const [salaryForm, setSalaryForm] = useState({}); // id → { newAmount, note, date }
+
+  const toggleHistory = (id) =>
+    setExpandedHistory((s) => ({ ...s, [id]: !s[id] }));
+
+  const openSalaryChange = (inc) =>
+    setSalaryForm((s) => ({
+      ...s,
+      [inc.id]: {
+        newAmount: String(inc.amount),
+        note: "",
+        date: new Date().toISOString().slice(0, 10),
+      },
+    }));
+
+  const cancelSalaryChange = (id) =>
+    setSalaryForm((s) => {
+      const n = { ...s };
+      delete n[id];
+      return n;
+    });
+
+  const commitSalaryChange = (inc) => {
+    const f = salaryForm[inc.id];
+    if (!f || !f.newAmount) return;
+    const newAmt = Number(f.newAmount);
+    if (newAmt === inc.amount) {
+      cancelSalaryChange(inc.id);
+      return;
+    }
+    const prevHistory = inc.salaryHistory || [];
+    const updatedInc = {
+      ...inc,
+      amount: newAmt,
+      salaryHistory: [
+        ...prevHistory,
+        {
+          date: f.date || new Date().toISOString().slice(0, 10),
+          from: inc.amount,
+          to: newAmt,
+          note: f.note.trim(),
+        },
+      ],
+    };
+    updatePerson(
+      "incomes",
+      incomes.map((x) => (x.id === inc.id ? updatedInc : x)),
+    );
+    cancelSalaryChange(inc.id);
+  };
 
   const totalIncome = incomes.reduce((s, x) => s + x.amount, 0);
   const totalExpenses = expenses.reduce((s, x) => s + x.amount, 0);
@@ -246,78 +298,357 @@ export default function Budget({
             </button>
           </div>
           {incomes.map((inc) => (
-            <div
-              key={inc.id}
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                padding: "8px 0",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              <input
-                value={inc.name}
-                onChange={(e) =>
-                  updatePerson(
-                    "incomes",
-                    incomes.map((x) =>
-                      x.id === inc.id ? { ...x, name: e.target.value } : x,
-                    ),
-                  )
-                }
-                style={{ flex: 3 }}
-              />
-              <select
-                value={inc.type}
-                onChange={(e) =>
-                  updatePerson(
-                    "incomes",
-                    incomes.map((x) =>
-                      x.id === inc.id ? { ...x, type: e.target.value } : x,
-                    ),
-                  )
-                }
-                style={{ flex: 1.5 }}
-              >
-                {INCOME_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-              <input
-                type="number"
-                value={inc.amount}
-                onChange={(e) =>
-                  updatePerson(
-                    "incomes",
-                    incomes.map((x) =>
-                      x.id === inc.id
-                        ? { ...x, amount: Number(e.target.value) }
-                        : x,
-                    ),
-                  )
-                }
-                style={{ flex: 1 }}
-                min="0"
-              />
-              <button
-                className="btn-danger"
-                aria-label={`Delete ${inc.name}`}
-                onClick={async () => {
-                  if (
-                    await confirm(
-                      "Delete income?",
-                      `Remove "${inc.name}" from your income sources?`,
-                    )
-                  )
-                    updatePerson(
-                      "incomes",
-                      incomes.filter((x) => x.id !== inc.id),
-                    );
+            <div key={inc.id} style={{ marginBottom: 4 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: "1px solid var(--border)",
                 }}
               >
-                <Trash2 size={13} />
-              </button>
+                <input
+                  value={inc.name}
+                  onChange={(e) =>
+                    updatePerson(
+                      "incomes",
+                      incomes.map((x) =>
+                        x.id === inc.id ? { ...x, name: e.target.value } : x,
+                      ),
+                    )
+                  }
+                  style={{ flex: 3 }}
+                />
+                <select
+                  value={inc.type}
+                  onChange={(e) =>
+                    updatePerson(
+                      "incomes",
+                      incomes.map((x) =>
+                        x.id === inc.id ? { ...x, type: e.target.value } : x,
+                      ),
+                    )
+                  }
+                  style={{ flex: 1.5 }}
+                >
+                  {INCOME_TYPES.map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  value={inc.amount}
+                  onChange={(e) =>
+                    updatePerson(
+                      "incomes",
+                      incomes.map((x) =>
+                        x.id === inc.id
+                          ? { ...x, amount: Number(e.target.value) }
+                          : x,
+                      ),
+                    )
+                  }
+                  style={{ flex: 1 }}
+                  min="0"
+                />
+                <button
+                  className="btn-danger"
+                  aria-label={`Delete ${inc.name}`}
+                  onClick={async () => {
+                    if (
+                      await confirm(
+                        "Delete income?",
+                        `Remove "${inc.name}" from your income sources?`,
+                      )
+                    )
+                      updatePerson(
+                        "incomes",
+                        incomes.filter((x) => x.id !== inc.id),
+                      );
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+
+              {/* Salary change form */}
+              {salaryForm[inc.id] ? (
+                <div
+                  style={{
+                    background: "var(--bg-card2)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "12px 14px",
+                    marginTop: 4,
+                    marginBottom: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      marginBottom: 10,
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    Log salary change
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1.5fr",
+                      gap: 8,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div>
+                      <label
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 3,
+                        }}
+                      >
+                        New amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={salaryForm[inc.id].newAmount}
+                        onChange={(e) =>
+                          setSalaryForm((s) => ({
+                            ...s,
+                            [inc.id]: {
+                              ...s[inc.id],
+                              newAmount: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 3,
+                        }}
+                      >
+                        Effective date
+                      </label>
+                      <input
+                        type="date"
+                        value={salaryForm[inc.id].date}
+                        onChange={(e) =>
+                          setSalaryForm((s) => ({
+                            ...s,
+                            [inc.id]: { ...s[inc.id], date: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 3,
+                        }}
+                      >
+                        Reason (optional)
+                      </label>
+                      <input
+                        placeholder="e.g. Promotion, Job change"
+                        value={salaryForm[inc.id].note}
+                        onChange={(e) =>
+                          setSalaryForm((s) => ({
+                            ...s,
+                            [inc.id]: { ...s[inc.id], note: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  {salaryForm[inc.id].newAmount &&
+                    Number(salaryForm[inc.id].newAmount) !== inc.amount && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {fmt(inc.amount)} →{" "}
+                        <strong
+                          style={{
+                            color:
+                              Number(salaryForm[inc.id].newAmount) > inc.amount
+                                ? "var(--green)"
+                                : "var(--red)",
+                          }}
+                        >
+                          {fmt(Number(salaryForm[inc.id].newAmount))}
+                        </strong>
+                        {inc.amount > 0 && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              color:
+                                Number(salaryForm[inc.id].newAmount) >
+                                inc.amount
+                                  ? "var(--green)"
+                                  : "var(--red)",
+                            }}
+                          >
+                            (
+                            {((Number(salaryForm[inc.id].newAmount) -
+                              inc.amount) /
+                              inc.amount) *
+                              100 >
+                            0
+                              ? "+"
+                              : ""}
+                            {(
+                              ((Number(salaryForm[inc.id].newAmount) -
+                                inc.amount) /
+                                inc.amount) *
+                              100
+                            ).toFixed(1)}
+                            %)
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="btn-primary"
+                      style={{ fontSize: 12, padding: "4px 12px" }}
+                      onClick={() => commitSalaryChange(inc)}
+                    >
+                      Save change
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => cancelSalaryChange(inc.id)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <button
+                    className="btn-ghost"
+                    style={{ fontSize: 11, padding: "3px 10px" }}
+                    onClick={() => openSalaryChange(inc)}
+                  >
+                    ↑ Log salary change
+                  </button>
+                  {(inc.salaryHistory?.length ?? 0) > 0 && (
+                    <button
+                      className="btn-ghost"
+                      style={{
+                        fontSize: 11,
+                        padding: "3px 10px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      onClick={() => toggleHistory(inc.id)}
+                    >
+                      History ({inc.salaryHistory.length})
+                      {expandedHistory[inc.id] ? (
+                        <ChevronUp size={11} />
+                      ) : (
+                        <ChevronDown size={11} />
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* History timeline */}
+              {expandedHistory[inc.id] &&
+                (inc.salaryHistory?.length ?? 0) > 0 && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      paddingLeft: 12,
+                      borderLeft: `2px solid ${personColor}`,
+                    }}
+                  >
+                    {[...inc.salaryHistory].reverse().map((h, i) => {
+                      const pct =
+                        h.from > 0
+                          ? (((h.to - h.from) / h.from) * 100).toFixed(1)
+                          : null;
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            padding: "6px 0",
+                            borderBottom: "1px solid var(--border)",
+                            fontSize: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "baseline",
+                            }}
+                          >
+                            <span style={{ color: "var(--text-muted)" }}>
+                              {h.date}
+                            </span>
+                            <span>
+                              {fmt(h.from)} →{" "}
+                              <strong
+                                style={{
+                                  color:
+                                    h.to >= h.from
+                                      ? "var(--green)"
+                                      : "var(--red)",
+                                }}
+                              >
+                                {fmt(h.to)}
+                              </strong>
+                              {pct !== null && (
+                                <span
+                                  style={{
+                                    marginLeft: 6,
+                                    color:
+                                      h.to >= h.from
+                                        ? "var(--green)"
+                                        : "var(--red)",
+                                  }}
+                                >
+                                  ({h.to >= h.from ? "+" : ""}
+                                  {pct}%)
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {h.note && (
+                            <div
+                              style={{
+                                color: "var(--text-muted)",
+                                marginTop: 2,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              {h.note}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
             </div>
           ))}
           <div style={{ textAlign: "right", paddingTop: 12, fontWeight: 600 }}>

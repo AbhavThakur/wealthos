@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { createPortal } from "react-dom";
 import {
   AreaChart,
@@ -27,6 +27,34 @@ import {
 } from "../utils/finance";
 import { Plus, Trash2, Edit3, Check, X, Info, Download } from "lucide-react";
 import { useConfirm } from "../App";
+
+// ─── mfapi.in helpers ────────────────────────────────────────────────────────
+async function mfSearch(query) {
+  if (!query || query.length < 2) return [];
+  try {
+    const res = await fetch(
+      `https://api.mfapi.in/mf/search?q=${encodeURIComponent(query)}`,
+    );
+    return res.ok ? res.json() : [];
+  } catch {
+    return [];
+  }
+}
+
+async function mfLatestNAV(schemeCode) {
+  try {
+    const res = await fetch(
+      `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}/latest`,
+    );
+    const json = await res.json();
+    if (json.status === "SUCCESS" && json.data?.[0]) {
+      return { nav: parseFloat(json.data[0].nav), date: json.data[0].date };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Reusable info modal — uses portal so CSS transforms on parents don't clip the overlay
 function InfoModal({ title, children }) {
@@ -206,6 +234,8 @@ const SIPCard = memo(function SIPCard({
   const [form, setForm] = useState(inv);
   const [projYears, setProjYears] = useState(20);
   const { confirm, dialog } = useConfirm();
+  const [navLoading, setNavLoading] = useState(false);
+  const [navMsg, setNavMsg] = useState("");
 
   const isFDInv = isFD(inv.type);
   const isOneTimeInv = inv.frequency === "onetime";
@@ -659,6 +689,72 @@ const SIPCard = memo(function SIPCard({
                 </div>
               )}
           </div>
+          {form.type === "Mutual Fund" && (
+            <div
+              style={{
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 8,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  Scheme code (mfapi.in)
+                </label>
+                <input
+                  placeholder="e.g. 125497 — search at mfapi.in"
+                  value={form.schemeCode || ""}
+                  onChange={(e) => {
+                    setForm({ ...form, schemeCode: e.target.value });
+                    setNavMsg("");
+                  }}
+                />
+              </div>
+              <button
+                className="btn-ghost"
+                style={{ whiteSpace: "nowrap", opacity: navLoading ? 0.6 : 1 }}
+                disabled={navLoading || !form.schemeCode}
+                onClick={async () => {
+                  if (!form.schemeCode) return;
+                  setNavLoading(true);
+                  setNavMsg("");
+                  const result = await mfLatestNAV(form.schemeCode);
+                  setNavLoading(false);
+                  if (result) {
+                    setForm((f) => ({ ...f, existingCorpus: result.nav }));
+                    setNavMsg(
+                      `\u2713 NAV \u20b9${result.nav} as of ${result.date}`,
+                    );
+                  } else {
+                    setNavMsg("Not found — check scheme code");
+                  }
+                }}
+              >
+                {navLoading ? "Fetching\u2026" : "Fetch live NAV"}
+              </button>
+            </div>
+          )}
+          {navMsg && (
+            <div
+              style={{
+                fontSize: 12,
+                marginBottom: 10,
+                color: navMsg.startsWith("\u2713")
+                  ? "var(--green)"
+                  : "var(--red, #e55)",
+              }}
+            >
+              {navMsg}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn-primary"
@@ -2447,7 +2543,30 @@ export default function Investments({
     deductionDay: "",
     totalInvested: "",
     capCategory: "",
+    schemeCode: "",
   });
+  const [mfResults, setMfResults] = useState([]);
+  const [mfSearching, setMfSearching] = useState(false);
+  const [showMfDropdown, setShowMfDropdown] = useState(false);
+  const [navFetching, setNavFetching] = useState(false);
+  const [navFetchMsg, setNavFetchMsg] = useState("");
+  useEffect(() => {
+    if (
+      newInv.type !== "Mutual Fund" ||
+      !newInv.name ||
+      newInv.name.length < 2
+    ) {
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setMfSearching(true);
+      const results = await mfSearch(newInv.name);
+      setMfResults(results.slice(0, 8));
+      setMfSearching(false);
+      if (results.length > 0) setShowMfDropdown(true);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [newInv.name, newInv.type]);
 
   const add = () => {
     if (!newInv.name || !newInv.amount) return;
@@ -2479,7 +2598,10 @@ export default function Investments({
       deductionDay: "",
       totalInvested: "",
       capCategory: "",
+      schemeCode: "",
     });
+    setMfResults([]);
+    setNavFetchMsg("");
     setShowAdd(false);
   };
 
@@ -3164,7 +3286,7 @@ export default function Investments({
         <div className="card section-gap">
           <div className="card-title">Add Investment</div>
           <div className="grid-2" style={{ marginBottom: 12 }}>
-            <div>
+            <div style={{ position: "relative" }}>
               <label
                 style={{
                   fontSize: 12,
@@ -3173,13 +3295,89 @@ export default function Investments({
                   marginBottom: 4,
                 }}
               >
-                Name
+                {newInv.type === "Mutual Fund" ? "Search fund name" : "Name"}
               </label>
               <input
-                placeholder="e.g. Mirae Asset ELSS"
+                placeholder={
+                  newInv.type === "Mutual Fund"
+                    ? "Type to search e.g. Mirae ELSS\u2026"
+                    : "e.g. HDFC PPF"
+                }
                 value={newInv.name}
-                onChange={(e) => setNewInv({ ...newInv, name: e.target.value })}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNewInv({ ...newInv, name: v, schemeCode: "" });
+                  if (v.length < 2) {
+                    setMfResults([]);
+                    setShowMfDropdown(false);
+                  } else {
+                    setShowMfDropdown(true);
+                  }
+                }}
+                onFocus={() => mfResults.length > 0 && setShowMfDropdown(true)}
+                onBlur={() => setTimeout(() => setShowMfDropdown(false), 150)}
               />
+              {newInv.type === "Mutual Fund" && mfSearching && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    marginTop: 3,
+                  }}
+                >
+                  Searching\u2026
+                </div>
+              )}
+              {showMfDropdown && mfResults.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 2px)",
+                    left: 0,
+                    right: 0,
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    zIndex: 200,
+                    maxHeight: 220,
+                    overflowY: "auto",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                  }}
+                >
+                  {mfResults.map((r) => (
+                    <div
+                      key={r.schemeCode}
+                      style={{
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                      onMouseDown={() => {
+                        setNewInv({
+                          ...newInv,
+                          name: r.schemeName,
+                          schemeCode: String(r.schemeCode),
+                        });
+                        setShowMfDropdown(false);
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, lineHeight: 1.3 }}>
+                        {r.schemeName}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          marginTop: 2,
+                        }}
+                      >
+                        #{r.schemeCode}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label
@@ -3595,6 +3793,58 @@ export default function Investments({
                     </strong>
                   </span>
                 </>
+              )}
+            </div>
+          )}
+          {newInv.type === "Mutual Fund" && newInv.schemeCode && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Scheme #{newInv.schemeCode}
+              </span>
+              <button
+                className="btn-ghost"
+                style={{
+                  fontSize: 12,
+                  padding: "3px 10px",
+                  opacity: navFetching ? 0.6 : 1,
+                }}
+                disabled={navFetching}
+                onClick={async () => {
+                  setNavFetching(true);
+                  setNavFetchMsg("");
+                  const result = await mfLatestNAV(newInv.schemeCode);
+                  setNavFetching(false);
+                  if (result) {
+                    setNewInv((n) => ({ ...n, existingCorpus: result.nav }));
+                    setNavFetchMsg(
+                      `\u2713 NAV \u20b9${result.nav} as of ${result.date}`,
+                    );
+                  } else {
+                    setNavFetchMsg("Scheme not found");
+                  }
+                }}
+              >
+                {navFetching ? "Fetching\u2026" : "\u21bb Fetch live NAV"}
+              </button>
+              {navFetchMsg && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: navFetchMsg.startsWith("\u2713")
+                      ? "var(--green)"
+                      : "var(--red, #e55)",
+                  }}
+                >
+                  {navFetchMsg}
+                </span>
               )}
             </div>
           )}
