@@ -7,7 +7,7 @@ import {
 } from "react";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { autoCorpus, lumpCorpus, freqToMonthly } from "../utils/finance";
+import { lumpCorpus, freqToMonthly } from "../utils/finance";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext(null);
@@ -52,7 +52,7 @@ function autoRecurringRules(data) {
       amount: inc.amount,
       type: "income",
       category: "Salary",
-      dayOfMonth: 28,
+      dayOfMonth: 1,
       active: true,
       auto: true,
       sourceType: "income",
@@ -223,6 +223,27 @@ export function DataProvider({ children }) {
     [abhav, aanya, save],
   );
 
+  const batchUpdatePerson = useCallback(
+    (person, fields) => {
+      const current = person === "abhav" ? abhav : aanya;
+      let updated = { ...current, ...fields };
+      const sourceKeys = ["incomes", "expenses", "investments", "debts"];
+      if (sourceKeys.some((k) => k in fields)) {
+        const now = new Date();
+        const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const withoutAutoThisMonth = (updated.transactions || []).filter(
+          (t) => !(t.auto && t.date?.startsWith(ym)),
+        );
+        updated = { ...updated, transactions: withoutAutoThisMonth };
+        updated = { ...updated, transactions: applyRecurring(updated) };
+      }
+      if (person === "abhav") setAbhav(updated);
+      else setAanya(updated);
+      save(person, updated);
+    },
+    [abhav, aanya, save],
+  );
+
   const updateShared = useCallback(
     (key, value) => {
       const updated = { ...shared, [key]: value };
@@ -270,16 +291,20 @@ export function DataProvider({ children }) {
           const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
           return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
         }
-        return (
-          s +
-          autoCorpus(
-            inv.existingCorpus || 0,
-            inv.amount || 0,
-            inv.returnPct || 0,
-            inv.startDate,
-            inv.frequency,
-          )
-        );
+        if (inv.frequency === "onetime") {
+          const start = inv.startDate ? new Date(inv.startDate) : now;
+          const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+          return (
+            s +
+            lumpCorpus(
+              (inv.existingCorpus || 0) + (inv.amount || 0),
+              inv.returnPct || 0,
+              elapsed,
+            )
+          );
+        }
+        // Regular SIP: existingCorpus is the actual current portfolio value
+        return s + (inv.existingCorpus || 0);
       }, 0);
       // Manual assets (savings account, property, etc.)
       const manualAssets = (data.assets || []).reduce(
@@ -339,6 +364,7 @@ export function DataProvider({ children }) {
         loading,
         needsOnboarding,
         updatePerson,
+        batchUpdatePerson,
         updateShared,
         takeSnapshot,
         resetData,

@@ -9,7 +9,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { fmtCr, fmt, nextId, autoCorpus, lumpCorpus } from "../utils/finance";
+import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
 import { Camera, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../App";
 
@@ -21,6 +21,23 @@ const MANUAL_ASSET_TYPES = [
   "other",
 ];
 const MANUAL_LIABILITY_TYPES = ["credit_card", "mortgage", "other"];
+
+const NW_BANK_LIST = [
+  "HDFC Bank",
+  "ICICI Bank",
+  "Axis Bank",
+  "Kotak Mahindra Bank",
+  "State Bank of India",
+  "Bank of Baroda",
+  "Punjab National Bank",
+  "IDFC First Bank",
+  "IndusInd Bank",
+  "Yes Bank",
+  "AU Small Finance Bank",
+  "Federal Bank",
+  "Canara Bank",
+  "Union Bank of India",
+];
 
 /* ---------- auto-derive from investments & debts sections ---------- */
 function autoAssets(data) {
@@ -43,13 +60,8 @@ function autoAssets(data) {
         elapsed,
       );
     } else {
-      value = autoCorpus(
-        inv.existingCorpus || 0,
-        inv.amount || 0,
-        inv.returnPct || 0,
-        inv.startDate,
-        inv.frequency,
-      );
+      // Regular SIP: existingCorpus IS the current portfolio value (from user's investment app)
+      value = inv.existingCorpus || 0;
     }
     return {
       name: inv.name,
@@ -74,10 +86,16 @@ function calcNetWorth(data) {
   const debtLiabilities = autoLiabilities(data);
   const manualAssets = (data?.assets || []).filter((a) => !a.auto);
   const manualLiabilities = (data?.liabilities || []).filter((l) => !l.auto);
+  const savingsAccounts = data?.savingsAccounts || [];
+  const savingsTotal = savingsAccounts.reduce(
+    (s, a) => s + (a.balance || 0),
+    0,
+  );
 
   const totalAssets =
     invAssets.reduce((s, a) => s + a.value, 0) +
-    manualAssets.reduce((s, a) => s + (a.value || 0), 0);
+    manualAssets.reduce((s, a) => s + (a.value || 0), 0) +
+    savingsTotal;
   const totalLiabilities =
     debtLiabilities.reduce((s, l) => s + l.value, 0) +
     manualLiabilities.reduce((s, l) => s + (l.value || 0), 0);
@@ -90,6 +108,8 @@ function calcNetWorth(data) {
     debtLiabilities,
     manualAssets,
     manualLiabilities,
+    savingsAccounts,
+    savingsTotal,
   };
 }
 
@@ -181,6 +201,204 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
             </span>
           </div>
         ))}
+
+        {/* ── Savings & Bank Accounts ── */}
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".05em",
+            marginTop: nw.invAssets.length > 0 ? 12 : 0,
+            marginBottom: 6,
+          }}
+        >
+          Savings &amp; Bank Accounts
+        </div>
+        {nw.savingsAccounts.map((acc) => {
+          const rate = acc.interestRate ?? 3.5;
+          const annualInterest = Math.round(((acc.balance || 0) * rate) / 100);
+          return (
+            <div
+              key={acc.id}
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <input
+                value={acc.bankName || ""}
+                placeholder="Bank name"
+                list={`nw-bank-list-${person}`}
+                onChange={(e) =>
+                  updatePerson(
+                    person,
+                    "savingsAccounts",
+                    (data?.savingsAccounts || []).map((x) =>
+                      x.id === acc.id ? { ...x, bankName: e.target.value } : x,
+                    ),
+                  )
+                }
+                style={{ flex: 2, minWidth: 0 }}
+              />
+              <datalist id={`nw-bank-list-${person}`}>
+                {NW_BANK_LIST.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+              <input
+                type="number"
+                value={acc.balance || ""}
+                placeholder="Balance ₹"
+                min="0"
+                onChange={(e) =>
+                  updatePerson(
+                    person,
+                    "savingsAccounts",
+                    (data?.savingsAccounts || []).map((x) =>
+                      x.id === acc.id
+                        ? { ...x, balance: Number(e.target.value) }
+                        : x,
+                    ),
+                  )
+                }
+                style={{ flex: 1.5, minWidth: 0 }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  flexShrink: 0,
+                }}
+              >
+                <input
+                  type="number"
+                  value={rate}
+                  step="0.1"
+                  min="0"
+                  max="15"
+                  title="Interest rate % p.a."
+                  onChange={(e) =>
+                    updatePerson(
+                      person,
+                      "savingsAccounts",
+                      (data?.savingsAccounts || []).map((x) =>
+                        x.id === acc.id
+                          ? { ...x, interestRate: Number(e.target.value) }
+                          : x,
+                      ),
+                    )
+                  }
+                  style={{ width: 52 }}
+                />
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  %
+                </span>
+              </div>
+              {acc.balance > 0 && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--green)",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    minWidth: 64,
+                    textAlign: "right",
+                  }}
+                  title={`₹${annualInterest.toLocaleString("en-IN")} interest per year at ${rate}%`}
+                >
+                  {fmt(acc.balance)}
+                </span>
+              )}
+              <button
+                className="btn-danger"
+                aria-label={`Remove ${acc.bankName || "account"}`}
+                onClick={async () => {
+                  if (
+                    await confirm(
+                      "Remove account?",
+                      `Remove "${acc.bankName || "this account"}"?`,
+                    )
+                  )
+                    updatePerson(
+                      person,
+                      "savingsAccounts",
+                      (data?.savingsAccounts || []).filter(
+                        (x) => x.id !== acc.id,
+                      ),
+                    );
+                }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          );
+        })}
+        {nw.savingsTotal > 0 &&
+          (() => {
+            const avgRate =
+              nw.savingsAccounts.reduce(
+                (s, a) => s + (a.interestRate ?? 3.5),
+                0,
+              ) / nw.savingsAccounts.length;
+            const annualEarned = Math.round((nw.savingsTotal * avgRate) / 100);
+            const oppLoss = Math.round(
+              (nw.savingsTotal * (12 - avgRate)) / 100,
+            );
+            return (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  background: "var(--bg-card2)",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  marginBottom: 6,
+                  lineHeight: 1.6,
+                }}
+              >
+                Earning ~{fmt(annualEarned)}/yr at {avgRate.toFixed(1)}% avg
+                {oppLoss > 0 && (
+                  <span style={{ color: "#fbbf24", marginLeft: 6 }}>
+                    · {fmt(oppLoss)}/yr opportunity cost vs 12% equity
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+        <button
+          className="btn-ghost"
+          style={{
+            padding: "4px 10px",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            marginBottom: 8,
+          }}
+          onClick={() =>
+            updatePerson(person, "savingsAccounts", [
+              ...(data?.savingsAccounts || []),
+              {
+                id: nextId(data?.savingsAccounts || []),
+                bankName: "",
+                balance: 0,
+                interestRate: 3.5,
+              },
+            ])
+          }
+        >
+          <Plus size={11} /> Add savings account
+        </button>
 
         {/* Manual assets */}
         {nw.manualAssets.map((a) => (

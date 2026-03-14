@@ -22,7 +22,7 @@ const QUICK_EXPENSES = [
 ];
 
 export default function Onboarding() {
-  const { updatePerson, updateShared } = useData();
+  const { updateShared, batchUpdatePerson } = useData();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -119,14 +119,18 @@ export default function Onboarding() {
           ]
         : [];
 
-    // Save all
-    updatePerson("abhav", "incomes", abhavIncomes);
-    updatePerson("abhav", "expenses", abhavExp);
-    updatePerson("abhav", "assets", abhavAssets);
+    // Save all — use batchUpdatePerson so all fields go in one write per person
+    batchUpdatePerson("abhav", {
+      incomes: abhavIncomes,
+      expenses: abhavExp,
+      assets: abhavAssets,
+    });
 
-    updatePerson("aanya", "incomes", aanyaIncomes);
-    updatePerson("aanya", "expenses", aanyaExp);
-    updatePerson("aanya", "assets", aanyaAssets);
+    batchUpdatePerson("aanya", {
+      incomes: aanyaIncomes,
+      expenses: aanyaExp,
+      assets: aanyaAssets,
+    });
 
     updateShared("profile", {
       householdName: householdName.trim(),

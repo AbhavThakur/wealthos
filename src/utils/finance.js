@@ -108,6 +108,7 @@ export const INVESTMENT_TYPES = [
   "Stocks",
   "Gold",
   "EPF",
+  "ULIP",
   "Other",
 ];
 export const INCOME_TYPES = [
