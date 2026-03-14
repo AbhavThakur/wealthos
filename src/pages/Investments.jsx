@@ -24,6 +24,7 @@ import {
   lumpCorpus,
   freqToMonthly,
   sipCorpus,
+  weekdayCountInMonth,
 } from "../utils/finance";
 import { Plus, Trash2, Edit3, Check, X, Info, Download } from "lucide-react";
 import { useConfirm } from "../App";
@@ -68,9 +69,10 @@ function InfoModal({ title, children }) {
             background: "rgba(0,0,0,0.72)",
             zIndex: 99999,
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-start",
             justifyContent: "center",
-            padding: 24,
+            padding: "max(24px, 5vh) 24px 24px",
+            overflowY: "auto",
           }}
           onClick={() => setOpen(false)}
         >
@@ -84,6 +86,8 @@ function InfoModal({ title, children }) {
               width: "100%",
               boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
               color: "#eeeae4",
+              maxHeight: "85dvh",
+              overflowY: "auto",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -236,11 +240,54 @@ const SIPCard = memo(function SIPCard({
   const { confirm, dialog } = useConfirm();
   const [navLoading, setNavLoading] = useState(false);
   const [navMsg, setNavMsg] = useState("");
+  const [showLogValue, setShowLogValue] = useState(false);
+  const [logEntry, setLogEntry] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    value: "",
+    note: "",
+  });
+  const [showHistory, setShowHistory] = useState(false);
+  const [chartView, setChartView] = useState("projection"); // "projection" | "breakdown" | "actual"
+
+  const corpusHistory = inv.corpusHistory || [];
+  const sortedHistory = [...corpusHistory].sort(
+    (a, b) => new Date(b.date) - new Date(a.date),
+  );
+  const historyChartData = [...corpusHistory]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map((h) => ({ date: h.date.slice(0, 7), value: h.value }));
+
+  const logValue = () => {
+    if (!logEntry.value) return;
+    const newEntry = {
+      date: logEntry.date,
+      value: Number(logEntry.value),
+      note: logEntry.note,
+    };
+    onUpdate({
+      ...inv,
+      corpusHistory: [...corpusHistory, newEntry],
+      existingCorpus: Number(logEntry.value),
+    });
+    setLogEntry({
+      date: new Date().toISOString().slice(0, 10),
+      value: "",
+      note: "",
+    });
+    setShowLogValue(false);
+  };
 
   const isFDInv = isFD(inv.type);
   const isOneTimeInv = inv.frequency === "onetime";
   const effMonthly =
     isFDInv || isOneTimeInv ? 0 : freqToMonthly(inv.amount, inv.frequency);
+  // For weekly SIPs: exact count of the deduction weekday in the current month
+  const thisMonthCount =
+    inv.frequency === "weekly" && inv.deductionDay
+      ? weekdayCountInMonth(inv.deductionDay)
+      : null;
+  const thisMonthAmount =
+    thisMonthCount !== null ? inv.amount * thisMonthCount : null;
 
   // FD/onetime: compound growth on lump-sum principal; others: SIP-based auto corpus
   const fdYrsElapsed =
@@ -379,6 +426,24 @@ const SIPCard = memo(function SIPCard({
     return pts;
   })();
 
+  // Breakdown chart: invested vs gains stacked per year
+  const breakdownData =
+    !isFDInv && !isOneTimeInv
+      ? Array.from({ length: projYears }, (_, i) => {
+          const y = i + 1;
+          const totalInv0 = Number(inv.totalInvested) || 0;
+          const totalInvY = Math.round(totalInv0 + effMonthly * 12 * y);
+          const corpusY = Math.round(
+            totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, y),
+          );
+          return {
+            year: `Y${y}`,
+            invested: totalInvY,
+            gains: Math.max(0, corpusY - totalInvY),
+          };
+        })
+      : [];
+
   const save = useCallback(() => {
     onUpdate({
       ...form,
@@ -483,6 +548,20 @@ const SIPCard = memo(function SIPCard({
                     ))}
                   </datalist>
                 )}
+                {["amount", "existingCorpus", "totalInvested"].includes(
+                  f.key,
+                ) &&
+                  Number(form[f.key]) > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 3,
+                      }}
+                    >
+                      = {fmt(Number(form[f.key]))}
+                    </div>
+                  )}
               </div>
             ))}
             {hasInvestmentApp(form.type) && (
@@ -980,7 +1059,11 @@ const SIPCard = memo(function SIPCard({
                   color: isFDInv || isOneTimeInv ? "var(--gold)" : undefined,
                 }}
               >
-                {isFDInv || isOneTimeInv ? fmtCr(currentVal) : fmt(effMonthly)}
+                {isFDInv || isOneTimeInv
+                  ? fmtCr(currentVal)
+                  : thisMonthAmount !== null
+                    ? fmt(thisMonthAmount)
+                    : fmt(effMonthly)}
               </div>
               <div className="metric-sub">
                 {isFDInv
@@ -989,7 +1072,9 @@ const SIPCard = memo(function SIPCard({
                     ? inv.existingCorpus > 0
                       ? "From your app"
                       : "Projected"
-                    : inv.frequency}
+                    : thisMonthCount !== null
+                      ? `${thisMonthCount} ${inv.deductionDay}s this month`
+                      : inv.frequency}
               </div>
             </div>
             {/* ── Interactive projection card ── */}
@@ -1205,83 +1290,663 @@ const SIPCard = memo(function SIPCard({
             </div>
           )}
 
-          {/* Growth chart */}
-          <div style={{ height: 160 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={chartData}
-                margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
+          {/* ── Value history ── */}
+          {!isFDInv && !isOneTimeInv && (
+            <div style={{ marginBottom: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: showLogValue ? "0.75rem" : 0,
+                }}
               >
-                <defs>
-                  <linearGradient
-                    id={`grad-${inv.id}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor={personColor}
-                      stopOpacity={0.25}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor={personColor}
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="year"
-                  tick={{ fontSize: 10, fill: "#55535e" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval={3}
-                />
-                <YAxis hide />
-                <Tooltip
-                  formatter={fmtCr}
-                  contentStyle={{
-                    background: "#13131a",
-                    border: "1px solid rgba(255,255,255,0.07)",
-                    borderRadius: 8,
+                <button
+                  className="btn-ghost"
+                  style={{
                     fontSize: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
                   }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="corpus"
-                  name={
-                    !isFDInv && !isOneTimeInv ? "Your trajectory" : "Corpus"
-                  }
-                  stroke={personColor}
-                  strokeWidth={2}
-                  fill={`url(#grad-${inv.id})`}
-                />
-                {!isFDInv && !isOneTimeInv ? (
+                  onClick={() => {
+                    setShowLogValue((s) => !s);
+                    setShowHistory(false);
+                  }}
+                >
+                  <span style={{ fontSize: 14 }}>+</span> Log value
+                </button>
+                {corpusHistory.length > 0 && (
+                  <button
+                    className="btn-ghost"
+                    style={{
+                      fontSize: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      color: "var(--text-muted)",
+                    }}
+                    onClick={() => {
+                      setShowHistory((s) => !s);
+                      setShowLogValue(false);
+                    }}
+                  >
+                    📈 {showHistory ? "Hide" : "Show"} history (
+                    {corpusHistory.length})
+                  </button>
+                )}
+              </div>
+
+              {showLogValue && (
+                <div
+                  style={{
+                    background: "var(--bg-card2)",
+                    borderRadius: "var(--radius)",
+                    padding: "0.875rem",
+                    marginTop: "0.5rem",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: "0.625rem",
+                    }}
+                  >
+                    Log current portfolio value — this updates your corpus and
+                    saves the entry to history.
+                  </div>
+                  <div className="grid-2" style={{ marginBottom: 10 }}>
+                    <div>
+                      <label
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 4,
+                        }}
+                      >
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={logEntry.date}
+                        onChange={(e) =>
+                          setLogEntry({ ...logEntry, date: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 4,
+                        }}
+                      >
+                        Current value (₹)
+                      </label>
+                      <input
+                        type="number"
+                        placeholder={`Current: ${fmt(inv.existingCorpus || 0)}`}
+                        value={logEntry.value}
+                        onChange={(e) =>
+                          setLogEntry({ ...logEntry, value: e.target.value })
+                        }
+                        autoFocus
+                      />
+                    </div>
+                    <div style={{ gridColumn: "span 2" }}>
+                      <label
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-muted)",
+                          display: "block",
+                          marginBottom: 4,
+                        }}
+                      >
+                        Note (optional)
+                      </label>
+                      <input
+                        placeholder="e.g. From Coin app, post-market close"
+                        value={logEntry.note}
+                        onChange={(e) =>
+                          setLogEntry({ ...logEntry, note: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-primary" onClick={logValue}>
+                      Save
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      onClick={() => setShowLogValue(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showHistory && corpusHistory.length > 0 && (
+                <div
+                  style={{
+                    marginTop: "0.75rem",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {historyChartData.length > 1 && (
+                    <div style={{ height: 120, padding: "0.75rem 0.5rem 0" }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={historyChartData}
+                          margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient
+                              id={`hist-grad-${inv.id}`}
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor={personColor}
+                                stopOpacity={0.3}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor={personColor}
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 9, fill: "#555" }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <YAxis hide />
+                          <Tooltip
+                            formatter={(v) => [fmtCr(v), "Value"]}
+                            contentStyle={{
+                              background: "#13131a",
+                              border: "1px solid rgba(255,255,255,0.07)",
+                              borderRadius: 8,
+                              fontSize: 12,
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="value"
+                            name="Value"
+                            stroke={personColor}
+                            strokeWidth={2}
+                            fill={`url(#hist-grad-${inv.id})`}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <div style={{ maxHeight: 220, overflowY: "auto" }}>
+                    {sortedHistory.map((h, i) => {
+                      const prev = sortedHistory[i + 1];
+                      const change = prev ? h.value - prev.value : null;
+                      const changePct =
+                        prev && prev.value > 0
+                          ? ((change / prev.value) * 100).toFixed(1)
+                          : null;
+                      return (
+                        <div
+                          key={`${h.date}-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "9px 12px",
+                            borderBottom: "1px solid var(--border)",
+                            fontSize: 13,
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 500 }}>
+                              {fmtCr(h.value)}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              {h.date}
+                              {h.note ? ` · ${h.note}` : ""}
+                            </div>
+                          </div>
+                          {change !== null && (
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 500,
+                                color:
+                                  change >= 0 ? "var(--green)" : "var(--red)",
+                              }}
+                            >
+                              {change >= 0 ? "+" : ""}
+                              {fmtCr(change)}
+                              {changePct !== null && (
+                                <span style={{ fontSize: 10, opacity: 0.75 }}>
+                                  {" "}
+                                  ({change >= 0 ? "+" : ""}
+                                  {changePct}%)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          <button
+                            className="btn-danger"
+                            aria-label="Delete entry"
+                            style={{ padding: "3px 6px" }}
+                            onClick={async () => {
+                              if (
+                                await confirm(
+                                  "Delete entry?",
+                                  `Remove logged value for ${h.date}?`,
+                                )
+                              ) {
+                                const idx = corpusHistory.findIndex(
+                                  (x, j) =>
+                                    x.date === h.date &&
+                                    x.value === h.value &&
+                                    j === corpusHistory.length - 1 - i,
+                                );
+                                const newHist = corpusHistory.filter(
+                                  (_, j) =>
+                                    j !==
+                                    (idx === -1
+                                      ? corpusHistory.length - 1 - i
+                                      : idx),
+                                );
+                                onUpdate({ ...inv, corpusHistory: newHist });
+                              }
+                            }}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Growth chart — tabbed */}
+          {!isFDInv && (
+            <div>
+              {/* Tab bar */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 2,
+                  marginBottom: 8,
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 7,
+                  padding: 2,
+                  width: "fit-content",
+                }}
+              >
+                {[
+                  { id: "projection", label: "Projection" },
+                  ...(!isOneTimeInv
+                    ? [{ id: "breakdown", label: "Breakdown" }]
+                    : []),
+                  ...(historyChartData.length >= 2
+                    ? [{ id: "actual", label: "Actual" }]
+                    : []),
+                ].map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => setChartView(id)}
+                    style={{
+                      padding: "4px 12px",
+                      fontSize: 11,
+                      borderRadius: 5,
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: chartView === id ? 600 : 400,
+                      background:
+                        chartView === id ? "rgba(255,255,255,0.1)" : "none",
+                      color:
+                        chartView === id
+                          ? "var(--text-primary, #fff)"
+                          : "var(--text-muted)",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Projection chart */}
+              {chartView === "projection" && (
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={chartData}
+                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id={`grad-${inv.id}`}
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor={personColor}
+                            stopOpacity={0.25}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor={personColor}
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="year"
+                        tick={{ fontSize: 10, fill: "#55535e" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={3}
+                      />
+                      <YAxis hide />
+                      <Tooltip
+                        formatter={fmtCr}
+                        contentStyle={{
+                          background: "#13131a",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="corpus"
+                        name={!isOneTimeInv ? "Your trajectory" : "Corpus"}
+                        stroke={personColor}
+                        strokeWidth={2}
+                        fill={`url(#grad-${inv.id})`}
+                      />
+                      {!isOneTimeInv && (
+                        <Area
+                          type="monotone"
+                          dataKey="expected"
+                          name="Ideal (no missed SIPs)"
+                          stroke="var(--gold)"
+                          strokeWidth={1.5}
+                          fill="none"
+                          strokeDasharray="5 3"
+                        />
+                      )}
+                      <Area
+                        type="monotone"
+                        dataKey="invested"
+                        name="Invested"
+                        stroke="#55535e"
+                        strokeWidth={1.5}
+                        fill="none"
+                        strokeDasharray="4 2"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Breakdown chart: stacked invested + gains per year */}
+              {chartView === "breakdown" && (
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={breakdownData}
+                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
+                      barSize={Math.max(4, Math.floor(260 / projYears))}
+                    >
+                      <XAxis
+                        dataKey="year"
+                        tick={{ fontSize: 10, fill: "#55535e" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={Math.floor(projYears / 7)}
+                      />
+                      <YAxis hide />
+                      <Tooltip
+                        formatter={(v, name) => [
+                          fmtCr(v),
+                          name === "invested" ? "Your money" : "Growth",
+                        ]}
+                        contentStyle={{
+                          background: "#13131a",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Bar
+                        dataKey="invested"
+                        stackId="a"
+                        fill="#3a3a4a"
+                        name="invested"
+                        radius={[0, 0, 3, 3]}
+                      />
+                      <Bar
+                        dataKey="gains"
+                        stackId="a"
+                        fill={personColor}
+                        name="gains"
+                        radius={[3, 3, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      justifyContent: "center",
+                      marginTop: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#55535e",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: "#3a3a4a",
+                          display: "inline-block",
+                        }}
+                      />{" "}
+                      Your money
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: personColor,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: personColor,
+                          display: "inline-block",
+                        }}
+                      />{" "}
+                      Growth
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Actual chart: logged corpus history */}
+              {chartView === "actual" && historyChartData.length >= 2 && (
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={historyChartData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id={`actual-grad-${inv.id}`}
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor={personColor}
+                            stopOpacity={0.3}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor={personColor}
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10, fill: "#55535e" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis hide />
+                      <Tooltip
+                        formatter={(v) => [fmtCr(v), "Actual value"]}
+                        contentStyle={{
+                          background: "#13131a",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="value"
+                        name="Actual value"
+                        stroke={personColor}
+                        strokeWidth={2}
+                        fill={`url(#actual-grad-${inv.id})`}
+                        dot={{ r: 3, fill: personColor }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      textAlign: "center",
+                      marginTop: 4,
+                    }}
+                  >
+                    Real values from your logs · {corpusHistory.length} data
+                    point{corpusHistory.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {isFDInv && (
+            <div style={{ height: 180 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id={`grad-${inv.id}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor={personColor}
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={personColor}
+                        stopOpacity={0}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="year"
+                    tick={{ fontSize: 10, fill: "#55535e" }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={3}
+                  />
+                  <YAxis hide />
+                  <Tooltip
+                    formatter={fmtCr}
+                    contentStyle={{
+                      background: "#13131a",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
                   <Area
                     type="monotone"
-                    dataKey="expected"
-                    name="Ideal (no missed SIPs)"
-                    stroke="var(--gold)"
+                    dataKey="corpus"
+                    name="Corpus"
+                    stroke={personColor}
+                    strokeWidth={2}
+                    fill={`url(#grad-${inv.id})`}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="invested"
+                    name="Invested"
+                    stroke="#55535e"
                     strokeWidth={1.5}
                     fill="none"
-                    strokeDasharray="5 3"
+                    strokeDasharray="4 2"
                   />
-                ) : null}
-                <Area
-                  type="monotone"
-                  dataKey="invested"
-                  name="Invested"
-                  stroke="#55535e"
-                  strokeWidth={1.5}
-                  fill="none"
-                  strokeDasharray="4 2"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
       {dialog}
@@ -3484,6 +4149,17 @@ export default function Investments({
                   setNewInv({ ...newInv, amount: e.target.value })
                 }
               />
+              {Number(newInv.amount) > 0 && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    marginTop: 3,
+                  }}
+                >
+                  = {fmt(Number(newInv.amount))}
+                </div>
+              )}
             </div>
             {!isFD(newInv.type) && (
               <div>
@@ -3511,6 +4187,17 @@ export default function Investments({
                     setNewInv({ ...newInv, existingCorpus: e.target.value })
                   }
                 />
+                {Number(newInv.existingCorpus) > 0 && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 3,
+                    }}
+                  >
+                    = {fmt(Number(newInv.existingCorpus))}
+                  </div>
+                )}
               </div>
             )}
             <div>
@@ -3704,6 +4391,17 @@ export default function Investments({
                     setNewInv({ ...newInv, totalInvested: e.target.value })
                   }
                 />
+                {Number(newInv.totalInvested) > 0 && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 3,
+                    }}
+                  >
+                    = {fmt(Number(newInv.totalInvested))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -4864,6 +5562,20 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                     ))}
                   </datalist>
                 )}
+                {["amount", "existingCorpus", "totalInvested"].includes(
+                  f.key,
+                ) &&
+                  Number(newInv[f.key]) > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 3,
+                      }}
+                    >
+                      = {fmt(Number(newInv[f.key]))}
+                    </div>
+                  )}
               </div>
             ))}
             <div>

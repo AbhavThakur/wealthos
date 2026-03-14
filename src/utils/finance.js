@@ -24,9 +24,35 @@ export const totalCorpus = (existingCorpus, monthly, rateAnnual, years) =>
   lumpCorpus(existingCorpus, rateAnnual, years) +
   sipCorpus(monthly, rateAnnual, years);
 
+// Count how many times a given weekday ("Monday"…"Sunday") occurs in a month.
+// year/month default to the current month if omitted.
+export const weekdayCountInMonth = (weekdayName, year, month) => {
+  const NAMES = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  const target = NAMES.indexOf(weekdayName);
+  if (target === -1) return 0;
+  const now = new Date();
+  const y = year ?? now.getFullYear();
+  const m = month ?? now.getMonth(); // 0-based
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const firstDay = new Date(y, m, 1).getDay();
+  // How many full weeks + extras
+  const offset = (target - firstDay + 7) % 7;
+  return offset >= daysInMonth
+    ? 0
+    : Math.floor((daysInMonth - offset - 1) / 7) + 1;
+};
+
 // Convert any SIP frequency to monthly equivalent multiplier
 export const freqToMonthly = (amount, frequency) => {
-  if (frequency === "weekly") return amount * 4.33;
+  if (frequency === "weekly") return amount * (52 / 12);
   if (frequency === "yearly") return amount / 12;
   if (frequency === "onetime") return 0;
   return amount; // monthly (default)
