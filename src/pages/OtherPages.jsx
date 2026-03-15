@@ -1921,6 +1921,8 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
   const [filterType, setFilterType] = useState("all");
   const [showAddTx, setShowAddTx] = useState(false);
   const [showAddRule, setShowAddRule] = useState(false);
+  const [expandedSchedCats, setExpandedSchedCats] = useState({});
+  const [expandedHistCats, setExpandedHistCats] = useState({});
   const [newTx, setNewTx] = useState({
     date: new Date().toISOString().slice(0, 10),
     desc: "",
@@ -2149,9 +2151,88 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
                 </div>
                 <span className="tag tag-gold">{dueItems.length} items</span>
               </div>
-              {dueItems.map((r, i) => (
-                <CashFlowScheduleRow key={`due-${i}`} r={r} isAuto={!!r.auto} />
-              ))}
+              {(() => {
+                const groups = {};
+                for (const r of dueItems) {
+                  const cat = r.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(r);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, r) => s + Math.abs(r.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const key = `due::${cat}`;
+                    const isOpen = expandedSchedCats[key] !== false;
+                    return (
+                      <div key={cat} style={{ marginBottom: 4 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "7px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                          }}
+                          onClick={() =>
+                            setExpandedSchedCats((s) => ({
+                              ...s,
+                              [key]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((r, i) => (
+                            <CashFlowScheduleRow
+                              key={i}
+                              r={r}
+                              isAuto={!!r.auto}
+                            />
+                          ))}
+                      </div>
+                    );
+                  });
+              })()}
             </div>
           )}
           {upcomingItems.length > 0 && (
@@ -2171,9 +2252,88 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
                   {upcomingItems.length} items
                 </span>
               </div>
-              {upcomingItems.map((r, i) => (
-                <CashFlowScheduleRow key={`up-${i}`} r={r} isAuto={!!r.auto} />
-              ))}
+              {(() => {
+                const groups = {};
+                for (const r of upcomingItems) {
+                  const cat = r.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(r);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, r) => s + Math.abs(r.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const key = `up::${cat}`;
+                    const isOpen = expandedSchedCats[key] !== false;
+                    return (
+                      <div key={cat} style={{ marginBottom: 4 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "7px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                          }}
+                          onClick={() =>
+                            setExpandedSchedCats((s) => ({
+                              ...s,
+                              [key]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((r, i) => (
+                            <CashFlowScheduleRow
+                              key={i}
+                              r={r}
+                              isAuto={!!r.auto}
+                            />
+                          ))}
+                      </div>
+                    );
+                  });
+              })()}
             </div>
           )}
           {scheduledIn > scheduledOut && (
@@ -2365,80 +2525,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
                 </div>
               </div>
             )}
-            {filtered.map((tx) => (
-              <div
-                key={tx.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "9px 0",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
-                <div
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                    background:
-                      tx.type === "income"
-                        ? "var(--green)"
-                        : tx.type === "investment"
-                          ? "var(--gold)"
-                          : "var(--red)",
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.desc}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {tx.date} · {tx.category}
-                  </div>
-                </div>
-                <span
-                  className={`tag ${tx.type === "income" ? "tag-green" : tx.type === "investment" ? "tag-gold" : "tag-red"}`}
-                >
-                  {tx.type}
-                </span>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color:
-                      tx.amount > 0
-                        ? "var(--green)"
-                        : tx.type === "investment"
-                          ? "var(--gold)"
-                          : "var(--red)",
-                    minWidth: 80,
-                    textAlign: "right",
-                  }}
-                >
-                  {tx.amount > 0 ? "+" : ""}
-                  {fmt(tx.amount)}
-                </div>
-                <button
-                  className="btn-danger"
-                  aria-label={`Delete ${tx.desc}`}
-                  onClick={async () => {
-                    if (
-                      await confirm(
-                        "Delete transaction?",
-                        `Remove "${tx.desc}"?`,
-                      )
-                    )
-                      updatePerson(
-                        "transactions",
-                        transactions.filter((x) => x.id !== tx.id),
-                      );
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-            {filtered.length === 0 && (
+            {filtered.length === 0 ? (
               <div
                 style={{
                   textAlign: "center",
@@ -2449,6 +2536,162 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
               >
                 No transactions found
               </div>
+            ) : (
+              (() => {
+                const groups = {};
+                for (const tx of filtered) {
+                  const cat = tx.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(tx);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, tx) => s + Math.abs(tx.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const isOpen = expandedHistCats[cat] !== false;
+                    return (
+                      <div key={cat}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                            background: "var(--bg-card)",
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 1,
+                          }}
+                          onClick={() =>
+                            setExpandedHistCats((s) => ({
+                              ...s,
+                              [cat]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((tx) => (
+                            <div
+                              key={tx.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                padding: "8px 0 8px 12px",
+                                borderBottom: "1px solid var(--border)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  flexShrink: 0,
+                                  background:
+                                    tx.type === "income"
+                                      ? "var(--green)"
+                                      : tx.type === "investment"
+                                        ? "var(--gold)"
+                                        : "var(--red)",
+                                }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                                  {tx.desc}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  {tx.date}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  color:
+                                    tx.amount > 0
+                                      ? "var(--green)"
+                                      : tx.type === "investment"
+                                        ? "var(--gold)"
+                                        : "var(--red)",
+                                  minWidth: 80,
+                                  textAlign: "right",
+                                }}
+                              >
+                                {tx.amount > 0 ? "+" : ""}
+                                {fmt(tx.amount)}
+                              </div>
+                              <button
+                                className="btn-danger"
+                                aria-label={`Delete ${tx.desc}`}
+                                onClick={async () => {
+                                  if (
+                                    await confirm(
+                                      "Delete transaction?",
+                                      `Remove "${tx.desc}"?`,
+                                    )
+                                  )
+                                    updatePerson(
+                                      "transactions",
+                                      transactions.filter(
+                                        (x) => x.id !== tx.id,
+                                      ),
+                                    );
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  });
+              })()
             )}
           </div>
         </div>
@@ -2777,6 +3020,8 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
     category: "Food",
   });
   const { confirm, dialog } = useConfirm();
+  const [expandedSchedCats, setExpandedSchedCats] = useState({});
+  const [expandedHistCats, setExpandedHistCats] = useState({});
 
   const abhavAutoRules = autoRecurringRules(abhav || {}).map((r) => ({
     ...r,
@@ -2991,14 +3236,91 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
                 </div>
                 <span className="tag tag-gold">{dueItems.length} items</span>
               </div>
-              {dueItems.map((r, i) => (
-                <CashFlowScheduleRow
-                  key={`due-${i}`}
-                  r={r}
-                  isAuto={!!r.auto}
-                  personBadge={r._owner ? personBadge(r._owner) : null}
-                />
-              ))}
+              {(() => {
+                const groups = {};
+                for (const r of dueItems) {
+                  const cat = r.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(r);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, r) => s + Math.abs(r.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const key = `hh-due::${cat}`;
+                    const isOpen = expandedSchedCats[key] !== false;
+                    return (
+                      <div key={cat} style={{ marginBottom: 4 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "7px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                          }}
+                          onClick={() =>
+                            setExpandedSchedCats((s) => ({
+                              ...s,
+                              [key]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((r, i) => (
+                            <CashFlowScheduleRow
+                              key={i}
+                              r={r}
+                              isAuto={!!r.auto}
+                              personBadge={
+                                r._owner ? personBadge(r._owner) : null
+                              }
+                            />
+                          ))}
+                      </div>
+                    );
+                  });
+              })()}
             </div>
           )}
           {upcomingItems.length > 0 && (
@@ -3018,14 +3340,91 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
                   {upcomingItems.length} items
                 </span>
               </div>
-              {upcomingItems.map((r, i) => (
-                <CashFlowScheduleRow
-                  key={`up-${i}`}
-                  r={r}
-                  isAuto={!!r.auto}
-                  personBadge={r._owner ? personBadge(r._owner) : null}
-                />
-              ))}
+              {(() => {
+                const groups = {};
+                for (const r of upcomingItems) {
+                  const cat = r.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(r);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, r) => s + Math.abs(r.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const key = `hh-up::${cat}`;
+                    const isOpen = expandedSchedCats[key] !== false;
+                    return (
+                      <div key={cat} style={{ marginBottom: 4 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "7px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                          }}
+                          onClick={() =>
+                            setExpandedSchedCats((s) => ({
+                              ...s,
+                              [key]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((r, i) => (
+                            <CashFlowScheduleRow
+                              key={i}
+                              r={r}
+                              isAuto={!!r.auto}
+                              personBadge={
+                                r._owner ? personBadge(r._owner) : null
+                              }
+                            />
+                          ))}
+                      </div>
+                    );
+                  });
+              })()}
             </div>
           )}
           {scheduleItems.length === 0 && (
@@ -3295,85 +3694,7 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               </div>
             )}
 
-            {filtered.map((tx) => (
-              <div
-                key={`${tx._owner}-${tx.id}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "9px 0",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
-                <div
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    flexShrink: 0,
-                    background:
-                      tx.type === "income"
-                        ? "var(--green)"
-                        : tx.type === "investment"
-                          ? "var(--gold)"
-                          : "var(--red)",
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.desc}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    {tx.date} · {tx.category}
-                  </div>
-                </div>
-                {personBadge(tx._owner)}
-                <span
-                  className={`tag ${tx.type === "income" ? "tag-green" : tx.type === "investment" ? "tag-gold" : "tag-red"}`}
-                >
-                  {tx.type}
-                </span>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color:
-                      tx.amount > 0
-                        ? "var(--green)"
-                        : tx.type === "investment"
-                          ? "var(--gold)"
-                          : "var(--red)",
-                    minWidth: 80,
-                    textAlign: "right",
-                  }}
-                >
-                  {tx.amount > 0 ? "+" : ""}
-                  {fmt(tx.amount)}
-                </div>
-                <button
-                  className="btn-danger"
-                  aria-label={`Delete ${tx.desc}`}
-                  onClick={async () => {
-                    if (
-                      await confirm(
-                        "Delete transaction?",
-                        `Remove "${tx.desc}"?`,
-                      )
-                    ) {
-                      const ownerData = tx._owner === "abhav" ? abhav : aanya;
-                      const txs = ownerData?.transactions || [];
-                      updatePerson(
-                        tx._owner,
-                        "transactions",
-                        txs.filter((x) => x.id !== tx.id),
-                      );
-                    }
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-            {filtered.length === 0 && (
+            {filtered.length === 0 ? (
               <div
                 style={{
                   textAlign: "center",
@@ -3384,6 +3705,171 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               >
                 No transactions found
               </div>
+            ) : (
+              (() => {
+                const groups = {};
+                for (const tx of filtered) {
+                  const cat = tx.category || "Other";
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(tx);
+                }
+                return Object.entries(groups)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, items]) => {
+                    const total = items.reduce(
+                      (s, tx) => s + Math.abs(tx.amount),
+                      0,
+                    );
+                    const catColor =
+                      items[0].type === "income"
+                        ? "var(--green)"
+                        : items[0].type === "investment"
+                          ? "var(--gold)"
+                          : "var(--red)";
+                    const isOpen = expandedHistCats[cat] !== false;
+                    return (
+                      <div key={cat}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--border)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                            background: "var(--bg-card)",
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 1,
+                          }}
+                          onClick={() =>
+                            setExpandedHistCats((s) => ({
+                              ...s,
+                              [cat]: !isOpen,
+                            }))
+                          }
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {isOpen ? "▾" : "▸"} {cat}
+                            <span
+                              style={{
+                                fontWeight: 400,
+                                marginLeft: 5,
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              ({items.length})
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: catColor,
+                            }}
+                          >
+                            {fmt(total)}
+                          </span>
+                        </div>
+                        {isOpen &&
+                          items.map((tx) => (
+                            <div
+                              key={`${tx._owner}-${tx.id}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                padding: "8px 0 8px 12px",
+                                borderBottom: "1px solid var(--border)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  flexShrink: 0,
+                                  background:
+                                    tx.type === "income"
+                                      ? "var(--green)"
+                                      : tx.type === "investment"
+                                        ? "var(--gold)"
+                                        : "var(--red)",
+                                }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                                  {tx.desc}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  {tx.date}
+                                </div>
+                              </div>
+                              {personBadge(tx._owner)}
+                              <span
+                                className={`tag ${tx.type === "income" ? "tag-green" : tx.type === "investment" ? "tag-gold" : "tag-red"}`}
+                              >
+                                {tx.type}
+                              </span>
+                              <div
+                                style={{
+                                  fontSize: 14,
+                                  fontWeight: 600,
+                                  color:
+                                    tx.amount > 0
+                                      ? "var(--green)"
+                                      : tx.type === "investment"
+                                        ? "var(--gold)"
+                                        : "var(--red)",
+                                  minWidth: 80,
+                                  textAlign: "right",
+                                }}
+                              >
+                                {tx.amount > 0 ? "+" : ""}
+                                {fmt(tx.amount)}
+                              </div>
+                              <button
+                                className="btn-danger"
+                                aria-label={`Delete ${tx.desc}`}
+                                onClick={async () => {
+                                  if (
+                                    await confirm(
+                                      "Delete transaction?",
+                                      `Remove "${tx.desc}"?`,
+                                    )
+                                  ) {
+                                    const ownerData =
+                                      tx._owner === "abhav" ? abhav : aanya;
+                                    const txs = ownerData?.transactions || [];
+                                    updatePerson(
+                                      tx._owner,
+                                      "transactions",
+                                      txs.filter((x) => x.id !== tx.id),
+                                    );
+                                  }
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  });
+              })()
             )}
           </div>
         </div>

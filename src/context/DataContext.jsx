@@ -71,7 +71,7 @@ function autoRecurringRules(data) {
       amount: -Math.abs(exp.amount),
       type: "expense",
       category: exp.category || "Others",
-      dayOfMonth: 1,
+      dayOfMonth: exp.date ? parseInt(exp.date.slice(8, 10), 10) : 1,
       active: true,
       auto: true,
       sourceType: "expense",

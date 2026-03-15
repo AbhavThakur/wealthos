@@ -726,6 +726,7 @@ export default function Budget({
         amount: 0,
         category: "Others",
         entries: [],
+        date: new Date().toISOString().slice(0, 10),
       },
     ]);
 
@@ -1565,272 +1566,305 @@ export default function Budget({
                 key={exp.id}
                 style={{ borderBottom: "1px solid var(--border)" }}
               >
-                {/* Main row */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "8px 0",
-                  }}
-                >
-                  <input
-                    value={exp.name}
-                    onChange={(e) =>
-                      updatePerson(
-                        "expenses",
-                        expenses.map((x) =>
-                          x.id === exp.id ? { ...x, name: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    style={{ flex: 3, minWidth: 80 }}
-                  />
-                  <select
-                    value={exp.category}
-                    onChange={(e) =>
-                      updatePerson(
-                        "expenses",
-                        expenses.map((x) =>
-                          x.id === exp.id
-                            ? {
-                                ...x,
-                                category: e.target.value,
-                                subCategory: "",
-                              }
-                            : x,
-                        ),
-                      )
-                    }
-                    style={{ flex: 1.5 }}
-                  >
-                    {EXPENSE_CATEGORIES.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                  {EXPENSE_SUBCATEGORIES[exp.category] && (
-                    <select
-                      value={exp.subCategory || ""}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, subCategory: e.target.value }
-                              : x,
-                          ),
-                        )
-                      }
-                      style={{ flex: 1.5 }}
-                    >
-                      <option value="">— sub-category —</option>
-                      {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
-                        <option key={s}>{s}</option>
-                      ))}
-                    </select>
-                  )}
-                  {/* Recurrence selector */}
-                  <select
-                    value={exp.recurrence || "monthly"}
-                    onChange={(e) =>
-                      updatePerson(
-                        "expenses",
-                        expenses.map((x) =>
-                          x.id === exp.id
-                            ? { ...x, recurrence: e.target.value }
-                            : x,
-                        ),
-                      )
-                    }
-                    title="How often this expense recurs"
+                {/* Main row — two-line layout so mobile stays readable */}
+                <div style={{ padding: "8px 0 4px" }}>
+                  {/* Line 1: Name + Amount + Action buttons */}
+                  <div
                     style={{
-                      flex: "0 0 100px",
-                      fontSize: 12,
-                      color:
-                        (exp.recurrence || "monthly") === "monthly"
-                          ? "var(--text-secondary)"
-                          : exp.recurrence === "variable"
-                            ? "var(--accent-blue, #60a5fa)"
-                            : "var(--gold)",
-                      borderColor:
-                        exp.recurrence === "variable"
-                          ? "var(--accent-blue, #60a5fa)"
-                          : (exp.recurrence || "monthly") !== "monthly"
-                            ? "var(--gold-border)"
-                            : undefined,
-                    }}
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="variable">Variable</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                    <option value="once">One-off</option>
-                  </select>
-                  {/* Due-month picker for yearly */}
-                  {exp.recurrence === "yearly" && (
-                    <select
-                      value={exp.recurrenceMonth ?? 0}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? {
-                                  ...x,
-                                  recurrenceMonth: Number(e.target.value),
-                                }
-                              : x,
-                          ),
-                        )
-                      }
-                      title="Month in which this expense falls"
-                      style={{ flex: "0 0 80px", fontSize: 12 }}
-                    >
-                      {[
-                        "Jan",
-                        "Feb",
-                        "Mar",
-                        "Apr",
-                        "May",
-                        "Jun",
-                        "Jul",
-                        "Aug",
-                        "Sep",
-                        "Oct",
-                        "Nov",
-                        "Dec",
-                      ].map((m, i) => (
-                        <option key={m} value={i}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {/* Quarter start month for quarterly */}
-                  {exp.recurrence === "quarterly" && (
-                    <select
-                      value={(exp.recurrenceMonths ?? [0, 3, 6, 9])[0]}
-                      onChange={(e) => {
-                        const start = Number(e.target.value);
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? {
-                                  ...x,
-                                  recurrenceMonths: [
-                                    start,
-                                    (start + 3) % 12,
-                                    (start + 6) % 12,
-                                    (start + 9) % 12,
-                                  ],
-                                }
-                              : x,
-                          ),
-                        );
-                      }}
-                      title="First month of the quarter cycle"
-                      style={{ flex: "0 0 80px", fontSize: 12 }}
-                    >
-                      {["Jan", "Feb", "Mar"].map((m, i) => (
-                        <option key={m} value={i}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {entries.length > 0 ? (
-                    <div
-                      style={{
-                        flex: 1,
-                        textAlign: "right",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {fmt(exp.amount)}
-                      {spentThisMonth > 0 && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: "var(--text-muted)",
-                            fontWeight: 400,
-                          }}
-                        >
-                          {fmt(spentThisMonth)} this mo.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <input
-                      type="number"
-                      value={exp.amount}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, amount: Number(e.target.value) }
-                              : x,
-                          ),
-                        )
-                      }
-                      style={{ flex: 1 }}
-                      min="0"
-                    />
-                  )}
-                  {/* Log entries toggle */}
-                  <button
-                    onClick={() => {
-                      toggleExpandExp(exp.id);
-                      if (!isOpen) setEF(exp.id, {});
-                    }}
-                    title="Log purchases with dates"
-                    style={{
-                      background:
-                        entries.length > 0
-                          ? "var(--gold-dim)"
-                          : "rgba(255,255,255,0.06)",
-                      border:
-                        entries.length > 0
-                          ? "1px solid var(--gold-border)"
-                          : "1px solid var(--border)",
-                      color:
-                        entries.length > 0
-                          ? "var(--gold)"
-                          : "var(--text-muted)",
-                      borderRadius: 6,
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      cursor: "pointer",
                       display: "flex",
+                      gap: 8,
                       alignItems: "center",
-                      gap: 4,
-                      flexShrink: 0,
+                      marginBottom: 6,
                     }}
                   >
-                    <CalendarDays size={11} />
-                    {entries.length > 0 ? entries.length : "Log"}
-                  </button>
-                  <button
-                    className="btn-danger"
-                    aria-label={`Delete ${exp.name}`}
-                    onClick={async () => {
-                      if (
-                        await confirm(
-                          "Delete expense?",
-                          `Remove "${exp.name}" from your expenses?`,
-                        )
-                      )
+                    <input
+                      value={exp.name}
+                      onChange={(e) =>
                         updatePerson(
                           "expenses",
-                          expenses.filter((x) => x.id !== exp.id),
-                        );
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, name: e.target.value }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    {entries.length > 0 ? (
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          textAlign: "right",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {fmt(exp.amount)}
+                        {spentThisMonth > 0 && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "var(--text-muted)",
+                              fontWeight: 400,
+                            }}
+                          >
+                            {fmt(spentThisMonth)} this mo.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        value={exp.amount}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, amount: Number(e.target.value) }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ width: 90, flexShrink: 0 }}
+                        min="0"
+                      />
+                    )}
+                    {/* Log entries toggle */}
+                    <button
+                      onClick={() => {
+                        toggleExpandExp(exp.id);
+                        if (!isOpen) setEF(exp.id, {});
+                      }}
+                      title="Log purchases with dates"
+                      style={{
+                        background:
+                          entries.length > 0
+                            ? "var(--gold-dim)"
+                            : "rgba(255,255,255,0.06)",
+                        border:
+                          entries.length > 0
+                            ? "1px solid var(--gold-border)"
+                            : "1px solid var(--border)",
+                        color:
+                          entries.length > 0
+                            ? "var(--gold)"
+                            : "var(--text-muted)",
+                        borderRadius: 6,
+                        padding: "4px 8px",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <CalendarDays size={11} />
+                      {entries.length > 0 ? entries.length : "Log"}
+                    </button>
+                    <button
+                      className="btn-danger"
+                      aria-label={`Delete ${exp.name}`}
+                      onClick={async () => {
+                        if (
+                          await confirm(
+                            "Delete expense?",
+                            `Remove "${exp.name}" from your expenses?`,
+                          )
+                        )
+                          updatePerson(
+                            "expenses",
+                            expenses.filter((x) => x.id !== exp.id),
+                          );
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  {/* Line 2: Date + Category + Subcategory + Recurrence + optional pickers */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      paddingBottom: 4,
                     }}
                   >
-                    <Trash2 size={13} />
-                  </button>
+                    <input
+                      type="date"
+                      value={exp.date || ""}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, date: e.target.value }
+                              : x,
+                          ),
+                        )
+                      }
+                      title="Date this expense was added / starts from"
+                      style={{ flex: "0 0 128px", fontSize: 12 }}
+                    />
+                    <select
+                      value={exp.category}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? {
+                                  ...x,
+                                  category: e.target.value,
+                                  subCategory: "",
+                                }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ flex: "1 1 120px", fontSize: 12 }}
+                    >
+                      {EXPENSE_CATEGORIES.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                    {EXPENSE_SUBCATEGORIES[exp.category] && (
+                      <select
+                        value={exp.subCategory || ""}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, subCategory: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "1 1 120px", fontSize: 12 }}
+                      >
+                        <option value="">— sub-category —</option>
+                        {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    )}
+                    {/* Recurrence selector */}
+                    <select
+                      value={exp.recurrence || "monthly"}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, recurrence: e.target.value }
+                              : x,
+                          ),
+                        )
+                      }
+                      title="How often this expense recurs"
+                      style={{
+                        flex: "0 0 96px",
+                        fontSize: 12,
+                        color:
+                          (exp.recurrence || "monthly") === "monthly"
+                            ? "var(--text-secondary)"
+                            : exp.recurrence === "variable"
+                              ? "var(--accent-blue, #60a5fa)"
+                              : "var(--gold)",
+                        borderColor:
+                          exp.recurrence === "variable"
+                            ? "var(--accent-blue, #60a5fa)"
+                            : (exp.recurrence || "monthly") !== "monthly"
+                              ? "var(--gold-border)"
+                              : undefined,
+                      }}
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="variable">Variable</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="yearly">Yearly</option>
+                      <option value="once">One-off</option>
+                    </select>
+                    {/* Due-month picker for yearly */}
+                    {exp.recurrence === "yearly" && (
+                      <select
+                        value={exp.recurrenceMonth ?? 0}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? {
+                                    ...x,
+                                    recurrenceMonth: Number(e.target.value),
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                        title="Month in which this expense falls"
+                        style={{ flex: "0 0 72px", fontSize: 12 }}
+                      >
+                        {[
+                          "Jan",
+                          "Feb",
+                          "Mar",
+                          "Apr",
+                          "May",
+                          "Jun",
+                          "Jul",
+                          "Aug",
+                          "Sep",
+                          "Oct",
+                          "Nov",
+                          "Dec",
+                        ].map((m, i) => (
+                          <option key={m} value={i}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {/* Quarter start month for quarterly */}
+                    {exp.recurrence === "quarterly" && (
+                      <select
+                        value={(exp.recurrenceMonths ?? [0, 3, 6, 9])[0]}
+                        onChange={(e) => {
+                          const start = Number(e.target.value);
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? {
+                                    ...x,
+                                    recurrenceMonths: [
+                                      start,
+                                      (start + 3) % 12,
+                                      (start + 6) % 12,
+                                      (start + 9) % 12,
+                                    ],
+                                  }
+                                : x,
+                            ),
+                          );
+                        }}
+                        title="First month of the quarter cycle"
+                        style={{ flex: "0 0 72px", fontSize: 12 }}
+                      >
+                        {["Jan", "Feb", "Mar"].map((m, i) => (
+                          <option key={m} value={i}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
 
                 {/* Entries panel */}

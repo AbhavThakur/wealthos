@@ -302,6 +302,15 @@ function buildCashFlow(
       map[ym] = { income: 0, expenses: 0, investments: 0, emis: 0, detail: [] };
   };
 
+  // Months where an expense already has granular entries tracked —
+  // skip the auto-transaction for those to avoid duplication in the schedule
+  const entriesCovered = new Set();
+  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+    for (const e of exp.entries || []) {
+      if (e.date) entriesCovered.add(`${exp.name}::${e.date.slice(0, 7)}`);
+    }
+  }
+
   const process = (txns) => {
     for (const t of txns || []) {
       if (!t.date) continue;
@@ -310,12 +319,36 @@ function buildCashFlow(
       const amt = Math.abs(t.amount);
       if (t.amount > 0) {
         map[ym].income += amt;
+        map[ym].detail.push({
+          expName: t.desc,
+          category: t.category || "Income",
+          date: t.date,
+          amount: amt,
+          note: t.note || "",
+          isIncome: true,
+        });
       } else if (t.type === "investment") {
         map[ym].investments += amt;
       } else if (t.category === "EMI") {
         map[ym].emis += amt;
+        map[ym].detail.push({
+          expName: t.desc,
+          category: "EMI",
+          date: t.date,
+          amount: amt,
+          note: t.note || "",
+        });
       } else {
+        // Skip auto-transactions for expenses already tracked by dated entries
+        if (t.auto && entriesCovered.has(`${t.desc}::${ym}`)) continue;
         map[ym].expenses += amt;
+        map[ym].detail.push({
+          expName: t.desc,
+          category: t.category || "Others",
+          date: t.date,
+          amount: amt,
+          note: t.note || "",
+        });
       }
     }
   };
@@ -401,6 +434,7 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
     aanya?.incomes,
   );
   const [expandedMonth, setExpandedMonth] = useState(null);
+  const [expandedCats, setExpandedCats] = useState({});
   if (data.length === 0) return null;
 
   // Savings streak: consecutive months with positive net (from latest)
@@ -670,21 +704,30 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
                     flexShrink: 0,
                   }}
                 >
-                  {expandedMonth === d.ym ? "▲" : "▼"}
+                  {expandedMonth === d.ym ? "▲" : "▼ schedule"}
                 </span>
               )}
             </div>
 
-            {/* Expense drill-down: grouped by expense name → entries by date */}
+            {/* Expense drill-down: grouped by category */}
             {expandedMonth === d.ym &&
               d.detail?.length > 0 &&
               (() => {
-                // Group entries by expName
+                // Group entries by category (income entries use "Income")
                 const groups = {};
                 for (const e of d.detail) {
-                  if (!groups[e.expName]) groups[e.expName] = [];
-                  groups[e.expName].push(e);
+                  const key = e.isIncome ? "Income" : e.category || "Others";
+                  if (!groups[key]) groups[key] = [];
+                  groups[key].push(e);
                 }
+                // Sort categories: Income first, then by total desc
+                const sortedCats = Object.entries(groups).sort(([ka], [kb]) => {
+                  if (ka === "Income") return -1;
+                  if (kb === "Income") return 1;
+                  const ta = groups[ka].reduce((s, e) => s + e.amount, 0);
+                  const tb = groups[kb].reduce((s, e) => s + e.amount, 0);
+                  return tb - ta;
+                });
                 return (
                   <div
                     style={{
@@ -692,13 +735,27 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
                       padding: "8px 10px",
                       background: "var(--bg-card2)",
                       borderRadius: "var(--radius-sm)",
-                      borderLeft: "3px solid var(--red)",
+                      borderLeft: "3px solid var(--gold)",
                     }}
                   >
-                    {Object.entries(groups).map(([name, items]) => {
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: ".07em",
+                        marginBottom: 8,
+                      }}
+                    >
+                      📋 Schedule — {d.label}
+                    </div>
+                    {sortedCats.map(([cat, items]) => {
                       const total = items.reduce((s, e) => s + e.amount, 0);
+                      const isIncomeCat = cat === "Income";
+                      const catKey = `${d.ym}::${cat}`;
+                      const isCatOpen = expandedCats[catKey] !== false; // default open
                       return (
-                        <div key={name} style={{ marginBottom: 8 }}>
+                        <div key={cat} style={{ marginBottom: 6 }}>
                           <div
                             style={{
                               display: "flex",
@@ -707,67 +764,127 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
                               fontWeight: 600,
                               borderBottom: "1px solid var(--border)",
                               paddingBottom: 4,
-                              marginBottom: 4,
+                              marginBottom: isCatOpen ? 4 : 0,
+                              color: isIncomeCat
+                                ? "var(--green)"
+                                : "var(--text-secondary)",
+                              cursor: "pointer",
+                              userSelect: "none",
                             }}
+                            onClick={() =>
+                              setExpandedCats((s) => ({
+                                ...s,
+                                [catKey]: !isCatOpen,
+                              }))
+                            }
                           >
-                            <span>{name}</span>
-                            <span style={{ color: "var(--red)" }}>
+                            <span>
+                              {isCatOpen ? "▾" : "▸"} {cat}
+                              <span
+                                style={{
+                                  fontWeight: 400,
+                                  marginLeft: 5,
+                                  fontSize: 10,
+                                  color: "var(--text-muted)",
+                                }}
+                              >
+                                ({items.length})
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                color: isIncomeCat
+                                  ? "var(--green)"
+                                  : "var(--red)",
+                              }}
+                            >
+                              {isIncomeCat ? "+" : "−"}
                               {fmt(total)}
                             </span>
                           </div>
-                          {[...items]
-                            .sort((a, b) => a.date.localeCompare(b.date))
-                            .map((e, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  display: "flex",
-                                  gap: 8,
-                                  fontSize: 11,
-                                  padding: "2px 0 2px 8px",
-                                  color: "var(--text-secondary)",
-                                }}
-                              >
-                                <span
+                          {isCatOpen &&
+                            [...items]
+                              .sort((a, b) => a.date.localeCompare(b.date))
+                              .map((e, i) => (
+                                <div
+                                  key={i}
                                   style={{
-                                    color: "var(--text-muted)",
-                                    flexShrink: 0,
-                                    width: 50,
-                                    fontVariantNumeric: "tabular-nums",
+                                    display: "flex",
+                                    gap: 8,
+                                    fontSize: 11,
+                                    padding: "3px 0 3px 8px",
+                                    color: "var(--text-secondary)",
+                                    alignItems: "baseline",
                                   }}
                                 >
-                                  {e.date.slice(8)}{" "}
-                                  {
-                                    [
-                                      "Jan",
-                                      "Feb",
-                                      "Mar",
-                                      "Apr",
-                                      "May",
-                                      "Jun",
-                                      "Jul",
-                                      "Aug",
-                                      "Sep",
-                                      "Oct",
-                                      "Nov",
-                                      "Dec",
-                                    ][parseInt(e.date.slice(5, 7), 10) - 1]
-                                  }
-                                </span>
-                                <span style={{ flex: 1 }}>
-                                  {e.note || e.subCategory || e.category}
-                                </span>
-                                <span
-                                  style={{
-                                    fontWeight: 500,
-                                    color: "var(--red)",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {fmt(e.amount)}
-                                </span>
-                              </div>
-                            ))}
+                                  <span
+                                    style={{
+                                      color: "var(--text-muted)",
+                                      flexShrink: 0,
+                                      width: 44,
+                                      fontVariantNumeric: "tabular-nums",
+                                    }}
+                                  >
+                                    {e.date.slice(8)}{" "}
+                                    {
+                                      [
+                                        "Jan",
+                                        "Feb",
+                                        "Mar",
+                                        "Apr",
+                                        "May",
+                                        "Jun",
+                                        "Jul",
+                                        "Aug",
+                                        "Sep",
+                                        "Oct",
+                                        "Nov",
+                                        "Dec",
+                                      ][parseInt(e.date.slice(5, 7), 10) - 1]
+                                    }
+                                  </span>
+                                  <span
+                                    style={{
+                                      flex: 1,
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {e.expName}
+                                    {e.note ? (
+                                      <span
+                                        style={{
+                                          marginLeft: 5,
+                                          color: "var(--text-muted)",
+                                          opacity: 0.7,
+                                        }}
+                                      >
+                                        · {e.note}
+                                      </span>
+                                    ) : e.subCategory ? (
+                                      <span
+                                        style={{
+                                          marginLeft: 5,
+                                          color: "var(--text-muted)",
+                                          opacity: 0.6,
+                                        }}
+                                      >
+                                        · {e.subCategory}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontWeight: 500,
+                                      color: isIncomeCat
+                                        ? "var(--green)"
+                                        : "var(--red)",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {fmt(e.amount)}
+                                  </span>
+                                </div>
+                              ))}
                         </div>
                       );
                     })}
