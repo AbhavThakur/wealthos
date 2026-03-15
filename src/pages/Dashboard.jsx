@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import {
   PieChart,
   Pie,
@@ -14,6 +15,21 @@ import {
   Line,
 } from "recharts";
 import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   fmt,
   fmtCr,
   totalCorpus,
@@ -21,7 +37,143 @@ import {
   CAT_COLORS,
   freqToMonthly,
 } from "../utils/finance";
-import { TrendingUp, TrendingDown, Sparkles } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
+  GripVertical,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+
+// ── Month-aware stats from transactions ────────────────────────────────────
+function statsFromTxns(txns, exps, incomes, ym) {
+  let income = 0,
+    expenses = 0,
+    investments = 0,
+    emis = 0;
+  for (const t of txns || []) {
+    if (!t.date || t.date.slice(0, 7) !== ym) continue;
+    const amt = Math.abs(t.amount);
+    if (t.amount > 0) income += amt;
+    else if (t.type === "investment") investments += amt;
+    else if (t.category === "EMI") emis += amt;
+    else expenses += amt;
+  }
+  // Add expense entries for this month
+  for (const exp of exps || []) {
+    for (const e of exp.entries || []) {
+      if (!e.date || e.date.slice(0, 7) !== ym) continue;
+      if (exp.category === "EMI") emis += e.amount;
+      else expenses += e.amount;
+    }
+  }
+  // Add variable income entries for this month
+  for (const inc of incomes || []) {
+    for (const e of inc.incomeEntries || []) {
+      if (!e.date || e.date.slice(0, 7) !== ym) continue;
+      income += e.amount;
+    }
+  }
+  const debts = emis;
+  const savings = income - expenses - investments - debts;
+  const savingsRate =
+    income > 0
+      ? Math.round(((investments + Math.max(0, savings)) / income) * 100)
+      : 0;
+  return {
+    income,
+    expenses,
+    investments,
+    debts,
+    savings,
+    savingsRate,
+    corpus20: 0,
+  };
+}
+
+// Collect all YYYY-MM keys that have any transaction or expense entry
+function allAvailableMonths(abhav, aanya) {
+  const set = new Set();
+  const today = new Date();
+  const curYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  set.add(curYm);
+  for (const p of [abhav, aanya]) {
+    for (const t of p?.transactions || []) {
+      if (t.date) set.add(t.date.slice(0, 7));
+    }
+    for (const exp of p?.expenses || []) {
+      for (const e of exp.entries || []) {
+        if (e.date) set.add(e.date.slice(0, 7));
+      }
+    }
+    for (const inc of p?.incomes || []) {
+      for (const e of inc.incomeEntries || []) {
+        if (e.date) set.add(e.date.slice(0, 7));
+      }
+    }
+  }
+  return [...set].sort();
+}
+
+// ── Drag handle + sortable wrapper ─────────────────────────────────────────
+function SortableSection({ id, children }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    position: "relative",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="sortable-section">
+      <button
+        {...attributes}
+        {...listeners}
+        title="Drag to reorder"
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          zIndex: 10,
+          background: "none",
+          border: "none",
+          cursor: "grab",
+          color: "var(--text-muted)",
+          opacity: 0,
+          padding: 4,
+          borderRadius: 4,
+          display: "flex",
+          alignItems: "center",
+          transition: "opacity 0.15s",
+        }}
+        className="drag-handle"
+      >
+        <GripVertical size={15} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
+const LS_KEY = "dashboard-section-order";
+const DEFAULT_ORDER = [
+  "metrics",
+  "cashflow",
+  "persons",
+  "comparison",
+  "goals",
+  "projection",
+];
 
 function personStats(data) {
   if (!data)
@@ -135,15 +287,26 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-function buildCashFlow(abhavTxns, aanyaTxns) {
-  const map = {}; // key: "2026-03" → { income, expenses, investments, emis }
+function buildCashFlow(
+  abhavTxns,
+  aanyaTxns,
+  abhavExps,
+  aanyaExps,
+  abhavIncs,
+  aanyaIncs,
+) {
+  const map = {}; // key: "2026-03" → { income, expenses, investments, emis, detail }
+
+  const ensure = (ym) => {
+    if (!map[ym])
+      map[ym] = { income: 0, expenses: 0, investments: 0, emis: 0, detail: [] };
+  };
 
   const process = (txns) => {
     for (const t of txns || []) {
       if (!t.date) continue;
       const ym = t.date.slice(0, 7); // "YYYY-MM"
-      if (!map[ym])
-        map[ym] = { income: 0, expenses: 0, investments: 0, emis: 0 };
+      ensure(ym);
       const amt = Math.abs(t.amount);
       if (t.amount > 0) {
         map[ym].income += amt;
@@ -157,8 +320,57 @@ function buildCashFlow(abhavTxns, aanyaTxns) {
     }
   };
 
+  // Process budget expense entries (each has its own date + note/vendor)
+  const processExps = (exps) => {
+    for (const exp of exps || []) {
+      for (const e of exp.entries || []) {
+        if (!e.date) continue;
+        const ym = e.date.slice(0, 7);
+        ensure(ym);
+        if (exp.category === "EMI") {
+          map[ym].emis += e.amount;
+        } else {
+          map[ym].expenses += e.amount;
+        }
+        map[ym].detail.push({
+          expName: exp.name,
+          category: exp.category,
+          subCategory: exp.subCategory || "",
+          date: e.date,
+          amount: e.amount,
+          note: e.note || "",
+        });
+      }
+    }
+  };
+
+  // Process variable income entries (each has its own date)
+  const processIncs = (incs) => {
+    for (const inc of incs || []) {
+      for (const e of inc.incomeEntries || []) {
+        if (!e.date) continue;
+        const ym = e.date.slice(0, 7);
+        ensure(ym);
+        map[ym].income += e.amount;
+        map[ym].detail.push({
+          expName: inc.name,
+          category: "Income",
+          subCategory: e.type || "",
+          date: e.date,
+          amount: e.amount,
+          note: e.note || "",
+          isIncome: true,
+        });
+      }
+    }
+  };
+
   process(abhavTxns);
   process(aanyaTxns);
+  processExps(abhavExps);
+  processExps(aanyaExps);
+  processIncs(abhavIncs);
+  processIncs(aanyaIncs);
 
   return Object.entries(map)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -168,15 +380,27 @@ function buildCashFlow(abhavTxns, aanyaTxns) {
       return {
         label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y.slice(2)}`,
         ym,
-        ...d,
+        income: d.income,
+        expenses: d.expenses,
+        investments: d.investments,
+        emis: d.emis,
+        detail: d.detail,
         outflows: d.expenses + d.investments + d.emis,
         net,
       };
     });
 }
 
-function MonthlyCashFlow({ abhav, aanya }) {
-  const data = buildCashFlow(abhav?.transactions, aanya?.transactions);
+function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
+  const data = buildCashFlow(
+    abhav?.transactions,
+    aanya?.transactions,
+    abhav?.expenses,
+    aanya?.expenses,
+    abhav?.incomes,
+    aanya?.incomes,
+  );
+  const [expandedMonth, setExpandedMonth] = useState(null);
   if (data.length === 0) return null;
 
   // Savings streak: consecutive months with positive net (from latest)
@@ -186,7 +410,14 @@ function MonthlyCashFlow({ abhav, aanya }) {
     else break;
   }
 
+  // Show the selected month's summary (or latest if not found)
+  const selected = data.find((d) => d.ym === selectedMonth);
   const latest = data[data.length - 1];
+  const featured = selected || latest;
+  const [featuredY, featuredM] = (featured?.ym || "").split("-");
+  const featuredLabel = featured
+    ? `${MONTH_NAMES[parseInt(featuredM, 10) - 1]} ${featuredY}`
+    : null;
 
   return (
     <div className="card section-gap">
@@ -220,49 +451,73 @@ function MonthlyCashFlow({ abhav, aanya }) {
       </div>
 
       {/* Current month summary */}
-      {latest && (
-        <div className="grid-4" style={{ marginBottom: "1.25rem" }}>
-          <div className="metric-card" style={{ padding: "0.75rem" }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Income
-            </div>
-            <div
-              style={{ fontSize: 15, fontWeight: 600, color: "var(--green)" }}
-            >
-              {fmt(latest.income)}
-            </div>
-          </div>
-          <div className="metric-card" style={{ padding: "0.75rem" }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Expenses
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--red)" }}>
-              {fmt(latest.expenses)}
-            </div>
-          </div>
-          <div className="metric-card" style={{ padding: "0.75rem" }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Invest + EMIs
-            </div>
-            <div
-              style={{ fontSize: 15, fontWeight: 600, color: "var(--gold)" }}
-            >
-              {fmt(latest.investments + latest.emis)}
-            </div>
-          </div>
-          <div className="metric-card" style={{ padding: "0.75rem" }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Net cash
-            </div>
+      {featured && (
+        <div style={{ marginBottom: "1.25rem" }}>
+          {featured.ym !== latest.ym && (
             <div
               style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: latest.net >= 0 ? "var(--green)" : "var(--red)",
+                fontSize: 11,
+                color: "var(--gold)",
+                marginBottom: 6,
+                fontWeight: 500,
               }}
             >
-              {latest.net >= 0 ? "+" : "−"}
-              {fmt(Math.abs(latest.net))}
+              {featuredLabel}
+            </div>
+          )}
+          <div className="grid-4">
+            <div className="metric-card" style={{ padding: "0.75rem" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Income
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--green)",
+                }}
+              >
+                {fmt(featured.income)}
+              </div>
+            </div>
+            <div className="metric-card" style={{ padding: "0.75rem" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Expenses
+              </div>
+              <div
+                style={{ fontSize: 15, fontWeight: 600, color: "var(--red)" }}
+              >
+                {fmt(featured.expenses)}
+              </div>
+            </div>
+            <div className="metric-card" style={{ padding: "0.75rem" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Invest + EMIs
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--gold)",
+                }}
+              >
+                {fmt(featured.investments + featured.emis)}
+              </div>
+            </div>
+            <div className="metric-card" style={{ padding: "0.75rem" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Net cash
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: featured.net >= 0 ? "var(--green)" : "var(--red)",
+                }}
+              >
+                {featured.net >= 0 ? "+" : "−"}
+                {fmt(Math.abs(featured.net))}
+              </div>
             </div>
           </div>
         </div>
@@ -346,47 +601,179 @@ function MonthlyCashFlow({ abhav, aanya }) {
           <span style={{ flex: 1, textAlign: "right" }}>Net</span>
         </div>
         {[...data].reverse().map((d) => (
-          <div
-            key={d.ym}
-            className="data-row"
-            style={{
-              padding: "8px 4px",
-              minWidth: 480,
-              borderRadius: 4,
-            }}
-          >
-            <span style={{ width: 60, fontWeight: 500 }}>{d.label}</span>
-            <span
-              style={{ flex: 1, textAlign: "right", color: "var(--green)" }}
-            >
-              {fmt(d.income)}
-            </span>
-            <span style={{ flex: 1, textAlign: "right", color: "var(--red)" }}>
-              {fmt(d.expenses)}
-            </span>
-            <span style={{ flex: 1, textAlign: "right", color: "var(--gold)" }}>
-              {fmt(d.investments)}
-            </span>
-            <span
+          <div key={d.ym} style={{ minWidth: 480 }}>
+            <div
+              className="data-row"
               style={{
-                flex: 1,
-                textAlign: "right",
-                color: "var(--text-secondary)",
+                padding: "8px 4px",
+                borderRadius: 4,
+                cursor: d.detail?.length > 0 ? "pointer" : "default",
+                background:
+                  d.ym === selectedMonth
+                    ? "rgba(201,168,76,0.07)"
+                    : expandedMonth === d.ym
+                      ? "rgba(255,255,255,0.03)"
+                      : undefined,
+                borderLeft:
+                  d.ym === selectedMonth
+                    ? "3px solid var(--gold)"
+                    : "3px solid transparent",
               }}
+              onClick={() =>
+                d.detail?.length > 0
+                  ? setExpandedMonth((p) => (p === d.ym ? null : d.ym))
+                  : undefined
+              }
             >
-              {fmt(d.emis)}
-            </span>
-            <span
-              style={{
-                flex: 1,
-                textAlign: "right",
-                fontWeight: 600,
-                color: d.net >= 0 ? "var(--green)" : "var(--red)",
-              }}
-            >
-              {d.net >= 0 ? "+" : "−"}
-              {fmt(Math.abs(d.net))}
-            </span>
+              <span style={{ width: 60, fontWeight: 500 }}>{d.label}</span>
+              <span
+                style={{ flex: 1, textAlign: "right", color: "var(--green)" }}
+              >
+                {fmt(d.income)}
+              </span>
+              <span
+                style={{ flex: 1, textAlign: "right", color: "var(--red)" }}
+              >
+                {fmt(d.expenses)}
+              </span>
+              <span
+                style={{ flex: 1, textAlign: "right", color: "var(--gold)" }}
+              >
+                {fmt(d.investments)}
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                {fmt(d.emis)}
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "right",
+                  fontWeight: 600,
+                  color: d.net >= 0 ? "var(--green)" : "var(--red)",
+                }}
+              >
+                {d.net >= 0 ? "+" : "−"}
+                {fmt(Math.abs(d.net))}
+              </span>
+              {d.detail?.length > 0 && (
+                <span
+                  style={{
+                    color: "var(--text-muted)",
+                    fontSize: 10,
+                    marginLeft: 4,
+                    flexShrink: 0,
+                  }}
+                >
+                  {expandedMonth === d.ym ? "▲" : "▼"}
+                </span>
+              )}
+            </div>
+
+            {/* Expense drill-down: grouped by expense name → entries by date */}
+            {expandedMonth === d.ym &&
+              d.detail?.length > 0 &&
+              (() => {
+                // Group entries by expName
+                const groups = {};
+                for (const e of d.detail) {
+                  if (!groups[e.expName]) groups[e.expName] = [];
+                  groups[e.expName].push(e);
+                }
+                return (
+                  <div
+                    style={{
+                      margin: "0 4px 8px 8px",
+                      padding: "8px 10px",
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      borderLeft: "3px solid var(--red)",
+                    }}
+                  >
+                    {Object.entries(groups).map(([name, items]) => {
+                      const total = items.reduce((s, e) => s + e.amount, 0);
+                      return (
+                        <div key={name} style={{ marginBottom: 8 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              borderBottom: "1px solid var(--border)",
+                              paddingBottom: 4,
+                              marginBottom: 4,
+                            }}
+                          >
+                            <span>{name}</span>
+                            <span style={{ color: "var(--red)" }}>
+                              {fmt(total)}
+                            </span>
+                          </div>
+                          {[...items]
+                            .sort((a, b) => a.date.localeCompare(b.date))
+                            .map((e, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  fontSize: 11,
+                                  padding: "2px 0 2px 8px",
+                                  color: "var(--text-secondary)",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: "var(--text-muted)",
+                                    flexShrink: 0,
+                                    width: 50,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {e.date.slice(8)}{" "}
+                                  {
+                                    [
+                                      "Jan",
+                                      "Feb",
+                                      "Mar",
+                                      "Apr",
+                                      "May",
+                                      "Jun",
+                                      "Jul",
+                                      "Aug",
+                                      "Sep",
+                                      "Oct",
+                                      "Nov",
+                                      "Dec",
+                                    ][parseInt(e.date.slice(5, 7), 10) - 1]
+                                  }
+                                </span>
+                                <span style={{ flex: 1 }}>
+                                  {e.note || e.subCategory || e.category}
+                                </span>
+                                <span
+                                  style={{
+                                    fontWeight: 500,
+                                    color: "var(--red)",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {fmt(e.amount)}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
           </div>
         ))}
       </div>
@@ -557,8 +944,52 @@ function RaiseNudge({ abhav, aanya }) {
 }
 
 export default function Dashboard({ abhav, aanya, shared }) {
-  const a = personStats(abhav);
-  const b = personStats(aanya);
+  // ── Month picker ────────────────────────────────────────────────────────
+  const todayYm = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const [selectedMonth, setSelectedMonth] = useState(todayYm);
+  const months = allAvailableMonths(abhav, aanya);
+  const selIdx = months.indexOf(selectedMonth);
+  const isCurrentMonth = selectedMonth === todayYm;
+
+  const prevMonth = () => selIdx > 0 && setSelectedMonth(months[selIdx - 1]);
+  const nextMonth = () =>
+    selIdx < months.length - 1 && setSelectedMonth(months[selIdx + 1]);
+
+  // Friendly label e.g. "Mar 2026" or "Mar 26 (current)"
+  const [selY, selM] = selectedMonth.split("-");
+  const selLabel = `${MONTH_NAMES[parseInt(selM, 10) - 1]} ${selY}`;
+
+  // ── Stats: for the selected month use transaction-based stats ──────────
+  // For the current month fall back to standing config when no transactions yet
+  const aTxStats = statsFromTxns(
+    abhav?.transactions,
+    abhav?.expenses,
+    abhav?.incomes,
+    selectedMonth,
+  );
+  const bTxStats = statsFromTxns(
+    aanya?.transactions,
+    aanya?.expenses,
+    aanya?.incomes,
+    selectedMonth,
+  );
+  const aStanding = personStats(abhav); // standing config (for corpus20)
+  const bStanding = personStats(aanya);
+
+  // Use transaction stats if the month has any income/expense data, else fall back to standing
+  const aHasData =
+    aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;
+  const bHasData =
+    bTxStats.income > 0 || bTxStats.expenses > 0 || bTxStats.investments > 0;
+  const a = aHasData
+    ? { ...aTxStats, corpus20: aStanding.corpus20 }
+    : aStanding;
+  const b = bHasData
+    ? { ...bTxStats, corpus20: bStanding.corpus20 }
+    : bStanding;
 
   const hIncome = a.income + b.income;
   const hExpenses = a.expenses + b.expenses;
@@ -597,11 +1028,33 @@ export default function Dashboard({ abhav, aanya, shared }) {
     { label: "Investments", abhav: a.investments, aanya: b.investments },
   ];
 
-  // Spending pie combined
+  // Spending pie — use this month's expense entries + transactions
   const spendMap = {};
-  [...(abhav?.expenses || []), ...(aanya?.expenses || [])].forEach((e) => {
-    spendMap[e.category] = (spendMap[e.category] || 0) + e.amount;
-  });
+  // From expense entries for selected month
+  for (const p of [abhav, aanya]) {
+    for (const exp of p?.expenses || []) {
+      for (const e of exp.entries || []) {
+        if (e.date?.slice(0, 7) !== selectedMonth) continue;
+        spendMap[exp.category] = (spendMap[exp.category] || 0) + e.amount;
+      }
+    }
+  }
+  // From transactions for selected month
+  for (const p of [abhav, aanya]) {
+    for (const t of p?.transactions || []) {
+      if (!t.date || t.date.slice(0, 7) !== selectedMonth || t.amount >= 0)
+        continue;
+      if (t.type === "investment" || t.category === "EMI") continue;
+      const cat = t.category || "Others";
+      spendMap[cat] = (spendMap[cat] || 0) + Math.abs(t.amount);
+    }
+  }
+  // Fall back to standing config when no transaction data at all
+  if (!aHasData && !bHasData) {
+    [...(abhav?.expenses || []), ...(aanya?.expenses || [])].forEach((e) => {
+      spendMap[e.category] = (spendMap[e.category] || 0) + e.amount;
+    });
+  }
   const pieData = Object.entries(spendMap)
     .sort((x, y) => y[1] - x[1])
     .map(([name, value]) => ({
@@ -613,24 +1066,47 @@ export default function Dashboard({ abhav, aanya, shared }) {
   // Shared goals
   const sharedGoals = shared?.goals || [];
 
-  return (
-    <div>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <div
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: 26,
-            marginBottom: 4,
-          }}
-        >
-          {shared?.profile?.householdName ?? "Household"} 🏡
-        </div>
-        <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-          Combined household overview
-        </div>
-      </div>
+  // ── Section order (persisted in localStorage) ──────────────────────────
+  const [sectionOrder, setSectionOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY));
+      // ensure any new sections not in saved are appended
+      if (Array.isArray(saved)) {
+        const merged = [...saved];
+        for (const id of DEFAULT_ORDER) {
+          if (!merged.includes(id)) merged.push(id);
+        }
+        return merged;
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_ORDER;
+  });
 
-      {/* Household metrics */}
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 6 },
+    }),
+  );
+
+  const handleDragEnd = useCallback(({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    setSectionOrder((prev) => {
+      const next = arrayMove(
+        prev,
+        prev.indexOf(active.id),
+        prev.indexOf(over.id),
+      );
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // ── Section renderers ───────────────────────────────────────────────────
+  const sections = {
+    metrics: (
       <div className="grid-4 section-gap">
         {[
           {
@@ -688,164 +1164,184 @@ export default function Dashboard({ abhav, aanya, shared }) {
           </div>
         ))}
       </div>
+    ),
 
-      {/* Raise nudge — appears for 45 days after a salary increase is logged */}
-      <RaiseNudge abhav={abhav} aanya={aanya} />
+    cashflow: (
+      <MonthlyCashFlow
+        abhav={abhav}
+        aanya={aanya}
+        selectedMonth={selectedMonth}
+      />
+    ),
 
-      {/* Side-by-side personal stats */}
-      <div className="grid-2 section-gap">
-        {[
-          {
-            name: "Abhav",
-            stats: a,
-            score: aScore,
-            color: "var(--abhav)",
-            dim: "var(--abhav-dim)",
-          },
-          {
-            name: "Aanya",
-            stats: b,
-            score: bScore,
-            color: "var(--aanya)",
-            dim: "var(--aanya-dim)",
-          },
-        ].map((p) => (
-          <div
-            key={p.name}
-            className="card"
-            style={{ borderTop: `3px solid ${p.color}` }}
-          >
+    persons: (
+      <>
+        <RaiseNudge abhav={abhav} aanya={aanya} />
+        <div className="grid-2 section-gap">
+          {[
+            {
+              name: "Abhav",
+              stats: a,
+              score: aScore,
+              color: "var(--abhav)",
+              dim: "var(--abhav-dim)",
+            },
+            {
+              name: "Aanya",
+              stats: b,
+              score: bScore,
+              color: "var(--aanya)",
+              dim: "var(--aanya-dim)",
+            },
+          ].map((p) => (
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: "1rem",
-              }}
+              key={p.name}
+              className="card"
+              style={{ borderTop: `3px solid ${p.color}` }}
             >
-              <div>
-                <div
-                  style={{ fontFamily: "var(--font-display)", fontSize: 18 }}
-                >
-                  {p.name}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  Health score
-                </div>
-              </div>
-              <HealthRing score={p.score} />
-            </div>
-            {[
-              { label: "Income", val: p.stats.income, color: "var(--green)" },
-              { label: "Expenses", val: p.stats.expenses, color: "var(--red)" },
-              {
-                label: "Investments",
-                val: p.stats.investments,
-                color: p.color,
-              },
-              {
-                label: "20yr Corpus",
-                val: p.stats.corpus20,
-                color: "var(--gold)",
-                cr: true,
-              },
-            ].map((r) => (
               <div
-                key={r.label}
                 style={{
                   display: "flex",
+                  alignItems: "center",
                   justifyContent: "space-between",
-                  fontSize: 13,
-                  padding: "5px 0",
-                  borderBottom: "1px solid var(--border)",
+                  marginBottom: "1rem",
                 }}
               >
-                <span style={{ color: "var(--text-secondary)" }}>
-                  {r.label}
+                <div>
+                  <div
+                    style={{ fontFamily: "var(--font-display)", fontSize: 18 }}
+                  >
+                    {p.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    Health score
+                  </div>
+                </div>
+                <HealthRing score={p.score} />
+              </div>
+              {[
+                {
+                  label: "Income",
+                  val: p.stats.income,
+                  color: "var(--green)",
+                },
+                {
+                  label: "Expenses",
+                  val: p.stats.expenses,
+                  color: "var(--red)",
+                },
+                {
+                  label: "Investments",
+                  val: p.stats.investments,
+                  color: p.color,
+                },
+                {
+                  label: "20yr Corpus",
+                  val: p.stats.corpus20,
+                  color: "var(--gold)",
+                  cr: true,
+                },
+              ].map((r) => (
+                <div
+                  key={r.label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: 13,
+                    padding: "5px 0",
+                    borderBottom: "1px solid var(--border)",
+                  }}
+                >
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {r.label}
+                  </span>
+                  <span style={{ color: r.color, fontWeight: 500 }}>
+                    {r.cr ? fmtCr(r.val) : fmt(r.val)}
+                  </span>
+                </div>
+              ))}
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Savings rate
                 </span>
-                <span style={{ color: r.color, fontWeight: 500 }}>
-                  {r.cr ? fmtCr(r.val) : fmt(r.val)}
+                <span
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color:
+                      p.stats.savingsRate >= 20
+                        ? "var(--green)"
+                        : "var(--gold)",
+                  }}
+                >
+                  {p.stats.savingsRate}%
                 </span>
               </div>
-            ))}
-            <div
-              style={{
-                marginTop: "0.75rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Savings rate
-              </span>
-              <span
+            </div>
+          ))}
+        </div>
+        {/* Who's saving more */}
+        <div
+          className="card section-gap"
+          style={{
+            background:
+              a.savingsRate >= b.savingsRate
+                ? "linear-gradient(135deg, rgba(91,156,246,0.06), transparent)"
+                : "linear-gradient(135deg, rgba(212,110,179,0.06), transparent)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ fontSize: 28 }}>
+              {a.savingsRate >= b.savingsRate ? "🏆" : "👑"}
+            </div>
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 15 }}>
+                <span
+                  style={{
+                    color:
+                      a.savingsRate >= b.savingsRate
+                        ? "var(--abhav)"
+                        : "var(--aanya)",
+                  }}
+                >
+                  {a.savingsRate >= b.savingsRate ? "Abhav" : "Aanya"}
+                </span>{" "}
+                is saving more this month!
+              </div>
+              <div
                 style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color:
-                    p.stats.savingsRate >= 20 ? "var(--green)" : "var(--gold)",
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  marginTop: 2,
                 }}
               >
-                {p.stats.savingsRate}%
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Who's saving more */}
-      <div
-        className="card section-gap"
-        style={{
-          background:
-            a.savingsRate >= b.savingsRate
-              ? "linear-gradient(135deg, rgba(91,156,246,0.06), transparent)"
-              : "linear-gradient(135deg, rgba(212,110,179,0.06), transparent)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div style={{ fontSize: 28 }}>
-            {a.savingsRate >= b.savingsRate ? "🏆" : "👑"}
-          </div>
-          <div>
-            <div style={{ fontWeight: 500, fontSize: 15 }}>
-              <span
-                style={{
-                  color:
-                    a.savingsRate >= b.savingsRate
-                      ? "var(--abhav)"
-                      : "var(--aanya)",
-                }}
-              >
-                {a.savingsRate >= b.savingsRate ? "Abhav" : "Aanya"}
-              </span>{" "}
-              is saving more this month!
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--text-secondary)",
-                marginTop: 2,
-              }}
-            >
-              Abhav:{" "}
-              <strong style={{ color: "var(--abhav)" }}>
-                {a.savingsRate}%
-              </strong>{" "}
-              &nbsp;·&nbsp; Aanya:{" "}
-              <strong style={{ color: "var(--aanya)" }}>
-                {b.savingsRate}%
-              </strong>{" "}
-              &nbsp;·&nbsp; Household target:{" "}
-              <strong style={{ color: "var(--gold)" }}>
-                {shared?.profile?.savingsTarget ?? 25}%
-              </strong>
+                Abhav:{" "}
+                <strong style={{ color: "var(--abhav)" }}>
+                  {a.savingsRate}%
+                </strong>{" "}
+                &nbsp;·&nbsp; Aanya:{" "}
+                <strong style={{ color: "var(--aanya)" }}>
+                  {b.savingsRate}%
+                </strong>{" "}
+                &nbsp;·&nbsp; Household target:{" "}
+                <strong style={{ color: "var(--gold)" }}>
+                  {shared?.profile?.savingsTarget ?? 25}%
+                </strong>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </>
+    ),
 
+    comparison: (
       <div className="grid-2 section-gap">
         {/* Comparison bars */}
         <div className="card">
@@ -969,9 +1465,10 @@ export default function Dashboard({ abhav, aanya, shared }) {
           </div>
         </div>
       </div>
+    ),
 
-      {/* Shared Goals */}
-      {sharedGoals.length > 0 && (
+    goals:
+      sharedGoals.length > 0 ? (
         <div className="card section-gap">
           <div className="card-title">🏠 Shared Goals</div>
           {sharedGoals.map((g) => {
@@ -999,7 +1496,10 @@ export default function Dashboard({ abhav, aanya, shared }) {
                         {g.name}
                       </div>
                       <div
-                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
+                        style={{
+                          fontSize: 12,
+                          color: "var(--text-secondary)",
+                        }}
                       >
                         Abhav:{" "}
                         <span style={{ color: "var(--abhav)" }}>
@@ -1016,7 +1516,10 @@ export default function Dashboard({ abhav, aanya, shared }) {
                     <div style={{ fontSize: 13, fontWeight: 600 }}>
                       {fmt(totalSaved)}{" "}
                       <span
-                        style={{ color: "var(--text-muted)", fontWeight: 400 }}
+                        style={{
+                          color: "var(--text-muted)",
+                          fontWeight: 400,
+                        }}
                       >
                         / {fmt(g.target)}
                       </span>
@@ -1036,9 +1539,9 @@ export default function Dashboard({ abhav, aanya, shared }) {
             );
           })}
         </div>
-      )}
+      ) : null,
 
-      {/* Household projection */}
+    projection: (
       <div className="card">
         <div className="card-title">💰 Household Wealth Projection</div>
         <div style={{ display: "flex", gap: "2rem", marginBottom: "1rem" }}>
@@ -1104,9 +1607,180 @@ export default function Dashboard({ abhav, aanya, shared }) {
             ` Boost your household savings rate to 25%+ to retire even earlier.`}
         </div>
       </div>
+    ),
+  };
 
-      {/* Monthly Cash Flow */}
-      <MonthlyCashFlow abhav={abhav} aanya={aanya} />
+  return (
+    <div>
+      {/* ── Header ── */}
+      <div style={{ marginBottom: "1.5rem" }}>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 26,
+            marginBottom: 4,
+          }}
+        >
+          {shared?.profile?.householdName ?? "Household"} 🏡
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+            Combined household overview
+          </span>
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+            · drag ⠿ to reorder
+          </span>
+
+          {/* Month picker */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              marginLeft: "auto",
+              background: isCurrentMonth
+                ? "var(--bg-card2)"
+                : "var(--gold-dim)",
+              border: isCurrentMonth
+                ? "1px solid var(--border)"
+                : "1px solid var(--gold-border)",
+              borderRadius: 8,
+              padding: "2px 4px",
+            }}
+          >
+            <button
+              onClick={prevMonth}
+              disabled={selIdx <= 0}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: selIdx <= 0 ? "not-allowed" : "pointer",
+                color:
+                  selIdx <= 0 ? "var(--text-muted)" : "var(--text-secondary)",
+                padding: "3px 5px",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: isCurrentMonth ? "var(--text-secondary)" : "var(--gold)",
+                minWidth: 72,
+                textAlign: "center",
+                userSelect: "none",
+              }}
+            >
+              {selLabel}
+              {isCurrentMonth && (
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 9,
+                    fontWeight: 400,
+                    color: "var(--text-muted)",
+                    marginTop: -1,
+                  }}
+                >
+                  current
+                </span>
+              )}
+            </span>
+            <button
+              onClick={nextMonth}
+              disabled={selIdx >= months.length - 1}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: selIdx >= months.length - 1 ? "not-allowed" : "pointer",
+                color:
+                  selIdx >= months.length - 1
+                    ? "var(--text-muted)"
+                    : "var(--text-secondary)",
+                padding: "3px 5px",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <ChevronRight size={14} />
+            </button>
+            {!isCurrentMonth && (
+              <button
+                onClick={() => setSelectedMonth(todayYm)}
+                title="Back to current month"
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--gold)",
+                  fontSize: 10,
+                  padding: "3px 5px",
+                  borderRadius: 4,
+                }}
+              >
+                today
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Past month banner */}
+        {!isCurrentMonth && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "6px 12px",
+              background: "rgba(201,168,76,0.08)",
+              border: "1px solid var(--gold-border)",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "var(--gold)",
+            }}
+          >
+            📅 Viewing <strong>{selLabel}</strong> — numbers reflect that
+            month's transactions.{" "}
+            {!aHasData && !bHasData && (
+              <span style={{ color: "var(--text-muted)" }}>
+                No transactions found for this month — showing current budget
+                config.
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={sectionOrder}
+          strategy={verticalListSortingStrategy}
+        >
+          {sectionOrder.map((id) => {
+            const content = sections[id];
+            if (!content) return null;
+            return (
+              <SortableSection key={id} id={id}>
+                {content}
+              </SortableSection>
+            );
+          })}
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }

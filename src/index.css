@@ -304,6 +304,16 @@ select:focus-visible {
 .data-row:hover {
   background: rgba(255, 255, 255, 0.02);
 }
+
+/* Drag-to-reorder sections */
+.sortable-section:hover .drag-handle,
+.sortable-section:focus-within .drag-handle {
+  opacity: 1 !important;
+}
+.drag-handle:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: var(--text-secondary) !important;
+}
 @media (max-width: 900px) {
   .grid-4 {
     grid-template-columns: 1fr 1fr;

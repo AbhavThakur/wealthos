@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
 } from "react";
@@ -61,6 +62,9 @@ function autoRecurringRules(data) {
 
   // Expense rules
   for (const exp of data.expenses || []) {
+    const recurrence = exp.recurrence || "monthly";
+    // "once" = one-off with no recurring transaction
+    // entries-based expenses: still generate a monthly placeholder unless recurrence=once/yearly/quarterly
     rules.push({
       id: id--,
       desc: exp.name,
@@ -71,6 +75,9 @@ function autoRecurringRules(data) {
       active: true,
       auto: true,
       sourceType: "expense",
+      recurrence,
+      recurrenceMonth: exp.recurrenceMonth ?? null, // 0-based month index (0=Jan) for yearly
+      recurrenceMonths: exp.recurrenceMonths ?? null, // array of 0-based months for quarterly
     });
   }
 
@@ -127,8 +134,28 @@ function applyRecurring(data) {
 
   for (const rule of allRules) {
     if (!rule.active) continue;
-    // Skip yearly SIPs outside their month (assume January deduction)
-    if (rule.frequency === "yearly" && now.getMonth() !== 0) continue;
+
+    // ── Recurrence gating ──────────────────────────────────────────────
+    const rec =
+      rule.recurrence || (rule.frequency === "yearly" ? "yearly" : "monthly");
+    const nowMonth = now.getMonth(); // 0-based
+    const nowYear = now.getFullYear();
+
+    if (rec === "once" || rec === "variable") continue; // no auto transaction
+
+    if (rec === "yearly") {
+      // Fire only in the configured month (default Jan=0)
+      const dueMonth = rule.recurrenceMonth ?? 0;
+      if (nowMonth !== dueMonth) continue;
+    }
+
+    if (rec === "quarterly") {
+      // Fire in months 0,3,6,9 by default, or configured months
+      const dueMonths = rule.recurrenceMonths ?? [0, 3, 6, 9];
+      if (!dueMonths.includes(nowMonth)) continue;
+    }
+    // "monthly" falls through — always fires
+    // ──────────────────────────────────────────────────────────────────
 
     const dateStr = `${ym}-${String(rule.dayOfMonth).padStart(2, "0")}`;
     if (new Date(dateStr) > now) continue;
@@ -354,6 +381,25 @@ export function DataProvider({ children }) {
       ),
     );
   }, [abhav, aanya, shared, updateShared]);
+
+  // ── Auto-snapshot once per month on app load ────────────────────────────
+  const autoSnappedRef = useRef(false);
+  useEffect(() => {
+    if (loading || autoSnappedRef.current) return;
+    if (!abhav || !aanya || !shared) return;
+    const now = new Date();
+    const curMonth = now.getMonth() + 1;
+    const curYear = now.getFullYear();
+    const alreadyHas = (shared.netWorthHistory || []).some(
+      (s) => s.month === curMonth && s.year === curYear,
+    );
+    if (!alreadyHas) {
+      autoSnappedRef.current = true; // prevent double-fire
+      takeSnapshot();
+    } else {
+      autoSnappedRef.current = true;
+    }
+  }, [loading, abhav, aanya, shared, takeSnapshot]);
 
   return (
     <DataContext.Provider

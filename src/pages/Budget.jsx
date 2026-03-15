@@ -6,7 +6,14 @@ import {
   EXPENSE_SUBCATEGORIES,
   INCOME_TYPES,
 } from "../utils/finance";
-import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  CalendarDays,
+  X,
+} from "lucide-react";
 import { useConfirm } from "../App";
 
 // ─── Budget rule engine ──────────────────────────────────────────────────────
@@ -525,6 +532,110 @@ export default function Budget({
   // per-income-id expanded state + pending salary-change form
   const [expandedHistory, setExpandedHistory] = useState({});
   const [salaryForm, setSalaryForm] = useState({}); // id → { newAmount, note, date }
+  // expense entries (dated purchase log)
+  const [expandedExp, setExpandedExp] = useState({});
+  const [entryForm, setEntryForm] = useState({}); // expId → { date, amount, note }
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const toggleExpandExp = (id) =>
+    setExpandedExp((s) => ({ ...s, [id]: !s[id] }));
+  const getEntryForm = (id) =>
+    entryForm[id] || { date: todayStr(), amount: "", note: "" };
+  const setEF = (id, patch) =>
+    setEntryForm((s) => ({ ...s, [id]: { ...getEntryForm(id), ...patch } }));
+  const addEntry = (exp) => {
+    const f = getEntryForm(exp.id);
+    if (!f.date || !f.amount) return;
+    const entry = {
+      id: Date.now(),
+      date: f.date,
+      amount: Number(f.amount),
+      note: f.note.trim(),
+    };
+    const newEntries = [...(exp.entries || []), entry];
+    const newAmount = newEntries.reduce((s, e) => s + e.amount, 0);
+    updatePerson(
+      "expenses",
+      expenses.map((x) =>
+        x.id === exp.id ? { ...x, entries: newEntries, amount: newAmount } : x,
+      ),
+    );
+    setEntryForm((s) => ({
+      ...s,
+      [exp.id]: { date: todayStr(), amount: "", note: "" },
+    }));
+  };
+  const deleteEntry = (exp, entryId) => {
+    const newEntries = (exp.entries || []).filter((e) => e.id !== entryId);
+    const newAmount = newEntries.reduce((s, e) => s + e.amount, 0);
+    updatePerson(
+      "expenses",
+      expenses.map((x) =>
+        x.id === exp.id ? { ...x, entries: newEntries, amount: newAmount } : x,
+      ),
+    );
+  };
+
+  // ── Variable income entries (bonus, freelance, dividend, etc.) ─────────
+  const [expandedInc, setExpandedInc] = useState({});
+  const [incEntryForm, setIncEntryForm] = useState({}); // incId → { date, amount, note, type }
+  const toggleExpandInc = (id) =>
+    setExpandedInc((s) => ({ ...s, [id]: !s[id] }));
+  const getIncEF = (id) =>
+    incEntryForm[id] || {
+      date: todayStr(),
+      amount: "",
+      note: "",
+      type: "bonus",
+    };
+  const setIEF = (id, patch) =>
+    setIncEntryForm((s) => ({ ...s, [id]: { ...getIncEF(id), ...patch } }));
+  const addIncEntry = (inc) => {
+    const f = getIncEF(inc.id);
+    if (!f.date || !f.amount) return;
+    const entry = {
+      id: Date.now(),
+      date: f.date,
+      amount: Number(f.amount),
+      note: f.note.trim(),
+      type: f.type,
+    };
+    updatePerson(
+      "incomes",
+      incomes.map((x) =>
+        x.id === inc.id
+          ? { ...x, incomeEntries: [...(x.incomeEntries || []), entry] }
+          : x,
+      ),
+    );
+    setIncEntryForm((s) => ({
+      ...s,
+      [inc.id]: { date: todayStr(), amount: "", note: "", type: "bonus" },
+    }));
+  };
+  const deleteIncEntry = (inc, entryId) => {
+    updatePerson(
+      "incomes",
+      incomes.map((x) =>
+        x.id === inc.id
+          ? {
+              ...x,
+              incomeEntries: (x.incomeEntries || []).filter(
+                (e) => e.id !== entryId,
+              ),
+            }
+          : x,
+      ),
+    );
+  };
+
+  const INC_ENTRY_TYPES = [
+    "bonus",
+    "freelance",
+    "dividend",
+    "refund",
+    "gift",
+    "other",
+  ];
 
   const toggleHistory = (id) =>
     setExpandedHistory((s) => ({ ...s, [id]: !s[id] }));
@@ -610,6 +721,7 @@ export default function Budget({
         name: "New expense",
         amount: 0,
         category: "Others",
+        entries: [],
       },
     ]);
 
@@ -836,205 +948,410 @@ export default function Budget({
               <Plus size={13} /> Add
             </button>
           </div>
-          {incomes.map((inc) => (
-            <div key={inc.id} style={{ marginBottom: 4 }}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  padding: "8px 0",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
-                <input
-                  value={inc.name}
-                  onChange={(e) =>
-                    updatePerson(
-                      "incomes",
-                      incomes.map((x) =>
-                        x.id === inc.id ? { ...x, name: e.target.value } : x,
-                      ),
-                    )
-                  }
-                  style={{ flex: 3 }}
-                />
-                <select
-                  value={inc.type}
-                  onChange={(e) =>
-                    updatePerson(
-                      "incomes",
-                      incomes.map((x) =>
-                        x.id === inc.id ? { ...x, type: e.target.value } : x,
-                      ),
-                    )
-                  }
-                  style={{ flex: 1.5 }}
-                >
-                  {INCOME_TYPES.map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  value={inc.amount}
-                  onChange={(e) =>
-                    updatePerson(
-                      "incomes",
-                      incomes.map((x) =>
-                        x.id === inc.id
-                          ? { ...x, amount: Number(e.target.value) }
-                          : x,
-                      ),
-                    )
-                  }
-                  style={{ flex: 1 }}
-                  min="0"
-                />
-                <button
-                  className="btn-danger"
-                  aria-label={`Delete ${inc.name}`}
-                  onClick={async () => {
-                    if (
-                      await confirm(
-                        "Delete income?",
-                        `Remove "${inc.name}" from your income sources?`,
-                      )
-                    )
-                      updatePerson(
-                        "incomes",
-                        incomes.filter((x) => x.id !== inc.id),
-                      );
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-
-              {/* Salary change form */}
-              {salaryForm[inc.id] ? (
+          {incomes.map((inc) => {
+            const incEntries = inc.incomeEntries || [];
+            const isIncOpen = !!expandedInc[inc.id];
+            const ief = getIncEF(inc.id);
+            const thisMonth = new Date().toISOString().slice(0, 7);
+            const varThisMonth = incEntries
+              .filter((e) => e.date?.slice(0, 7) === thisMonth)
+              .reduce((s, e) => s + e.amount, 0);
+            return (
+              <div key={inc.id} style={{ marginBottom: 4 }}>
                 <div
                   style={{
-                    background: "var(--bg-card2)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "12px 14px",
-                    marginTop: 4,
-                    marginBottom: 4,
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "8px 0",
+                    borderBottom: isIncOpen
+                      ? "none"
+                      : "1px solid var(--border)",
                   }}
                 >
-                  <div
+                  <input
+                    value={inc.name}
+                    onChange={(e) =>
+                      updatePerson(
+                        "incomes",
+                        incomes.map((x) =>
+                          x.id === inc.id ? { ...x, name: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    style={{ flex: 3 }}
+                  />
+                  <select
+                    value={inc.type}
+                    onChange={(e) =>
+                      updatePerson(
+                        "incomes",
+                        incomes.map((x) =>
+                          x.id === inc.id ? { ...x, type: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    style={{ flex: 1.5 }}
+                  >
+                    {INCOME_TYPES.map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    value={inc.amount}
+                    onChange={(e) =>
+                      updatePerson(
+                        "incomes",
+                        incomes.map((x) =>
+                          x.id === inc.id
+                            ? { ...x, amount: Number(e.target.value) }
+                            : x,
+                        ),
+                      )
+                    }
+                    style={{ flex: 1 }}
+                    min="0"
+                  />
+                  {/* Variable income log toggle */}
+                  <button
+                    onClick={() => toggleExpandInc(inc.id)}
+                    title="Log variable income (bonus, freelance, dividend…)"
                     style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      marginBottom: 10,
-                      color: "var(--text-secondary)",
+                      background:
+                        incEntries.length > 0
+                          ? "var(--green-dim)"
+                          : "rgba(255,255,255,0.06)",
+                      border:
+                        incEntries.length > 0
+                          ? "1px solid rgba(76,175,130,0.3)"
+                          : "1px solid var(--border)",
+                      color:
+                        incEntries.length > 0
+                          ? "var(--green)"
+                          : "var(--text-muted)",
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      flexShrink: 0,
                     }}
                   >
-                    Log salary change
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1.5fr",
-                      gap: 8,
-                      marginBottom: 10,
+                    <CalendarDays size={11} />
+                    {incEntries.length > 0 ? incEntries.length : "+"}
+                  </button>
+                  <button
+                    className="btn-danger"
+                    aria-label={`Delete ${inc.name}`}
+                    onClick={async () => {
+                      if (
+                        await confirm(
+                          "Delete income?",
+                          `Remove "${inc.name}" from your income sources?`,
+                        )
+                      )
+                        updatePerson(
+                          "incomes",
+                          incomes.filter((x) => x.id !== inc.id),
+                        );
                     }}
                   >
-                    <div>
-                      <label
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          display: "block",
-                          marginBottom: 3,
-                        }}
-                      >
-                        New amount (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={salaryForm[inc.id].newAmount}
-                        onChange={(e) =>
-                          setSalaryForm((s) => ({
-                            ...s,
-                            [inc.id]: {
-                              ...s[inc.id],
-                              newAmount: e.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          display: "block",
-                          marginBottom: 3,
-                        }}
-                      >
-                        Effective date
-                      </label>
-                      <input
-                        type="date"
-                        value={salaryForm[inc.id].date}
-                        onChange={(e) =>
-                          setSalaryForm((s) => ({
-                            ...s,
-                            [inc.id]: { ...s[inc.id], date: e.target.value },
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text-muted)",
-                          display: "block",
-                          marginBottom: 3,
-                        }}
-                      >
-                        Reason (optional)
-                      </label>
-                      <input
-                        placeholder="e.g. Promotion, Job change"
-                        value={salaryForm[inc.id].note}
-                        onChange={(e) =>
-                          setSalaryForm((s) => ({
-                            ...s,
-                            [inc.id]: { ...s[inc.id], note: e.target.value },
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                  {salaryForm[inc.id].newAmount &&
-                    Number(salaryForm[inc.id].newAmount) !== inc.amount && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--text-muted)",
-                          marginBottom: 8,
-                        }}
-                      >
-                        {fmt(inc.amount)} →{" "}
-                        <strong
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                {/* Variable income entries panel */}
+                {isIncOpen && (
+                  <div
+                    style={{
+                      margin: "0 0 10px 12px",
+                      padding: "10px 12px",
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      borderLeft: `3px solid var(--green)`,
+                      borderBottom: "1px solid var(--border)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginBottom: 8,
+                        textTransform: "uppercase",
+                        letterSpacing: ".06em",
+                      }}
+                    >
+                      Variable income log — bonus, freelance, dividend, refund,
+                      etc.
+                      {varThisMonth > 0 && (
+                        <span
                           style={{
-                            color:
-                              Number(salaryForm[inc.id].newAmount) > inc.amount
-                                ? "var(--green)"
-                                : "var(--red)",
+                            marginLeft: 8,
+                            color: "var(--green)",
+                            fontWeight: 600,
+                            textTransform: "none",
                           }}
                         >
-                          {fmt(Number(salaryForm[inc.id].newAmount))}
-                        </strong>
-                        {inc.amount > 0 && (
-                          <span
+                          +{fmt(varThisMonth)} this month
+                        </span>
+                      )}
+                    </div>
+
+                    {incEntries.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        {[...incEntries]
+                          .sort((a, b) => b.date.localeCompare(a.date))
+                          .map((e) => (
+                            <div
+                              key={e.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "4px 0",
+                                borderBottom: "1px solid var(--border)",
+                                fontSize: 12,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "var(--text-muted)",
+                                  flexShrink: 0,
+                                  width: 72,
+                                  fontVariantNumeric: "tabular-nums",
+                                }}
+                              >
+                                {e.date.slice(5).replace("-", " ")}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  background: "rgba(76,175,130,0.12)",
+                                  color: "var(--green)",
+                                  flexShrink: 0,
+                                  textTransform: "capitalize",
+                                }}
+                              >
+                                {e.type}
+                              </span>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  color: "var(--text-secondary)",
+                                }}
+                              >
+                                {e.note || "—"}
+                              </span>
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  color: "var(--green)",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                +{fmt(e.amount)}
+                              </span>
+                              <button
+                                onClick={() => deleteIncEntry(inc, e.id)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  color: "var(--text-muted)",
+                                  padding: 2,
+                                  flexShrink: 0,
+                                }}
+                                title="Remove entry"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <input
+                        type="date"
+                        value={ief.date}
+                        onChange={(e) =>
+                          setIEF(inc.id, { date: e.target.value })
+                        }
+                        style={{ flex: "0 0 130px" }}
+                      />
+                      <input
+                        type="number"
+                        placeholder="Amount (₹)"
+                        value={ief.amount}
+                        onChange={(e) =>
+                          setIEF(inc.id, { amount: e.target.value })
+                        }
+                        style={{ flex: "0 0 110px" }}
+                        min="0"
+                      />
+                      <select
+                        value={ief.type}
+                        onChange={(e) =>
+                          setIEF(inc.id, { type: e.target.value })
+                        }
+                        style={{ flex: "0 0 100px", fontSize: 12 }}
+                      >
+                        {INC_ENTRY_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Note (e.g. Q1 bonus)"
+                        value={ief.note}
+                        onChange={(e) =>
+                          setIEF(inc.id, { note: e.target.value })
+                        }
+                        style={{ flex: 1, minWidth: 100 }}
+                      />
+                      <button
+                        className="btn-primary"
+                        style={{
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                        onClick={() => addIncEntry(inc)}
+                        disabled={!ief.amount || !ief.date}
+                      >
+                        <Plus size={11} /> Log
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Salary change form (existing) */}
+                {salaryForm[inc.id] ? (
+                  <div
+                    style={{
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "12px 14px",
+                      marginTop: 4,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        marginBottom: 10,
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      Log salary change
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr 1.5fr",
+                        gap: 8,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            display: "block",
+                            marginBottom: 3,
+                          }}
+                        >
+                          New amount (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={salaryForm[inc.id].newAmount}
+                          onChange={(e) =>
+                            setSalaryForm((s) => ({
+                              ...s,
+                              [inc.id]: {
+                                ...s[inc.id],
+                                newAmount: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            display: "block",
+                            marginBottom: 3,
+                          }}
+                        >
+                          Effective date
+                        </label>
+                        <input
+                          type="date"
+                          value={salaryForm[inc.id].date}
+                          onChange={(e) =>
+                            setSalaryForm((s) => ({
+                              ...s,
+                              [inc.id]: { ...s[inc.id], date: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            display: "block",
+                            marginBottom: 3,
+                          }}
+                        >
+                          Reason (optional)
+                        </label>
+                        <input
+                          placeholder="e.g. Promotion, Job change"
+                          value={salaryForm[inc.id].note}
+                          onChange={(e) =>
+                            setSalaryForm((s) => ({
+                              ...s,
+                              [inc.id]: { ...s[inc.id], note: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    {salaryForm[inc.id].newAmount &&
+                      Number(salaryForm[inc.id].newAmount) !== inc.amount && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--text-muted)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          {fmt(inc.amount)} →{" "}
+                          <strong
                             style={{
-                              marginLeft: 6,
                               color:
                                 Number(salaryForm[inc.id].newAmount) >
                                 inc.amount
@@ -1042,154 +1359,168 @@ export default function Budget({
                                   : "var(--red)",
                             }}
                           >
-                            (
-                            {((Number(salaryForm[inc.id].newAmount) -
-                              inc.amount) /
-                              inc.amount) *
-                              100 >
-                            0
-                              ? "+"
-                              : ""}
-                            {(
-                              ((Number(salaryForm[inc.id].newAmount) -
+                            {fmt(Number(salaryForm[inc.id].newAmount))}
+                          </strong>
+                          {inc.amount > 0 && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                color:
+                                  Number(salaryForm[inc.id].newAmount) >
+                                  inc.amount
+                                    ? "var(--green)"
+                                    : "var(--red)",
+                              }}
+                            >
+                              (
+                              {((Number(salaryForm[inc.id].newAmount) -
                                 inc.amount) /
                                 inc.amount) *
-                              100
-                            ).toFixed(1)}
-                            %)
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      className="btn-primary"
-                      style={{ fontSize: 12, padding: "4px 12px" }}
-                      onClick={() => commitSalaryChange(inc)}
-                    >
-                      Save change
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
-                      onClick={() => cancelSalaryChange(inc.id)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                  <button
-                    className="btn-ghost"
-                    style={{ fontSize: 11, padding: "3px 10px" }}
-                    onClick={() => openSalaryChange(inc)}
-                  >
-                    ↑ Log salary change
-                  </button>
-                  {(inc.salaryHistory?.length ?? 0) > 0 && (
-                    <button
-                      className="btn-ghost"
-                      style={{
-                        fontSize: 11,
-                        padding: "3px 10px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                      onClick={() => toggleHistory(inc.id)}
-                    >
-                      History ({inc.salaryHistory.length})
-                      {expandedHistory[inc.id] ? (
-                        <ChevronUp size={11} />
-                      ) : (
-                        <ChevronDown size={11} />
+                                100 >
+                              0
+                                ? "+"
+                                : ""}
+                              {(
+                                ((Number(salaryForm[inc.id].newAmount) -
+                                  inc.amount) /
+                                  inc.amount) *
+                                100
+                              ).toFixed(1)}
+                              %)
+                            </span>
+                          )}
+                        </div>
                       )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        className="btn-primary"
+                        style={{ fontSize: 12, padding: "4px 12px" }}
+                        onClick={() => commitSalaryChange(inc)}
+                      >
+                        Save change
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        style={{ fontSize: 12, padding: "4px 10px" }}
+                        onClick={() => cancelSalaryChange(inc.id)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: "3px 10px" }}
+                      onClick={() => openSalaryChange(inc)}
+                    >
+                      ↑ Log salary change
                     </button>
-                  )}
-                </div>
-              )}
+                    {(inc.salaryHistory?.length ?? 0) > 0 && (
+                      <button
+                        className="btn-ghost"
+                        style={{
+                          fontSize: 11,
+                          padding: "3px 10px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                        onClick={() => toggleHistory(inc.id)}
+                      >
+                        History ({inc.salaryHistory.length})
+                        {expandedHistory[inc.id] ? (
+                          <ChevronUp size={11} />
+                        ) : (
+                          <ChevronDown size={11} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
 
-              {/* History timeline */}
-              {expandedHistory[inc.id] &&
-                (inc.salaryHistory?.length ?? 0) > 0 && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      paddingLeft: 12,
-                      borderLeft: `2px solid ${personColor}`,
-                    }}
-                  >
-                    {[...inc.salaryHistory].reverse().map((h, i) => {
-                      const pct =
-                        h.from > 0
-                          ? (((h.to - h.from) / h.from) * 100).toFixed(1)
-                          : null;
-                      return (
-                        <div
-                          key={i}
-                          style={{
-                            padding: "6px 0",
-                            borderBottom: "1px solid var(--border)",
-                            fontSize: 12,
-                          }}
-                        >
+                {/* History timeline */}
+                {expandedHistory[inc.id] &&
+                  (inc.salaryHistory?.length ?? 0) > 0 && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        paddingLeft: 12,
+                        borderLeft: `2px solid ${personColor}`,
+                      }}
+                    >
+                      {[...inc.salaryHistory].reverse().map((h, i) => {
+                        const pct =
+                          h.from > 0
+                            ? (((h.to - h.from) / h.from) * 100).toFixed(1)
+                            : null;
+                        return (
                           <div
+                            key={i}
                             style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "baseline",
+                              padding: "6px 0",
+                              borderBottom: "1px solid var(--border)",
+                              fontSize: 12,
                             }}
                           >
-                            <span style={{ color: "var(--text-muted)" }}>
-                              {h.date}
-                            </span>
-                            <span>
-                              {fmt(h.from)} →{" "}
-                              <strong
-                                style={{
-                                  color:
-                                    h.to >= h.from
-                                      ? "var(--green)"
-                                      : "var(--red)",
-                                }}
-                              >
-                                {fmt(h.to)}
-                              </strong>
-                              {pct !== null && (
-                                <span
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "baseline",
+                              }}
+                            >
+                              <span style={{ color: "var(--text-muted)" }}>
+                                {h.date}
+                              </span>
+                              <span>
+                                {fmt(h.from)} →{" "}
+                                <strong
                                   style={{
-                                    marginLeft: 6,
                                     color:
                                       h.to >= h.from
                                         ? "var(--green)"
                                         : "var(--red)",
                                   }}
                                 >
-                                  ({h.to >= h.from ? "+" : ""}
-                                  {pct}%)
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          {h.note && (
-                            <div
-                              style={{
-                                color: "var(--text-muted)",
-                                marginTop: 2,
-                                fontStyle: "italic",
-                              }}
-                            >
-                              {h.note}
+                                  {fmt(h.to)}
+                                </strong>
+                                {pct !== null && (
+                                  <span
+                                    style={{
+                                      marginLeft: 6,
+                                      color:
+                                        h.to >= h.from
+                                          ? "var(--green)"
+                                          : "var(--red)",
+                                    }}
+                                  >
+                                    ({h.to >= h.from ? "+" : ""}
+                                    {pct}%)
+                                  </span>
+                                )}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-            </div>
-          ))}
+                            {h.note && (
+                              <div
+                                style={{
+                                  color: "var(--text-muted)",
+                                  marginTop: 2,
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                {h.note}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+            );
+          })}
           <div style={{ textAlign: "right", paddingTop: 12, fontWeight: 600 }}>
             Total: <span className="green-text">{fmt(totalIncome)}</span>
           </div>
@@ -1207,7 +1538,7 @@ export default function Budget({
             }}
           >
             <div className="card-title" style={{ marginBottom: 0 }}>
-              Monthly expenses
+              Expenses
             </div>
             <button
               className="btn-primary"
@@ -1217,104 +1548,429 @@ export default function Budget({
               <Plus size={13} /> Add
             </button>
           </div>
-          {expenses.map((exp) => (
-            <div
-              key={exp.id}
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                padding: "8px 0",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              <input
-                value={exp.name}
-                onChange={(e) =>
-                  updatePerson(
-                    "expenses",
-                    expenses.map((x) =>
-                      x.id === exp.id ? { ...x, name: e.target.value } : x,
-                    ),
-                  )
-                }
-                style={{ flex: 3 }}
-              />
-              <select
-                value={exp.category}
-                onChange={(e) =>
-                  updatePerson(
-                    "expenses",
-                    expenses.map((x) =>
-                      x.id === exp.id
-                        ? { ...x, category: e.target.value, subCategory: "" }
-                        : x,
-                    ),
-                  )
-                }
-                style={{ flex: 1.5 }}
+          {expenses.map((exp) => {
+            const entries = exp.entries || [];
+            const isOpen = !!expandedExp[exp.id];
+            const ef = getEntryForm(exp.id);
+            const thisMonth = new Date().toISOString().slice(0, 7);
+            const spentThisMonth = entries
+              .filter((e) => e.date?.slice(0, 7) === thisMonth)
+              .reduce((s, e) => s + e.amount, 0);
+            return (
+              <div
+                key={exp.id}
+                style={{ borderBottom: "1px solid var(--border)" }}
               >
-                {EXPENSE_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-              {EXPENSE_SUBCATEGORIES[exp.category] && (
-                <select
-                  value={exp.subCategory || ""}
-                  onChange={(e) =>
-                    updatePerson(
-                      "expenses",
-                      expenses.map((x) =>
-                        x.id === exp.id
-                          ? { ...x, subCategory: e.target.value }
-                          : x,
-                      ),
-                    )
-                  }
-                  style={{ flex: 1.5 }}
+                {/* Main row */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "8px 0",
+                  }}
                 >
-                  <option value="">— sub-category —</option>
-                  {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              )}
-              <input
-                type="number"
-                value={exp.amount}
-                onChange={(e) =>
-                  updatePerson(
-                    "expenses",
-                    expenses.map((x) =>
-                      x.id === exp.id
-                        ? { ...x, amount: Number(e.target.value) }
-                        : x,
-                    ),
-                  )
-                }
-                style={{ flex: 1 }}
-                min="0"
-              />
-              <button
-                className="btn-danger"
-                aria-label={`Delete ${exp.name}`}
-                onClick={async () => {
-                  if (
-                    await confirm(
-                      "Delete expense?",
-                      `Remove "${exp.name}" from your expenses?`,
-                    )
-                  )
-                    updatePerson(
-                      "expenses",
-                      expenses.filter((x) => x.id !== exp.id),
-                    );
-                }}
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
+                  <input
+                    value={exp.name}
+                    onChange={(e) =>
+                      updatePerson(
+                        "expenses",
+                        expenses.map((x) =>
+                          x.id === exp.id ? { ...x, name: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    style={{ flex: 3, minWidth: 80 }}
+                  />
+                  <select
+                    value={exp.category}
+                    onChange={(e) =>
+                      updatePerson(
+                        "expenses",
+                        expenses.map((x) =>
+                          x.id === exp.id
+                            ? {
+                                ...x,
+                                category: e.target.value,
+                                subCategory: "",
+                              }
+                            : x,
+                        ),
+                      )
+                    }
+                    style={{ flex: 1.5 }}
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                  {EXPENSE_SUBCATEGORIES[exp.category] && (
+                    <select
+                      value={exp.subCategory || ""}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, subCategory: e.target.value }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ flex: 1.5 }}
+                    >
+                      <option value="">— sub-category —</option>
+                      {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Recurrence selector */}
+                  <select
+                    value={exp.recurrence || "monthly"}
+                    onChange={(e) =>
+                      updatePerson(
+                        "expenses",
+                        expenses.map((x) =>
+                          x.id === exp.id
+                            ? { ...x, recurrence: e.target.value }
+                            : x,
+                        ),
+                      )
+                    }
+                    title="How often this expense recurs"
+                    style={{
+                      flex: "0 0 100px",
+                      fontSize: 12,
+                      color:
+                        (exp.recurrence || "monthly") === "monthly"
+                          ? "var(--text-secondary)"
+                          : exp.recurrence === "variable"
+                            ? "var(--accent-blue, #60a5fa)"
+                            : "var(--gold)",
+                      borderColor:
+                        exp.recurrence === "variable"
+                          ? "var(--accent-blue, #60a5fa)"
+                          : (exp.recurrence || "monthly") !== "monthly"
+                            ? "var(--gold-border)"
+                            : undefined,
+                    }}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="variable">Variable</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="once">One-off</option>
+                  </select>
+                  {/* Due-month picker for yearly */}
+                  {exp.recurrence === "yearly" && (
+                    <select
+                      value={exp.recurrenceMonth ?? 0}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? {
+                                  ...x,
+                                  recurrenceMonth: Number(e.target.value),
+                                }
+                              : x,
+                          ),
+                        )
+                      }
+                      title="Month in which this expense falls"
+                      style={{ flex: "0 0 80px", fontSize: 12 }}
+                    >
+                      {[
+                        "Jan",
+                        "Feb",
+                        "Mar",
+                        "Apr",
+                        "May",
+                        "Jun",
+                        "Jul",
+                        "Aug",
+                        "Sep",
+                        "Oct",
+                        "Nov",
+                        "Dec",
+                      ].map((m, i) => (
+                        <option key={m} value={i}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Quarter start month for quarterly */}
+                  {exp.recurrence === "quarterly" && (
+                    <select
+                      value={(exp.recurrenceMonths ?? [0, 3, 6, 9])[0]}
+                      onChange={(e) => {
+                        const start = Number(e.target.value);
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? {
+                                  ...x,
+                                  recurrenceMonths: [
+                                    start,
+                                    (start + 3) % 12,
+                                    (start + 6) % 12,
+                                    (start + 9) % 12,
+                                  ],
+                                }
+                              : x,
+                          ),
+                        );
+                      }}
+                      title="First month of the quarter cycle"
+                      style={{ flex: "0 0 80px", fontSize: 12 }}
+                    >
+                      {["Jan", "Feb", "Mar"].map((m, i) => (
+                        <option key={m} value={i}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {entries.length > 0 ? (
+                    <div
+                      style={{
+                        flex: 1,
+                        textAlign: "right",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {fmt(exp.amount)}
+                      {spentThisMonth > 0 && (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "var(--text-muted)",
+                            fontWeight: 400,
+                          }}
+                        >
+                          {fmt(spentThisMonth)} this mo.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      value={exp.amount}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, amount: Number(e.target.value) }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ flex: 1 }}
+                      min="0"
+                    />
+                  )}
+                  {/* Log entries toggle */}
+                  <button
+                    onClick={() => {
+                      toggleExpandExp(exp.id);
+                      if (!isOpen) setEF(exp.id, {});
+                    }}
+                    title="Log purchases with dates"
+                    style={{
+                      background:
+                        entries.length > 0
+                          ? "var(--gold-dim)"
+                          : "rgba(255,255,255,0.06)",
+                      border:
+                        entries.length > 0
+                          ? "1px solid var(--gold-border)"
+                          : "1px solid var(--border)",
+                      color:
+                        entries.length > 0
+                          ? "var(--gold)"
+                          : "var(--text-muted)",
+                      borderRadius: 6,
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CalendarDays size={11} />
+                    {entries.length > 0 ? entries.length : "Log"}
+                  </button>
+                  <button
+                    className="btn-danger"
+                    aria-label={`Delete ${exp.name}`}
+                    onClick={async () => {
+                      if (
+                        await confirm(
+                          "Delete expense?",
+                          `Remove "${exp.name}" from your expenses?`,
+                        )
+                      )
+                        updatePerson(
+                          "expenses",
+                          expenses.filter((x) => x.id !== exp.id),
+                        );
+                    }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                {/* Entries panel */}
+                {isOpen && (
+                  <div
+                    style={{
+                      margin: "0 0 10px 12px",
+                      padding: "10px 12px",
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      borderLeft: `3px solid ${personColor}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginBottom: 8,
+                        textTransform: "uppercase",
+                        letterSpacing: ".06em",
+                      }}
+                    >
+                      Purchase log — each entry shows in Cash Flow by its actual
+                      date
+                    </div>
+
+                    {/* Entry list */}
+                    {entries.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        {[...entries]
+                          .sort((a, b) => b.date.localeCompare(a.date))
+                          .map((e) => (
+                            <div
+                              key={e.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "4px 0",
+                                borderBottom: "1px solid var(--border)",
+                                fontSize: 12,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "var(--text-muted)",
+                                  fontVariantNumeric: "tabular-nums",
+                                  flexShrink: 0,
+                                  width: 72,
+                                }}
+                              >
+                                {e.date.slice(5).replace("-", " ")}
+                              </span>
+                              <span
+                                style={{
+                                  flex: 1,
+                                  color: "var(--text-secondary)",
+                                }}
+                              >
+                                {e.note || "—"}
+                              </span>
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  color: "var(--red)",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {fmt(e.amount)}
+                              </span>
+                              <button
+                                onClick={() => deleteEntry(exp, e.id)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  color: "var(--text-muted)",
+                                  padding: 2,
+                                  flexShrink: 0,
+                                }}
+                                title="Remove entry"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Add entry form */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <input
+                        type="date"
+                        value={ef.date}
+                        onChange={(e) =>
+                          setEF(exp.id, { date: e.target.value })
+                        }
+                        style={{ flex: "0 0 130px" }}
+                      />
+                      <input
+                        type="number"
+                        placeholder="Amount (₹)"
+                        value={ef.amount}
+                        onChange={(e) =>
+                          setEF(exp.id, { amount: e.target.value })
+                        }
+                        style={{ flex: "0 0 110px" }}
+                        min="0"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Vendor / note  (e.g. Amazon Now)"
+                        value={ef.note}
+                        onChange={(e) =>
+                          setEF(exp.id, { note: e.target.value })
+                        }
+                        style={{ flex: 1, minWidth: 120 }}
+                      />
+                      <button
+                        className="btn-primary"
+                        style={{
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                        onClick={() => addEntry(exp)}
+                        disabled={!ef.amount || !ef.date}
+                      >
+                        <Plus size={11} /> Log
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <div style={{ textAlign: "right", paddingTop: 12, fontWeight: 600 }}>
             Total: <span className="red-text">{fmt(totalExpenses)}</span>
           </div>

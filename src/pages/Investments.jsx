@@ -3557,6 +3557,13 @@ export default function Investments({
           </div>
           <div className="metric-value gold-text">{fmtCr(totalCurrent)}</div>
           <div className="metric-sub">From your investment apps</div>
+          {totalCostBasis > 0 && (
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}
+            >
+              Invested: {fmt(totalCostBasis)}
+            </div>
+          )}
         </div>
         <div className="metric-card">
           <div className="metric-label">
@@ -4739,6 +4746,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
       monthly,
       current,
       yr20,
+      cost,
       gain: cost > 0 ? currentForGain - cost : null,
       gainPct: cost > 0 ? ((currentForGain - cost) / cost) * 100 : null,
     };
@@ -4964,6 +4972,13 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
             {" · "}
             <span style={{ color: "var(--aanya)" }}>{fmtCr(mAn.current)}</span>
           </div>
+          {m.cost > 0 && (
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}
+            >
+              Invested: {fmt(m.cost)}
+            </div>
+          )}
         </div>
         <div className="metric-card">
           <div className="metric-label">
