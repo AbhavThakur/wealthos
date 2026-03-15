@@ -139,7 +139,6 @@ function applyRecurring(data) {
     const rec =
       rule.recurrence || (rule.frequency === "yearly" ? "yearly" : "monthly");
     const nowMonth = now.getMonth(); // 0-based
-    const nowYear = now.getFullYear();
 
     if (rec === "once" || rec === "variable") continue; // no auto transaction
 
@@ -395,7 +394,7 @@ export function DataProvider({ children }) {
     );
     if (!alreadyHas) {
       autoSnappedRef.current = true; // prevent double-fire
-      takeSnapshot();
+      setTimeout(takeSnapshot, 0);
     } else {
       autoSnappedRef.current = true;
     }

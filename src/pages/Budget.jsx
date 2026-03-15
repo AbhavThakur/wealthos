@@ -1,4 +1,8 @@
 import { useState } from "react";
+
+// Module-level counter for entry IDs — avoids impure Date.now() in render scope
+let _entryIdSeq = 0;
+const genEntryId = () => ++_entryIdSeq;
 import {
   fmt,
   nextId,
@@ -546,7 +550,7 @@ export default function Budget({
     const f = getEntryForm(exp.id);
     if (!f.date || !f.amount) return;
     const entry = {
-      id: Date.now(),
+      id: genEntryId(),
       date: f.date,
       amount: Number(f.amount),
       note: f.note.trim(),
@@ -593,7 +597,7 @@ export default function Budget({
     const f = getIncEF(inc.id);
     if (!f.date || !f.amount) return;
     const entry = {
-      id: Date.now(),
+      id: genEntryId(),
       date: f.date,
       amount: Number(f.amount),
       note: f.note.trim(),
