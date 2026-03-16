@@ -20,6 +20,8 @@ import {
   nextId,
   INVESTMENT_TYPES,
   totalCorpus,
+  ppfCorpus,
+  fdCorpus,
   ltcgTax,
   lumpCorpus,
   freqToMonthly,
@@ -279,6 +281,7 @@ const SIPCard = memo(function SIPCard({
 
   const isFDInv = isFD(inv.type);
   const isOneTimeInv = inv.frequency === "onetime";
+  const isPPF = inv.type === "PPF";
   const effMonthly =
     isFDInv || isOneTimeInv ? 0 : freqToMonthly(inv.amount, inv.frequency);
   // For weekly SIPs: exact count of the deduction weekday in the current month
@@ -297,8 +300,16 @@ const SIPCard = memo(function SIPCard({
           (new Date() - new Date(inv.startDate)) / (365.25 * 24 * 3600 * 1000),
         )
       : 0;
+  // FD uses exact 365-day year + quarterly compounding to match Indian bank calc
+  const fdElapsedExact =
+    isFDInv && inv.startDate
+      ? Math.max(
+          0,
+          (new Date() - new Date(inv.startDate)) / (365 * 24 * 3600 * 1000),
+        )
+      : 0;
   const currentVal = isFDInv
-    ? lumpCorpus(inv.amount || 0, inv.returnPct || 0, fdYrsElapsed)
+    ? fdCorpus(inv.amount || 0, inv.returnPct || 0, fdElapsedExact)
     : isOneTimeInv
       ? // If user entered current market value from app, use that; else project forward
         inv.existingCorpus > 0
@@ -312,12 +323,12 @@ const SIPCard = memo(function SIPCard({
       ? Math.max(
           0,
           (new Date(inv.endDate) - new Date(inv.startDate)) /
-            (365.25 * 24 * 3600 * 1000),
+            (365 * 24 * 3600 * 1000),
         )
       : null;
   const fdMaturityVal =
     fdTenureYrs !== null
-      ? lumpCorpus(inv.amount || 0, inv.returnPct || 0, fdTenureYrs)
+      ? fdCorpus(inv.amount || 0, inv.returnPct || 0, fdTenureYrs)
       : null;
 
   // Actual performance
@@ -368,8 +379,39 @@ const SIPCard = memo(function SIPCard({
   const r = (inv.returnPct || 12) / 100 / 12;
   const n = projYears * 12;
   const sipNeededForCr =
-    !isFDInv && !isOneTimeInv && r > 0
+    !isFDInv && !isOneTimeInv && !isPPF && r > 0
       ? (targetCr * r) / (Math.pow(1 + r, n) - 1)
+      : null;
+
+  // PPF fixed milestones (tax-free, 15-yr account)
+  const ppfRate = inv.returnPct || 7.1;
+  const ppfYearly = effMonthly * 12;
+  const ppf5yr = isPPF
+    ? ppfCorpus(inv.existingCorpus || 0, ppfYearly, ppfRate, 5)
+    : 0;
+  const ppf10yr = isPPF
+    ? ppfCorpus(inv.existingCorpus || 0, ppfYearly, ppfRate, 10)
+    : 0;
+  const ppf15yr = isPPF
+    ? ppfCorpus(inv.existingCorpus || 0, ppfYearly, ppfRate, 15)
+    : 0;
+  // PPF maturity: years remaining from today to maturityDate
+  const ppfYearsToMaturity =
+    isPPF && inv.maturityDate
+      ? Math.max(
+          0,
+          (new Date(inv.maturityDate) - new Date()) /
+            (365.25 * 24 * 3600 * 1000),
+        )
+      : null;
+  const ppfMaturityCorpus =
+    ppfYearsToMaturity !== null
+      ? ppfCorpus(
+          inv.existingCorpus || 0,
+          ppfYearly,
+          ppfRate,
+          ppfYearsToMaturity,
+        )
       : null;
 
   // Chart: FD shows yearly compound growth to maturity; onetime: lump sum growth; others: 20yr SIP projection
@@ -378,7 +420,7 @@ const SIPCard = memo(function SIPCard({
       const tenureYrs = Math.max(1, Math.ceil(fdTenureYrs ?? 5));
       return Array.from({ length: tenureYrs + 1 }, (_, i) => ({
         year: `Y${i}`,
-        corpus: Math.round(lumpCorpus(inv.amount || 0, inv.returnPct || 0, i)),
+        corpus: Math.round(fdCorpus(inv.amount || 0, inv.returnPct || 0, i)),
         invested: Math.round(inv.amount || 0),
       }));
     }
@@ -659,9 +701,14 @@ const SIPCard = memo(function SIPCard({
                     ...form,
                     type: t,
                     frequency:
-                      t === "ULIP" && form.frequency !== "yearly"
+                      t === "PPF" || t === "ULIP"
                         ? "yearly"
-                        : form.frequency,
+                        : t === "FD"
+                          ? "onetime"
+                          : form.frequency === "yearly" ||
+                              form.frequency === "onetime"
+                            ? "monthly"
+                            : form.frequency,
                   });
                 }}
               >
@@ -706,6 +753,27 @@ const SIPCard = memo(function SIPCard({
                   value={form.endDate || ""}
                   onChange={(e) =>
                     setForm({ ...form, endDate: e.target.value })
+                  }
+                />
+              </div>
+            )}
+            {form.type === "PPF" && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  PPF maturity date
+                </label>
+                <input
+                  type="date"
+                  value={form.maturityDate || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, maturityDate: e.target.value })
                   }
                 />
               </div>
@@ -1038,7 +1106,7 @@ const SIPCard = memo(function SIPCard({
                   ? fmt(inv.amount || 0)
                   : isOneTimeInv
                     ? fmt(inv.amount || 0)
-                    : fmtCr(currentVal)}
+                    : fmt(Math.round(currentVal))}
               </div>
               <div className="metric-sub">
                 {isFDInv
@@ -1050,7 +1118,11 @@ const SIPCard = memo(function SIPCard({
             </div>
             <div className="metric-card">
               <div className="metric-label">
-                {isFDInv || isOneTimeInv ? "Value today" : "Monthly equiv."}
+                {isFDInv || isOneTimeInv
+                  ? "Value today"
+                  : isPPF
+                    ? "Yearly contrib."
+                    : "Monthly equiv."}
               </div>
               <div
                 className="metric-value"
@@ -1060,10 +1132,12 @@ const SIPCard = memo(function SIPCard({
                 }}
               >
                 {isFDInv || isOneTimeInv
-                  ? fmtCr(currentVal)
-                  : thisMonthAmount !== null
-                    ? fmt(thisMonthAmount)
-                    : fmt(effMonthly)}
+                  ? fmt(Math.round(currentVal))
+                  : isPPF
+                    ? fmt(effMonthly * 12)
+                    : thisMonthAmount !== null
+                      ? fmt(thisMonthAmount)
+                      : fmt(effMonthly)}
               </div>
               <div className="metric-sub">
                 {isFDInv
@@ -1072,112 +1146,189 @@ const SIPCard = memo(function SIPCard({
                     ? inv.existingCorpus > 0
                       ? "From your app"
                       : "Projected"
-                    : thisMonthCount !== null
-                      ? `${thisMonthCount} ${inv.deductionDay}s this month`
-                      : inv.frequency}
+                    : isPPF
+                      ? `${Math.min(100, Math.round(((effMonthly * 12) / 150000) * 100))}% of ₹1.5L/yr limit`
+                      : thisMonthCount !== null
+                        ? `${thisMonthCount} ${inv.deductionDay}s this month`
+                        : inv.frequency}
               </div>
             </div>
             {/* ── Interactive projection card ── */}
             <div
               className="metric-card"
-              style={{ gridColumn: isFDInv ? undefined : "span 1" }}
+              style={{
+                gridColumn: isPPF ? "span 2" : isFDInv ? undefined : "span 1",
+              }}
             >
               <div className="metric-label">
-                {isFDInv ? "Maturity value" : `${projYears}-year value`}
-              </div>
-              <div
-                className="metric-value"
-                style={{ fontSize: 18, color: "var(--blue)" }}
-              >
                 {isFDInv
-                  ? fdMaturityVal !== null
-                    ? fmtCr(fdMaturityVal)
-                    : "Set end date"
-                  : fmtCr(corpusN)}
+                  ? "Maturity value"
+                  : isPPF
+                    ? "PPF Milestones"
+                    : `${projYears}-year value`}
               </div>
-              {isFDInv && inv.endDate && (
-                <div className="metric-sub">on {inv.endDate}</div>
-              )}
-              {!isFDInv && (
-                <div style={{ marginTop: 8 }}>
-                  <input
-                    type="range"
-                    min={1}
-                    max={40}
-                    value={projYears}
-                    onChange={(e) => setProjYears(Number(e.target.value))}
-                    style={{
-                      width: "100%",
-                      accentColor: "var(--blue)",
-                      cursor: "pointer",
-                    }}
-                  />
+              {isPPF ? (
+                <div style={{ marginTop: 4 }}>
+                  {ppfMaturityCorpus !== null && (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "7px 0 5px",
+                        borderBottom: "1px solid var(--border)",
+                        fontSize: 13,
+                      }}
+                    >
+                      <span style={{ color: "var(--gold)", fontWeight: 600 }}>
+                        Maturity{" "}
+                        <span style={{ fontWeight: 400, fontSize: 11 }}>
+                          (
+                          {new Date(inv.maturityDate).toLocaleDateString(
+                            "en-IN",
+                            { day: "2-digit", month: "short", year: "numeric" },
+                          )}
+                          )
+                        </span>
+                      </span>
+                      <strong style={{ color: "var(--gold)" }}>
+                        {fmt(Math.round(ppfMaturityCorpus))}
+                      </strong>
+                    </div>
+                  )}
+                  {[
+                    [5, ppf5yr],
+                    [10, ppf10yr],
+                    [15, ppf15yr],
+                  ].map(([yrs, val]) => (
+                    <div
+                      key={yrs}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "6px 0",
+                        borderBottom: "1px solid var(--border)",
+                        fontSize: 13,
+                      }}
+                    >
+                      <span style={{ color: "var(--text-muted)" }}>
+                        +{yrs} yr from now
+                      </span>
+                      <strong style={{ color: "var(--blue)" }}>
+                        {fmt(Math.round(val))}
+                      </strong>
+                    </div>
+                  ))}
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 10,
+                      fontSize: 11,
                       color: "var(--text-muted)",
-                      marginTop: 2,
+                      marginTop: 6,
                     }}
                   >
-                    <span>1yr</span>
-                    <span style={{ color: "var(--blue)", fontWeight: 600 }}>
-                      {projYears} yrs
-                    </span>
-                    <span>40yr</span>
+                    At {ppfRate}% p.a. · tax-free
                   </div>
                 </div>
+              ) : (
+                <>
+                  <div
+                    className="metric-value"
+                    style={{ fontSize: 18, color: "var(--blue)" }}
+                  >
+                    {isFDInv
+                      ? fdMaturityVal !== null
+                        ? fmt(fdMaturityVal)
+                        : "Set end date"
+                      : fmtCr(corpusN)}
+                  </div>
+                  {isFDInv && inv.endDate && (
+                    <div className="metric-sub">on {inv.endDate}</div>
+                  )}
+                  {!isFDInv && (
+                    <div style={{ marginTop: 8 }}>
+                      <input
+                        type="range"
+                        min={1}
+                        max={40}
+                        value={projYears}
+                        onChange={(e) => setProjYears(Number(e.target.value))}
+                        style={{
+                          width: "100%",
+                          accentColor: "var(--blue)",
+                          cursor: "pointer",
+                        }}
+                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 10,
+                          color: "var(--text-muted)",
+                          marginTop: 2,
+                        }}
+                      >
+                        <span>1yr</span>
+                        <span style={{ color: "var(--blue)", fontWeight: 600 }}>
+                          {projYears} yrs
+                        </span>
+                        <span>40yr</span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* ── Insight card ── */}
-            <div className="metric-card">
-              {isFDInv ? (
-                <>
-                  <div className="metric-label">Interest earned</div>
-                  <div
-                    className="metric-value"
-                    style={{ fontSize: 18, color: "var(--green)" }}
-                  >
-                    {fdMaturityVal !== null
-                      ? fmtCr(fdMaturityVal - (inv.amount || 0))
-                      : "—"}
-                  </div>
-                  <div className="metric-sub">Total gain at maturity</div>
-                </>
-              ) : isOneTimeInv ? (
-                <>
-                  <div className="metric-label">Post-tax ({projYears}yr)</div>
-                  <div
-                    className="metric-value"
-                    style={{ fontSize: 18, color: "var(--green)" }}
-                  >
-                    {fmtCr(postTaxN)}
-                  </div>
-                  <div className="metric-sub">
-                    {taxOnGains > 0
-                      ? `After ${fmtCr(taxOnGains)} LTCG`
-                      : "No LTCG applicable"}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="metric-label">SIP for ₹1 Cr</div>
-                  <div
-                    className="metric-value"
-                    style={{ fontSize: 18, color: "var(--gold)" }}
-                  >
-                    {sipNeededForCr !== null
-                      ? fmt(Math.round(sipNeededForCr))
-                      : "—"}
-                  </div>
-                  <div className="metric-sub">
-                    /month in {projYears} yrs at {inv.returnPct}%
-                  </div>
-                </>
-              )}
-            </div>
+            {!isPPF && (
+              <div className="metric-card">
+                {isFDInv ? (
+                  <>
+                    <div className="metric-label">Interest earned</div>
+                    <div
+                      className="metric-value"
+                      style={{ fontSize: 18, color: "var(--green)" }}
+                    >
+                      {fdMaturityVal !== null
+                        ? fmt(fdMaturityVal - (inv.amount || 0))
+                        : "—"}
+                    </div>
+                    <div className="metric-sub">Total gain at maturity</div>
+                  </>
+                ) : isOneTimeInv ? (
+                  <>
+                    <div className="metric-label">Post-tax ({projYears}yr)</div>
+                    <div
+                      className="metric-value"
+                      style={{ fontSize: 18, color: "var(--green)" }}
+                    >
+                      {fmtCr(postTaxN)}
+                    </div>
+                    <div className="metric-sub">
+                      {taxOnGains > 0
+                        ? `After ${fmtCr(taxOnGains)} LTCG`
+                        : "No LTCG applicable"}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="metric-label">SIP for ₹1 Cr</div>
+                    <div
+                      className="metric-value"
+                      style={{ fontSize: 18, color: "var(--gold)" }}
+                    >
+                      {sipNeededForCr !== null
+                        ? fmt(Math.round(sipNeededForCr))
+                        : "—"}
+                    </div>
+                    <div className="metric-sub">
+                      /month in {projYears} yrs at {inv.returnPct}%
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actual performance */}
@@ -2419,6 +2570,7 @@ function PortfolioCharts({ rows, isHousehold }) {
       {tab === "snapshot" && (
         <>
           <div
+            className="portfolio-snapshot-grid"
             style={{
               display: "grid",
               gridTemplateColumns:
@@ -2518,6 +2670,8 @@ function PortfolioCharts({ rows, isHousehold }) {
                         borderRadius: 8,
                         fontSize: 12,
                       }}
+                      labelStyle={{ color: "#eeeae4" }}
+                      itemStyle={{ color: "#eeeae4" }}
                     />
                     <Bar dataKey="gain" radius={[0, 4, 4, 0]}>
                       {plData.map((entry, i) => (
@@ -3178,6 +3332,7 @@ export default function Investments({
   const [showAdd, setShowAdd] = useState(false);
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
+  const [filterType, setFilterType] = useState("All");
   const allApps = useMemo(
     () => [...new Set(investments.map((x) => x.appName).filter(Boolean))],
     [investments],
@@ -3190,8 +3345,9 @@ export default function Investments({
     () =>
       investments
         .filter((x) => filterApp === "All" || x.appName === filterApp)
-        .filter((x) => filterBank === "All" || x.bankName === filterBank),
-    [investments, filterApp, filterBank],
+        .filter((x) => filterBank === "All" || x.bankName === filterBank)
+        .filter((x) => filterType === "All" || x.type === filterType),
+    [investments, filterApp, filterBank, filterType],
   );
   const [newInv, setNewInv] = useState({
     name: "",
@@ -3555,7 +3711,9 @@ export default function Investments({
               </div>
             </InfoModal>
           </div>
-          <div className="metric-value gold-text">{fmtCr(totalCurrent)}</div>
+          <div className="metric-value gold-text">
+            {fmt(Math.round(totalCurrent))}
+          </div>
           <div className="metric-sub">From your investment apps</div>
           {totalCostBasis > 0 && (
             <div
@@ -3806,7 +3964,9 @@ export default function Investments({
 
       <PortfolioCharts rows={invRows} isHousehold={false} />
 
-      {(allApps.length > 0 || allBanks.length > 0) && (
+      {(allApps.length > 0 ||
+        allBanks.length > 0 ||
+        investments.length > 1) && (
         <div
           style={{
             display: "flex",
@@ -3815,6 +3975,56 @@ export default function Investments({
             marginBottom: "1rem",
           }}
         >
+          {investments.length > 1 &&
+            (() => {
+              const types = ["All", ...new Set(investments.map((x) => x.type))];
+              if (types.length <= 2) return null;
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginRight: 2,
+                    }}
+                  >
+                    Type:
+                  </span>
+                  {types.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setFilterType(t)}
+                      style={{
+                        padding: "4px 12px",
+                        fontSize: 12,
+                        borderRadius: 99,
+                        border:
+                          filterType === t
+                            ? "1px solid var(--gold)"
+                            : "1px solid var(--border)",
+                        background:
+                          filterType === t ? "var(--gold-dim)" : "transparent",
+                        color:
+                          filterType === t
+                            ? "var(--gold)"
+                            : "var(--text-secondary)",
+                        cursor: "pointer",
+                        fontWeight: filterType === t ? 500 : 400,
+                      }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           {allApps.length > 0 && (
             <div
               style={{
@@ -4069,7 +4279,15 @@ export default function Investments({
                   setNewInv({
                     ...newInv,
                     type: t,
-                    frequency: t === "ULIP" ? "yearly" : newInv.frequency,
+                    frequency:
+                      t === "PPF" || t === "ULIP"
+                        ? "yearly"
+                        : t === "FD"
+                          ? "onetime"
+                          : newInv.frequency === "yearly" ||
+                              newInv.frequency === "onetime"
+                            ? "monthly"
+                            : newInv.frequency,
                   });
                 }}
               >
@@ -4269,6 +4487,27 @@ export default function Investments({
                   value={newInv.endDate}
                   onChange={(e) =>
                     setNewInv({ ...newInv, endDate: e.target.value })
+                  }
+                />
+              </div>
+            )}
+            {newInv.type === "PPF" && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  PPF maturity date
+                </label>
+                <input
+                  type="date"
+                  value={newInv.maturityDate || ""}
+                  onChange={(e) =>
+                    setNewInv({ ...newInv, maturityDate: e.target.value })
                   }
                 />
               </div>
@@ -4586,6 +4825,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
   const [filterPerson, setFilterPerson] = useState("All");
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
+  const [filterType, setFilterType] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
   const [addFor, setAddFor] = useState("abhav");
   const emptyNew = {
@@ -4597,6 +4837,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
     frequency: "monthly",
     startDate: new Date().toISOString().slice(0, 10),
     endDate: "",
+    maturityDate: "",
     appName: "",
     bankName: "",
     deductionDate: "",
@@ -4632,6 +4873,8 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
     filtered = filtered.filter((x) => x.appName === filterApp);
   if (filterBank !== "All")
     filtered = filtered.filter((x) => x.bankName === filterBank);
+  if (filterType !== "All")
+    filtered = filtered.filter((x) => x.type === filterType);
 
   const calcM = (list) => {
     const monthly = list.reduce(
@@ -4966,11 +5209,17 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
               </div>
             </InfoModal>
           </div>
-          <div className="metric-value gold-text">{fmtCr(m.current)}</div>
+          <div className="metric-value gold-text">
+            {fmt(Math.round(m.current))}
+          </div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>{fmtCr(mA.current)}</span>
+            <span style={{ color: "var(--abhav)" }}>
+              {fmt(Math.round(mA.current))}
+            </span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>{fmtCr(mAn.current)}</span>
+            <span style={{ color: "var(--aanya)" }}>
+              {fmt(Math.round(mAn.current))}
+            </span>
           </div>
           {m.cost > 0 && (
             <div
@@ -5385,6 +5634,42 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
             ))}
           </div>
         )}
+        {(() => {
+          const types = ["All", ...new Set(allInvestments.map((x) => x.type))];
+          if (types.length <= 2) return null;
+          return (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Type:
+              </span>
+              {types.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setFilterType(t)}
+                  style={{
+                    padding: "4px 12px",
+                    fontSize: 12,
+                    borderRadius: 99,
+                    cursor: "pointer",
+                    border:
+                      filterType === t
+                        ? "1px solid var(--gold)"
+                        : "1px solid var(--border)",
+                    background:
+                      filterType === t ? "var(--gold-dim)" : "transparent",
+                    color:
+                      filterType === t
+                        ? "var(--gold)"
+                        : "var(--text-secondary)",
+                    fontWeight: filterType === t ? 500 : 400,
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {filtered.length > 0 && (
@@ -5611,7 +5896,15 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                   setNewInv({
                     ...newInv,
                     type: t,
-                    frequency: t === "ULIP" ? "yearly" : newInv.frequency,
+                    frequency:
+                      t === "PPF" || t === "ULIP"
+                        ? "yearly"
+                        : t === "FD"
+                          ? "onetime"
+                          : newInv.frequency === "yearly" ||
+                              newInv.frequency === "onetime"
+                            ? "monthly"
+                            : newInv.frequency,
                   });
                 }}
               >
@@ -5711,6 +6004,27 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                   value={newInv.endDate}
                   onChange={(e) =>
                     setNewInv({ ...newInv, endDate: e.target.value })
+                  }
+                />
+              </div>
+            )}
+            {newInv.type === "PPF" && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  PPF maturity date
+                </label>
+                <input
+                  type="date"
+                  value={newInv.maturityDate || ""}
+                  onChange={(e) =>
+                    setNewInv({ ...newInv, maturityDate: e.target.value })
                   }
                 />
               </div>

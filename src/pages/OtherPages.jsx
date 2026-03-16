@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { fmt, nextId, EXPENSE_CATEGORIES, calcEMI } from "../utils/finance";
+import {
+  fmt,
+  nextId,
+  EXPENSE_CATEGORIES,
+  calcEMI,
+  lumpCorpus,
+} from "../utils/finance";
 import { Plus, Trash2, Search, RefreshCw, Bell, BellOff } from "lucide-react";
 import { useConfirm } from "../App";
 import { autoRecurringRules } from "../context/DataContext";
@@ -2344,6 +2350,87 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
               of income)
             </div>
           )}
+          {/* ── FD Maturities ── */}
+          {(() => {
+            const fdInvs = (data?.investments || []).filter(
+              (inv) => inv.type === "FD" && inv.endDate,
+            );
+            if (fdInvs.length === 0) return null;
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(today).padStart(2, "0")}`;
+            const sorted = [...fdInvs].sort((a, b) =>
+              a.endDate.localeCompare(b.endDate),
+            );
+            return (
+              <div className="card section-gap">
+                <div className="card-title">🏦 FD Maturities</div>
+                {sorted.map((inv) => {
+                  const isMatured = inv.endDate < todayStr;
+                  const isThisMonth = !isMatured && inv.endDate.startsWith(ym);
+                  const tenureYrs = inv.startDate
+                    ? Math.max(
+                        0,
+                        (new Date(inv.endDate) - new Date(inv.startDate)) /
+                          (365.25 * 24 * 3600 * 1000),
+                      )
+                    : null;
+                  const matVal =
+                    tenureYrs !== null
+                      ? lumpCorpus(
+                          inv.amount || 0,
+                          inv.returnPct || 0,
+                          tenureYrs,
+                        )
+                      : null;
+                  return (
+                    <div
+                      key={inv.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 0",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>
+                          {inv.name}
+                        </div>
+                        <div
+                          style={{ fontSize: 11, color: "var(--text-muted)" }}
+                        >
+                          Principal: {fmt(inv.amount || 0)} · {inv.returnPct}% ·
+                          matures {inv.endDate}
+                        </div>
+                      </div>
+                      {isMatured && (
+                        <span className="tag tag-red">✓ Matured</span>
+                      )}
+                      {isThisMonth && (
+                        <span className="tag tag-gold">⏰ This month</span>
+                      )}
+                      {!isMatured && !isThisMonth && (
+                        <span className="tag">📅 Upcoming</span>
+                      )}
+                      {matVal !== null && (
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "var(--green)",
+                            minWidth: 90,
+                            textAlign: "right",
+                          }}
+                        >
+                          {fmt(Math.round(matVal))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -3439,6 +3526,95 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               {fmt(scheduledIn - scheduledOut)}
             </div>
           )}
+          {/* ── FD Maturities ── */}
+          {(() => {
+            const allFdInvs = [
+              ...(abhav?.investments || []).map((inv) => ({
+                ...inv,
+                _owner: "abhav",
+              })),
+              ...(aanya?.investments || []).map((inv) => ({
+                ...inv,
+                _owner: "aanya",
+              })),
+            ].filter((inv) => inv.type === "FD" && inv.endDate);
+            if (allFdInvs.length === 0) return null;
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(today).padStart(2, "0")}`;
+            const sorted = [...allFdInvs].sort((a, b) =>
+              a.endDate.localeCompare(b.endDate),
+            );
+            return (
+              <div className="card section-gap">
+                <div className="card-title">🏦 FD Maturities</div>
+                {sorted.map((inv) => {
+                  const isMatured = inv.endDate < todayStr;
+                  const isThisMonth = !isMatured && inv.endDate.startsWith(ym);
+                  const tenureYrs = inv.startDate
+                    ? Math.max(
+                        0,
+                        (new Date(inv.endDate) - new Date(inv.startDate)) /
+                          (365.25 * 24 * 3600 * 1000),
+                      )
+                    : null;
+                  const matVal =
+                    tenureYrs !== null
+                      ? lumpCorpus(
+                          inv.amount || 0,
+                          inv.returnPct || 0,
+                          tenureYrs,
+                        )
+                      : null;
+                  return (
+                    <div
+                      key={`${inv._owner}-${inv.id}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 0",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>
+                          {inv.name}
+                        </div>
+                        <div
+                          style={{ fontSize: 11, color: "var(--text-muted)" }}
+                        >
+                          Principal: {fmt(inv.amount || 0)} · {inv.returnPct}% ·
+                          matures {inv.endDate}
+                        </div>
+                      </div>
+                      {personBadge(inv._owner)}
+                      {isMatured && (
+                        <span className="tag tag-red">✓ Matured</span>
+                      )}
+                      {isThisMonth && (
+                        <span className="tag tag-gold">⏰ This month</span>
+                      )}
+                      {!isMatured && !isThisMonth && (
+                        <span className="tag">📅 Upcoming</span>
+                      )}
+                      {matVal !== null && (
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "var(--green)",
+                            minWidth: 90,
+                            textAlign: "right",
+                          }}
+                        >
+                          {fmt(Math.round(matVal))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 

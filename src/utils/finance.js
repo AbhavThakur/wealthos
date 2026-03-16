@@ -24,6 +24,22 @@ export const totalCorpus = (existingCorpus, monthly, rateAnnual, years) =>
   lumpCorpus(existingCorpus, rateAnnual, years) +
   sipCorpus(monthly, rateAnnual, years);
 
+// PPF: annual compounding with yearly deposits made at the start of each year.
+// This matches the Groww / NSDL PPF calculator formula.
+export const ppfCorpus = (existingCorpus, yearlyContrib, rateAnnual, years) => {
+  const r = rateAnnual / 100;
+  const sip =
+    yearlyContrib > 0 && r > 0
+      ? yearlyContrib * ((Math.pow(1 + r, years) - 1) / r) * (1 + r)
+      : yearlyContrib * years;
+  return lumpCorpus(existingCorpus, rateAnnual, years) + sip;
+};
+
+// FD: quarterly compounding (Indian bank standard: A = P × (1 + r/4)^(4n)).
+// Use days/365 for tenure to match bank calculations exactly.
+export const fdCorpus = (principal, rateAnnual, years) =>
+  principal * Math.pow(1 + rateAnnual / 100 / 4, 4 * years);
+
 // Count how many times a given weekday ("Monday"…"Sunday") occurs in a month.
 // year/month default to the current month if omitted.
 export const weekdayCountInMonth = (weekdayName, year, month) => {

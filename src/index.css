@@ -668,3 +668,10 @@ input[type="number"] {
     padding: 1.5rem 1.25rem;
   }
 }
+
+/* Portfolio Snapshot: stack charts vertically on mobile */
+@media (max-width: 640px) {
+  .portfolio-snapshot-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
