@@ -1,4 +1,4 @@
-# WealthOS 💰 — Abhav & Aanya's Finance Hub
+# WealthOS 💰 — Finance Hub
 
 A private, dual-profile personal finance tracker built with React + Firebase.
 Password-protected, cloud-synced, fully separate data per person with a combined household view.
