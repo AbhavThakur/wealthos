@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   PieChart,
   Pie,
@@ -44,7 +45,107 @@ import {
   GripVertical,
   ChevronLeft,
   ChevronRight,
+  Info,
+  X,
 } from "lucide-react";
+
+// Reusable info modal — portal-based overlay
+function InfoModal({ title, children }) {
+  const [open, setOpen] = useState(false);
+  const overlay = open
+    ? createPortal(
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "max(24px, 5vh) 24px 24px",
+            overflowY: "auto",
+          }}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            style={{
+              background: "#1a1a24",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "24px 28px",
+              maxWidth: 440,
+              width: "100%",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
+              color: "#eeeae4",
+              maxHeight: "85dvh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 15, color: "#eeeae4" }}>
+                {title}
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#aaa",
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  lineHeight: 1,
+                  display: "flex",
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: "#b0aab8", lineHeight: 1.8 }}>
+              {children}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+  return (
+    <>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          lineHeight: 1,
+          color: "#888",
+          display: "inline-flex",
+          alignItems: "center",
+          verticalAlign: "middle",
+          marginLeft: 5,
+        }}
+        title={`About ${title}`}
+        aria-label={`Info about ${title}`}
+      >
+        <Info size={13} />
+      </button>
+      {overlay}
+    </>
+  );
+}
 
 // ── Month-aware stats from transactions ────────────────────────────────────
 function statsFromTxns(txns, exps, incomes, ym) {
@@ -294,6 +395,7 @@ function buildCashFlow(
   aanyaExps,
   abhavIncs,
   aanyaIncs,
+  sharedTrips,
 ) {
   const map = {}; // key: "2026-03" → { income, expenses, investments, emis, detail }
 
@@ -310,6 +412,9 @@ function buildCashFlow(
       if (e.date) entriesCovered.add(`${exp.name}::${e.date.slice(0, 7)}`);
     }
   }
+
+  // Track which expenses have been covered by entries or transactions
+  const expensesCoveredThisMonth = new Set();
 
   const process = (txns) => {
     for (const t of txns || []) {
@@ -349,6 +454,7 @@ function buildCashFlow(
           amount: amt,
           note: t.note || "",
         });
+        expensesCoveredThisMonth.add(`${t.desc}::${ym}`);
       }
     }
   };
@@ -373,6 +479,7 @@ function buildCashFlow(
           amount: e.amount,
           note: e.note || "",
         });
+        expensesCoveredThisMonth.add(`${exp.name}::${ym}`);
       }
     }
   };
@@ -405,6 +512,111 @@ function buildCashFlow(
   processIncs(abhavIncs);
   processIncs(aanyaIncs);
 
+  // ── Include standing amounts for current month (fallback) ──────────────
+  const curYm = new Date().toISOString().slice(0, 7);
+  const curMonth = new Date().getMonth();
+
+  // Standing income — for incomes without variable income entries this month
+  const incomeCovered = new Set();
+  for (const ym of Object.keys(map)) {
+    for (const d of map[ym].detail) {
+      if (d.isIncome) incomeCovered.add(`${d.expName}::${ym}`);
+    }
+  }
+  for (const inc of [...(abhavIncs || []), ...(aanyaIncs || [])]) {
+    if (incomeCovered.has(`${inc.name}::${curYm}`)) continue;
+    if (inc.amount > 0) {
+      ensure(curYm);
+      map[curYm].income += inc.amount;
+      map[curYm].detail.push({
+        expName: inc.name,
+        category: "Income",
+        date: `${curYm}-01`,
+        amount: inc.amount,
+        note: "budgeted",
+        isIncome: true,
+      });
+    }
+  }
+
+  // Standing expenses — for expenses without entries/transactions this month
+  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+    if (exp.expenseType === "trip" || exp.expenseType === "onetime") continue;
+    // Check recurrence: skip if expense doesn't apply to current month
+    if (exp.recurrence === "yearly" && (exp.recurrenceMonth ?? 0) !== curMonth)
+      continue;
+    if (exp.recurrence === "quarterly") {
+      const months = exp.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(curMonth)) continue;
+    }
+    // Skip if already covered by entries or transactions
+    if (expensesCoveredThisMonth.has(`${exp.name}::${curYm}`)) continue;
+    if (exp.amount > 0) {
+      ensure(curYm);
+      map[curYm].expenses += exp.amount;
+      map[curYm].detail.push({
+        expName: exp.name,
+        category: exp.category || "Others",
+        subCategory: exp.subCategory || "",
+        date: `${curYm}-01`,
+        amount: exp.amount,
+        note: "budgeted",
+      });
+    }
+  }
+
+  // ── Include trip expenses ──────────────────────────────────────────────
+  // Personal trip expenses
+  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+    if (exp.expenseType !== "trip") continue;
+    const tripDate = exp.startDate || exp.date || `${curYm}-01`;
+    const ym = tripDate.slice(0, 7);
+    if (exp.amount > 0) {
+      ensure(ym);
+      map[ym].expenses += exp.amount;
+      map[ym].detail.push({
+        expName: exp.name,
+        category: exp.category || "Travel",
+        date: tripDate,
+        amount: exp.amount,
+        note: "trip",
+      });
+    }
+  }
+  // Personal one-time expenses
+  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+    if (exp.expenseType !== "onetime") continue;
+    const oDate = exp.date || `${curYm}-01`;
+    const ym = oDate.slice(0, 7);
+    if (exp.amount > 0) {
+      ensure(ym);
+      map[ym].expenses += exp.amount;
+      map[ym].detail.push({
+        expName: exp.name,
+        category: exp.category || "Others",
+        date: oDate,
+        amount: exp.amount,
+        note: "one-time",
+      });
+    }
+  }
+  // Shared trip expenses
+  for (const trip of sharedTrips || []) {
+    const tripDate = trip.startDate || `${curYm}-01`;
+    const ym = tripDate.slice(0, 7);
+    if (trip.amount > 0) {
+      ensure(ym);
+      map[ym].expenses += trip.amount;
+      map[ym].detail.push({
+        expName: trip.name,
+        category: "Travel",
+        date: tripDate,
+        amount: trip.amount,
+        note: "shared trip",
+      });
+    }
+  }
+
   return Object.entries(map)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ym, d]) => {
@@ -424,7 +636,7 @@ function buildCashFlow(
     });
 }
 
-function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
+function MonthlyCashFlow({ abhav, aanya, shared, selectedMonth }) {
   const data = buildCashFlow(
     abhav?.transactions,
     aanya?.transactions,
@@ -432,6 +644,7 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
     aanya?.expenses,
     abhav?.incomes,
     aanya?.incomes,
+    shared?.trips,
   );
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [expandedCats, setExpandedCats] = useState({});
@@ -517,6 +730,23 @@ function MonthlyCashFlow({ abhav, aanya, selectedMonth }) {
             <div className="metric-card" style={{ padding: "0.75rem" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                 Expenses
+                <InfoModal title="Cash Flow — Expenses">
+                  <p>
+                    This includes <strong>dated entries</strong> (purchase logs
+                    and transaction records), plus{" "}
+                    <strong>budgeted amounts</strong> for monthly expenses
+                    without logged entries this month.
+                  </p>
+                  <p style={{ marginTop: 8 }}>
+                    <strong>Trips</strong> (personal and shared) are also
+                    included, placed in the month of their start date.
+                  </p>
+                  <p style={{ marginTop: 8 }}>
+                    Items marked <em>"budgeted"</em> in the accordion are
+                    standing budget amounts — log entries to replace them with
+                    actuals.
+                  </p>
+                </InfoModal>
               </div>
               <div
                 style={{ fontSize: 15, fontWeight: 600, color: "var(--red)" }}
@@ -1108,8 +1338,35 @@ export default function Dashboard({ abhav, aanya, shared }) {
     ? { ...bTxStats, corpus20: bStanding.corpus20 }
     : bStanding;
 
+  // Shared trips (joint trips visible to both persons)
+  const sharedTrips = shared?.trips || [];
+  const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
+
+  // Expense breakdown for info modals
+  const abhavMonthly = (abhav?.expenses || [])
+    .filter((e) => !e.expenseType || e.expenseType === "monthly")
+    .reduce((s, x) => s + x.amount, 0);
+  const abhavTrips = (abhav?.expenses || [])
+    .filter((e) => e.expenseType === "trip")
+    .reduce((s, x) => s + x.amount, 0);
+  const abhavOnetime = (abhav?.expenses || [])
+    .filter((e) => e.expenseType === "onetime")
+    .reduce((s, x) => s + x.amount, 0);
+  const aanyaMonthly = (aanya?.expenses || [])
+    .filter((e) => !e.expenseType || e.expenseType === "monthly")
+    .reduce((s, x) => s + x.amount, 0);
+  const aanyaTrips = (aanya?.expenses || [])
+    .filter((e) => e.expenseType === "trip")
+    .reduce((s, x) => s + x.amount, 0);
+  const aanyaOnetime = (aanya?.expenses || [])
+    .filter((e) => e.expenseType === "onetime")
+    .reduce((s, x) => s + x.amount, 0);
+  const usingTxData = aHasData || bHasData;
+
   const hIncome = a.income + b.income;
-  const hExpenses = a.expenses + b.expenses;
+  // Use standing budget for expenses (matches Budget page) so the number is
+  // always the planned monthly total, not a mix of logged entries + standing.
+  const hExpenses = aStanding.expenses + bStanding.expenses + sharedTripTotal;
   const hInvest = a.investments + b.investments;
   const hDebts = a.debts + b.debts;
   const hSavings = hIncome - hExpenses - hInvest - hDebts;
@@ -1141,7 +1398,16 @@ export default function Dashboard({ abhav, aanya, shared }) {
   // Comparison bar data
   const compareData = [
     { label: "Income", abhav: a.income, aanya: b.income },
-    { label: "Expenses", abhav: a.expenses, aanya: b.expenses },
+    { label: "Expenses", abhav: aStanding.expenses, aanya: bStanding.expenses },
+    ...(sharedTripTotal > 0
+      ? [
+          {
+            label: "Shared Trips",
+            abhav: sharedTripTotal / 2,
+            aanya: sharedTripTotal / 2,
+          },
+        ]
+      : []),
     { label: "Investments", abhav: a.investments, aanya: b.investments },
   ];
 
@@ -1169,8 +1435,22 @@ export default function Dashboard({ abhav, aanya, shared }) {
   // Fall back to standing config when no transaction data at all
   if (!aHasData && !bHasData) {
     [...(abhav?.expenses || []), ...(aanya?.expenses || [])].forEach((e) => {
-      spendMap[e.category] = (spendMap[e.category] || 0) + e.amount;
+      if (e.expenseType === "trip") {
+        for (const item of e.items || []) {
+          const cat = item.category || "Others";
+          spendMap[cat] = (spendMap[cat] || 0) + (item.amount || 0);
+        }
+      } else {
+        spendMap[e.category] = (spendMap[e.category] || 0) + e.amount;
+      }
     });
+  }
+  // Include shared trips in spending pie (always — they're budgeted amounts)
+  for (const trip of sharedTrips) {
+    for (const item of trip.items || []) {
+      const cat = item.category || "Others";
+      spendMap[cat] = (spendMap[cat] || 0) + (item.amount || 0);
+    }
   }
   const pieData = Object.entries(spendMap)
     .sort((x, y) => y[1] - x[1])
@@ -1222,64 +1502,277 @@ export default function Dashboard({ abhav, aanya, shared }) {
   }, []);
 
   // ── Section renderers ───────────────────────────────────────────────────
+  const _infoRow = (label, val, color) => (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "3px 0",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontWeight: 600, color: color || "#eeeae4" }}>
+        {fmt(val)}
+      </span>
+    </div>
+  );
+
   const sections = {
     metrics: (
       <div className="grid-4 section-gap">
-        {[
-          {
-            label: "Combined Income",
-            val: hIncome,
-            color: "var(--green)",
-            icon: "up",
-          },
-          {
-            label: "Combined Expenses",
-            val: hExpenses,
-            color: "var(--red)",
-            icon: "down",
-          },
-          {
-            label: "Investing / month",
-            val: hInvest,
-            color: "var(--gold)",
-            icon: "up",
-          },
-          {
-            label: "Household Savings Rate",
-            val: hSavingsRate + "%",
-            color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
-            icon: hSavingsRate >= 20 ? "up" : "down",
-            raw: true,
-          },
-        ].map((m) => (
-          <div key={m.label} className="metric-card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-              }}
-            >
-              <div className="metric-label">{m.label}</div>
-              {m.icon === "up" ? (
-                <TrendingUp
-                  size={14}
-                  color={m.color}
-                  style={{ opacity: 0.7, flexShrink: 0 }}
-                />
-              ) : (
-                <TrendingDown
-                  size={14}
-                  color={m.color}
-                  style={{ opacity: 0.7, flexShrink: 0 }}
-                />
-              )}
+        <div className="metric-card">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div className="metric-label">
+              Combined Income
+              <InfoModal title="Combined Income">
+                {_infoRow("Abhav's income", aStanding.income, "var(--abhav)")}
+                {_infoRow("Aanya's income", bStanding.income, "var(--aanya)")}
+                <div
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 6,
+                    paddingTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    color: "var(--green)",
+                  }}
+                >
+                  <span>Total</span>
+                  <span>{fmt(aStanding.income + bStanding.income)}</span>
+                </div>
+                {usingTxData && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 11,
+                      color: "#777",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Currently showing actual entries logged for the selected
+                    month. Standing budget total:{" "}
+                    {fmt(aStanding.income + bStanding.income)}.
+                  </div>
+                )}
+              </InfoModal>
             </div>
-            <div className="metric-value" style={{ color: m.color }}>
-              {m.raw ? m.val : fmt(m.val)}
-            </div>
+            <TrendingUp
+              size={14}
+              color="var(--green)"
+              style={{ opacity: 0.7, flexShrink: 0 }}
+            />
           </div>
-        ))}
+          <div className="metric-value" style={{ color: "var(--green)" }}>
+            {fmt(hIncome)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div className="metric-label">
+              Combined Expenses
+              <InfoModal title="Combined Expenses">
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: "var(--abhav)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Abhav — {fmt(aStanding.expenses)}
+                </div>
+                {_infoRow("  Monthly", abhavMonthly)}
+                {abhavTrips > 0 && _infoRow("  Trips (personal)", abhavTrips)}
+                {abhavOnetime > 0 && _infoRow("  One-time", abhavOnetime)}
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: "var(--aanya)",
+                    marginTop: 8,
+                    marginBottom: 4,
+                  }}
+                >
+                  Aanya — {fmt(bStanding.expenses)}
+                </div>
+                {_infoRow("  Monthly", aanyaMonthly)}
+                {aanyaTrips > 0 && _infoRow("  Trips (personal)", aanyaTrips)}
+                {aanyaOnetime > 0 && _infoRow("  One-time", aanyaOnetime)}
+                {sharedTripTotal > 0 && (
+                  <>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--green)",
+                        marginTop: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Shared Trips — {fmt(sharedTripTotal)}
+                    </div>
+                    {sharedTrips.map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          padding: "2px 0",
+                        }}
+                      >
+                        <span>🤝 {t.name}</span>
+                        <span style={{ fontWeight: 600 }}>
+                          {fmt(t.amount || 0)}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                <div
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 8,
+                    paddingTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    color: "var(--red)",
+                  }}
+                >
+                  <span>Total</span>
+                  <span>{fmt(hExpenses)}</span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11,
+                    color: "#777",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Includes all monthly, trip, one-time expenses from both
+                  persons + shared trips. This is the standing budget total.
+                </div>
+              </InfoModal>
+            </div>
+            <TrendingDown
+              size={14}
+              color="var(--red)"
+              style={{ opacity: 0.7, flexShrink: 0 }}
+            />
+          </div>
+          <div className="metric-value" style={{ color: "var(--red)" }}>
+            {fmt(hExpenses)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div className="metric-label">
+              Investing / month
+              <InfoModal title="Monthly Investments">
+                {_infoRow("Abhav's investments", a.investments, "var(--abhav)")}
+                {_infoRow("Aanya's investments", b.investments, "var(--aanya)")}
+                <div
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 6,
+                    paddingTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    color: "var(--gold)",
+                  }}
+                >
+                  <span>Total</span>
+                  <span>{fmt(hInvest)}</span>
+                </div>
+              </InfoModal>
+            </div>
+            <TrendingUp
+              size={14}
+              color="var(--gold)"
+              style={{ opacity: 0.7, flexShrink: 0 }}
+            />
+          </div>
+          <div className="metric-value" style={{ color: "var(--gold)" }}>
+            {fmt(hInvest)}
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+            }}
+          >
+            <div className="metric-label">
+              Household Savings Rate
+              <InfoModal title="Household Savings Rate">
+                <p>Savings rate = (Investments + Surplus) / Income</p>
+                {_infoRow("Income", hIncome, "var(--green)")}
+                {_infoRow("Expenses", hExpenses, "var(--red)")}
+                {_infoRow("Investments", hInvest, "var(--gold)")}
+                {_infoRow("Debts / EMIs", hDebts)}
+                <div
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 6,
+                    paddingTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
+                  }}
+                >
+                  <span>Rate</span>
+                  <span>{hSavingsRate}%</span>
+                </div>
+              </InfoModal>
+            </div>
+            {hSavingsRate >= 20 ? (
+              <TrendingUp
+                size={14}
+                color="var(--green)"
+                style={{ opacity: 0.7, flexShrink: 0 }}
+              />
+            ) : (
+              <TrendingDown
+                size={14}
+                color="var(--gold)"
+                style={{ opacity: 0.7, flexShrink: 0 }}
+              />
+            )}
+          </div>
+          <div
+            className="metric-value"
+            style={{
+              color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
+            }}
+          >
+            {hSavingsRate}%
+          </div>
+        </div>
       </div>
     ),
 
@@ -1287,6 +1780,7 @@ export default function Dashboard({ abhav, aanya, shared }) {
       <MonthlyCashFlow
         abhav={abhav}
         aanya={aanya}
+        shared={shared}
         selectedMonth={selectedMonth}
       />
     ),

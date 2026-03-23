@@ -29,6 +29,7 @@ const EMPTY_PERSON = {
 
 const EMPTY_SHARED = {
   goals: [],
+  trips: [],
   profile: { householdName: "", city: "", savingsTarget: 25 },
   netWorthHistory: [],
 };
@@ -38,6 +39,27 @@ const DEFAULTS = {
   aanya: { ...EMPTY_PERSON },
   shared: { ...EMPTY_SHARED },
 };
+
+// ── One-time migration: backfill expenseType on legacy expenses ─────────────
+// Runs on load. Tags old expenses that have no expenseType field.
+// - recurrence "once" → expenseType "onetime"
+// - everything else → expenseType "monthly"
+function migrateExpenseTypes(data) {
+  const exps = data.expenses;
+  if (!exps || exps.length === 0) return data;
+  const needsMigration = exps.some((e) => !e.expenseType);
+  if (!needsMigration) return data;
+  return {
+    ...data,
+    expenses: exps.map((e) => {
+      if (e.expenseType) return e;
+      return {
+        ...e,
+        expenseType: e.recurrence === "once" ? "onetime" : "monthly",
+      };
+    }),
+  };
+}
 
 // Builds virtual recurring rules from incomes, expenses, and SIP investments.
 // These are derived at runtime — no need to store them in Firestore.
@@ -62,7 +84,10 @@ function autoRecurringRules(data) {
 
   // Expense rules
   for (const exp of data.expenses || []) {
-    const recurrence = exp.recurrence || "monthly";
+    // Skip trip expenses (they're one-time grouped events, not recurring)
+    if (exp.expenseType === "trip") continue;
+    const recurrence =
+      exp.recurrence || (exp.expenseType === "onetime" ? "once" : "monthly");
     // "once" = one-off with no recurring transaction
     // entries-based expenses: still generate a monthly placeholder unless recurrence=once/yearly/quarterly
     rules.push({
@@ -197,7 +222,13 @@ export function DataProvider({ children }) {
         if (!snap.exists()) setDoc(ref, defaultData);
       });
       const unsub = onSnapshot(ref, (snap) => {
-        const data = snap.exists() ? snap.data() : defaultData;
+        let data = snap.exists() ? snap.data() : defaultData;
+        // Migrate legacy expenses without expenseType
+        const migrated = migrateExpenseTypes(data);
+        if (migrated !== data) {
+          data = migrated;
+          setDoc(ref, data);
+        }
         // Auto-derive recurring transactions from incomes/expenses/investments/debts
         const updated = applyRecurring(data);
         if (updated.length !== (data.transactions || []).length) {
@@ -365,6 +396,10 @@ export function DataProvider({ children }) {
       aanyaExpenses: (aanya.expenses || []).reduce((s, x) => s + x.amount, 0),
       aanyaInvestments: (aanya.investments || []).reduce(
         (s, x) => s + freqToMonthly(x.amount, x.frequency),
+        0,
+      ),
+      sharedTripExpenses: (shared?.trips || []).reduce(
+        (s, x) => s + (x.amount || 0),
         0,
       ),
       abhavNetWorth: Math.round(computeNW(abhav)),

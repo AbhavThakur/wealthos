@@ -162,6 +162,24 @@ export const EXPENSE_SUBCATEGORIES = {
   Education: ["Fees / Tuition", "Books / Courses", "Stationery"],
   "Personal Care": ["Salon / Grooming", "Skincare / Cosmetics"],
 };
+
+// ── Expense type system ──────────────────────────────────────────────────────
+export const EXPENSE_TYPES = {
+  monthly: { label: "Monthly", emoji: "🔄", color: "var(--blue)" },
+  trip: { label: "Trips", emoji: "✈️", color: "var(--purple)" },
+  onetime: { label: "One-time", emoji: "💳", color: "var(--gold)" },
+};
+
+// Quick-add categories for trip line items
+export const TRIP_CATEGORIES = [
+  "Transport",
+  "Hotel",
+  "Food",
+  "Shopping",
+  "Entertainment",
+  "Others",
+];
+
 export const INVESTMENT_TYPES = [
   "Mutual Fund",
   "PPF",

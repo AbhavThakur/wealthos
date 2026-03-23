@@ -276,9 +276,9 @@ function AppInner() {
         return <Dashboard abhav={abhav} aanya={aanya} shared={shared} />;
       case "budget":
         return isHousehold ? (
-          <HouseholdBudget abhav={abhav} aanya={aanya} />
+          <HouseholdBudget abhav={abhav} aanya={aanya} shared={shared} />
         ) : (
-          both(Budget)
+          both(Budget, { shared, updateShared })
         );
       case "investments":
         return isHousehold ? (

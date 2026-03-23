@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 // Module-level counter for entry IDs — avoids impure Date.now() in render scope
 let _entryIdSeq = 0;
@@ -8,6 +9,8 @@ import {
   nextId,
   EXPENSE_CATEGORIES,
   EXPENSE_SUBCATEGORIES,
+  EXPENSE_TYPES,
+  TRIP_CATEGORIES,
   INCOME_TYPES,
 } from "../utils/finance";
 import {
@@ -17,10 +20,156 @@ import {
   ChevronUp,
   CalendarDays,
   X,
+  MapPin,
+  Plane,
+  CreditCard,
+  Repeat,
+  ArrowRightLeft,
+  Users,
+  Info,
 } from "lucide-react";
 import { useConfirm } from "../App";
 
+// Reusable info modal — portal-based overlay
+function InfoModal({ title, children }) {
+  const [open, setOpen] = useState(false);
+  const overlay = open
+    ? createPortal(
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.72)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "max(24px, 5vh) 24px 24px",
+            overflowY: "auto",
+          }}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            style={{
+              background: "#1a1a24",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "24px 28px",
+              maxWidth: 440,
+              width: "100%",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
+              color: "#eeeae4",
+              maxHeight: "85dvh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 15, color: "#eeeae4" }}>
+                {title}
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#aaa",
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  lineHeight: 1,
+                  display: "flex",
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: "#b0aab8", lineHeight: 1.8 }}>
+              {children}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+  return (
+    <>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          lineHeight: 1,
+          color: "#888",
+          display: "inline-flex",
+          alignItems: "center",
+          verticalAlign: "middle",
+          marginLeft: 5,
+        }}
+        title={`About ${title}`}
+        aria-label={`Info about ${title}`}
+      >
+        <Info size={13} />
+      </button>
+      {overlay}
+    </>
+  );
+}
+
 // ─── Budget rule engine ──────────────────────────────────────────────────────
+// Helper: compute total from trip items
+const tripTotal = (trip) =>
+  (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
+
+// Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
+const buildExpByCategory = (expenses) =>
+  expenses.reduce((acc, e) => {
+    if (e.expenseType === "trip") {
+      // Each trip item has its own category
+      for (const item of e.items || []) {
+        const cat = item.category || "Others";
+        acc[cat] = (acc[cat] || 0) + (item.amount || 0);
+      }
+    } else {
+      acc[e.category] = (acc[e.category] || 0) + (e.amount || 0);
+    }
+    return acc;
+  }, {});
+
+// Helper: build grouped view { cat: { total, subs: { sub: amount } } }
+const buildExpGrouped = (expenses) =>
+  expenses.reduce((acc, e) => {
+    if (e.expenseType === "trip") {
+      for (const item of e.items || []) {
+        const cat = item.category || "Others";
+        if (!acc[cat]) acc[cat] = { total: 0, subs: {} };
+        acc[cat].total += item.amount || 0;
+        // Use trip name as the "sub" for grouping
+        const sub = e.name || "";
+        acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + (item.amount || 0);
+      }
+    } else {
+      const cat = e.category;
+      if (!acc[cat]) acc[cat] = { total: 0, subs: {} };
+      acc[cat].total += e.amount || 0;
+      const sub = e.subCategory || "";
+      acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + (e.amount || 0);
+    }
+    return acc;
+  }, {});
+
 const BUDGET_RULES = {
   "50/30/20": {
     label: "50 / 30 / 20",
@@ -527,12 +676,99 @@ export default function Budget({
   personName,
   personColor,
   updatePerson,
+  shared,
+  updateShared,
 }) {
   const incomes = data?.incomes || [];
   const expenses = data?.expenses || [];
   const [tab, setTab] = useState("overview");
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
+
+  // ── Expense sub-tab (monthly | trips | onetime) ───────────────────────
+  const [expTab, setExpTab] = useState("monthly");
+  const [moveMenuOpen, setMoveMenuOpen] = useState(null); // expId or null
+  const [moveToTripPicker, setMoveToTripPicker] = useState(null); // expId when showing trip sub-menu
+
+  // Partition expenses by type (backfill old data as "monthly")
+  const monthlyExps = expenses.filter(
+    (e) => !e.expenseType || e.expenseType === "monthly",
+  );
+  const tripExps = expenses.filter((e) => e.expenseType === "trip");
+  const onetimeExps = expenses.filter((e) => e.expenseType === "onetime");
+
+  // Shared trips (visible to both persons)
+  const sharedTrips = shared?.trips || [];
+  // Combined trip list for display (tagged with _isShared for rendering)
+  const allTrips = [
+    ...tripExps.map((t) => ({ ...t, _isShared: false })),
+    ...sharedTrips.map((t) => ({ ...t, _isShared: true })),
+  ];
+
+  // ── Trip management ────────────────────────────────────────────────────
+  const [expandedTrips, setExpandedTrips] = useState({});
+  const [tripItemForm, setTripItemForm] = useState({}); // tripId → { name, amount, category }
+  const [tripCatOpen, setTripCatOpen] = useState({}); // tripKey → Set of open categories
+  const toggleTrip = (id) => setExpandedTrips((s) => ({ ...s, [id]: !s[id] }));
+  const getTripIF = (id) =>
+    tripItemForm[id] || { name: "", amount: "", category: "Food" };
+  const setTIF = (id, patch) =>
+    setTripItemForm((s) => ({
+      ...s,
+      [id]: { ...getTripIF(id), ...patch },
+    }));
+  const addTripItem = (trip, isShared = false) => {
+    const key = isShared ? `shared_${trip.id}` : `${trip.id}`;
+    const f = getTripIF(key);
+    if (!f.name || !f.amount) return;
+    const item = {
+      id: genEntryId(),
+      name: f.name.trim(),
+      amount: Number(f.amount),
+      category: f.category || "Others",
+      addedBy: personName,
+    };
+    const newItems = [...(trip.items || []), item];
+    const newAmount = newItems.reduce((s, i) => s + i.amount, 0);
+    if (isShared) {
+      updateShared(
+        "trips",
+        sharedTrips.map((x) =>
+          x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
+        ),
+      );
+    } else {
+      updatePerson(
+        "expenses",
+        expenses.map((x) =>
+          x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
+        ),
+      );
+    }
+    setTripItemForm((s) => ({
+      ...s,
+      [key]: { name: "", amount: "", category: "Food" },
+    }));
+  };
+  const deleteTripItem = (trip, itemId, isShared = false) => {
+    const newItems = (trip.items || []).filter((i) => i.id !== itemId);
+    const newAmount = newItems.reduce((s, i) => s + i.amount, 0);
+    if (isShared) {
+      updateShared(
+        "trips",
+        sharedTrips.map((x) =>
+          x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
+        ),
+      );
+    } else {
+      updatePerson(
+        "expenses",
+        expenses.map((x) =>
+          x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
+        ),
+      );
+    }
+  };
   // per-income-id expanded state + pending salary-change form
   const [expandedHistory, setExpandedHistory] = useState({});
   const [salaryForm, setSalaryForm] = useState({}); // id → { newAmount, note, date }
@@ -691,44 +927,495 @@ export default function Budget({
   };
 
   const totalIncome = incomes.reduce((s, x) => s + x.amount, 0);
-  const totalExpenses = expenses.reduce((s, x) => s + x.amount, 0);
+  const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
+  const totalExpenses =
+    expenses.reduce((s, x) => s + x.amount, 0) + sharedTripTotal;
   const savingsRate =
     totalIncome > 0
       ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
       : 0;
 
-  const expByCategory = expenses.reduce((acc, e) => {
-    acc[e.category] = (acc[e.category] || 0) + e.amount;
-    return acc;
-  }, {});
+  // Include shared trips in category aggregations
+  const allExpensesForCategories = [
+    ...expenses,
+    ...sharedTrips.map((t) => ({ ...t, expenseType: "trip" })),
+  ];
+  const expByCategory = buildExpByCategory(allExpensesForCategories);
 
   // Grouped: { Food: { total, subs: { Groceries: X, "Dining Out": Y, "": Z } } }
-  const expGrouped = expenses.reduce((acc, e) => {
-    const cat = e.category;
-    if (!acc[cat]) acc[cat] = { total: 0, subs: {} };
-    acc[cat].total += e.amount;
-    const sub = e.subCategory || "";
-    acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + e.amount;
-    return acc;
-  }, {});
+  const expGrouped = buildExpGrouped(allExpensesForCategories);
 
   const addIncome = () =>
     updatePerson("incomes", [
       ...incomes,
       { id: nextId(incomes), name: "New income", amount: 0, type: "salary" },
     ]);
-  const addExpense = () =>
+
+  // ── Typed expense creators ─────────────────────────────────────────────
+  const addMonthlyExpense = () =>
     updatePerson("expenses", [
-      ...expenses,
       {
         id: nextId(expenses),
+        expenseType: "monthly",
         name: "New expense",
         amount: 0,
         category: "Others",
         entries: [],
         date: new Date().toISOString().slice(0, 10),
+        recurrence: "monthly",
       },
+      ...expenses,
     ]);
+  const addTrip = () => {
+    const newId = nextId(expenses);
+    updatePerson("expenses", [
+      {
+        id: newId,
+        expenseType: "trip",
+        name: "New trip",
+        amount: 0,
+        category: "Others",
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: "",
+        budget: 0,
+        items: [],
+      },
+      ...expenses,
+    ]);
+    setExpandedTrips((s) => ({ ...s, [newId]: true }));
+  };
+  const addSharedTrip = () => {
+    const newId = nextId(sharedTrips);
+    updateShared("trips", [
+      {
+        id: newId,
+        name: "New shared trip",
+        amount: 0,
+        category: "Others",
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: "",
+        budget: 0,
+        items: [],
+      },
+      ...sharedTrips,
+    ]);
+    setExpandedTrips((s) => ({ ...s, [`shared_${newId}`]: true }));
+  };
+  const convertToShared = (trip) => {
+    const { _isShared, expenseType: _ET, recurrence: _R, ...tripData } = trip;
+    const newId = nextId(sharedTrips);
+    updateShared("trips", [...sharedTrips, { ...tripData, id: newId }]);
+    updatePerson(
+      "expenses",
+      expenses.filter((x) => x.id !== trip.id),
+    );
+    setExpandedTrips((s) => ({ ...s, [`shared_${newId}`]: true }));
+  };
+  const convertToPersonal = (trip) => {
+    const { _isShared, ...tripData } = trip;
+    const newId = nextId(expenses);
+    updatePerson("expenses", [
+      ...expenses,
+      { ...tripData, id: newId, expenseType: "trip" },
+    ]);
+    updateShared(
+      "trips",
+      sharedTrips.filter((x) => x.id !== trip.id),
+    );
+    setExpandedTrips((s) => ({ ...s, [newId]: true }));
+  };
+  const addOnetimeExpense = () =>
+    updatePerson("expenses", [
+      {
+        id: nextId(expenses),
+        expenseType: "onetime",
+        name: "New purchase",
+        amount: 0,
+        category: "Others",
+        date: new Date().toISOString().slice(0, 10),
+        recurrence: "once",
+      },
+      ...expenses,
+    ]);
+
+  // ── Move expense between types ─────────────────────────────────────────
+  const buildItemsFromExpense = (exp) => {
+    const items = [];
+    if (exp.entries && exp.entries.length > 0) {
+      for (const entry of exp.entries) {
+        items.push({
+          id: entry.id || genEntryId(),
+          name: entry.note || exp.name,
+          amount: entry.amount,
+          category: exp.category || "Others",
+        });
+      }
+    } else if (exp.amount > 0) {
+      items.push({
+        id: genEntryId(),
+        name: exp.name,
+        amount: exp.amount,
+        category: exp.category || "Others",
+      });
+    }
+    return items;
+  };
+
+  // Move expense into an EXISTING trip (merge as line items)
+  const moveExpenseToTrip = (expId, tripId, isSharedTrip = false) => {
+    const exp = expenses.find((e) => e.id === expId);
+    if (!exp) return;
+    const newItems = buildItemsFromExpense(exp).map((item) => ({
+      ...item,
+      addedBy: personName,
+    }));
+    if (isSharedTrip) {
+      // Merge into shared trip
+      updateShared(
+        "trips",
+        sharedTrips.map((x) => {
+          if (x.id !== tripId) return x;
+          const merged = [...(x.items || []), ...newItems];
+          return {
+            ...x,
+            items: merged,
+            amount: merged.reduce((s, i) => s + i.amount, 0),
+          };
+        }),
+      );
+    } else {
+      // Merge into personal trip
+      updatePerson(
+        "expenses",
+        expenses
+          .filter((x) => x.id !== expId)
+          .map((x) => {
+            if (x.id !== tripId) return x;
+            const merged = [...(x.items || []), ...newItems];
+            return {
+              ...x,
+              items: merged,
+              amount: merged.reduce((s, i) => s + i.amount, 0),
+            };
+          }),
+      );
+    }
+    // Also remove the source expense (for shared trip target, remove separately)
+    if (isSharedTrip) {
+      updatePerson(
+        "expenses",
+        expenses.filter((x) => x.id !== expId),
+      );
+    }
+    setExpandedTrips((s) => ({
+      ...s,
+      [isSharedTrip ? `shared_${tripId}` : tripId]: true,
+    }));
+    setExpTab("trip");
+  };
+
+  // Move expense to a different type (creates new entity)
+  const moveExpenseTo = (expId, targetType) => {
+    if (!targetType) return;
+    const exp = expenses.find((e) => e.id === expId);
+    if (!exp || (exp.expenseType || "monthly") === targetType) return;
+    const src = exp.expenseType || "monthly";
+    let moved;
+
+    if (targetType === "trip") {
+      const items = buildItemsFromExpense(exp);
+      moved = {
+        id: exp.id,
+        expenseType: "trip",
+        name: exp.name,
+        amount: items.reduce((s, i) => s + i.amount, 0),
+        category: exp.category || "Others",
+        startDate: exp.date || new Date().toISOString().slice(0, 10),
+        endDate: "",
+        budget: 0,
+        items,
+      };
+      setExpandedTrips((s) => ({ ...s, [exp.id]: true }));
+    } else if (targetType === "monthly") {
+      moved = {
+        id: exp.id,
+        expenseType: "monthly",
+        name: exp.name,
+        amount: exp.amount,
+        category: exp.category || "Others",
+        recurrence: "monthly",
+        entries: [],
+        date:
+          (src === "trip" ? exp.startDate : exp.date) ||
+          new Date().toISOString().slice(0, 10),
+      };
+    } else if (targetType === "onetime") {
+      moved = {
+        id: exp.id,
+        expenseType: "onetime",
+        name: exp.name,
+        amount: exp.amount,
+        category: exp.category || "Others",
+        recurrence: "once",
+        date:
+          (src === "trip" ? exp.startDate : exp.date) ||
+          new Date().toISOString().slice(0, 10),
+      };
+    }
+
+    if (moved) {
+      updatePerson(
+        "expenses",
+        expenses.map((x) => (x.id === expId ? moved : x)),
+      );
+      setExpTab(targetType);
+    }
+  };
+
+  // Floating context-menu button for moving expenses between types
+  const _menuItemStyle = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    background: "none",
+    border: "none",
+    color: "var(--text-secondary)",
+    padding: "7px 12px",
+    fontSize: 12,
+    cursor: "pointer",
+    borderRadius: 4,
+    whiteSpace: "nowrap",
+  };
+  const MoveButton = ({ expId, currentType }) => {
+    const isOpen = moveMenuOpen === expId;
+    const showTripPicker = moveToTripPicker === expId;
+    const targets = ["monthly", "trip", "onetime"].filter(
+      (t) => t !== currentType,
+    );
+    const close = () => {
+      setMoveMenuOpen(null);
+      setMoveToTripPicker(null);
+    };
+    return (
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isOpen) close();
+            else {
+              setMoveMenuOpen(expId);
+              setMoveToTripPicker(null);
+            }
+          }}
+          title="Move to…"
+          style={{
+            background: isOpen ? "rgba(255,255,255,0.1)" : "none",
+            border: "1px solid var(--border)",
+            color: "var(--text-muted)",
+            borderRadius: 6,
+            padding: "4px 6px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            flexShrink: 0,
+          }}
+        >
+          <ArrowRightLeft size={12} />
+        </button>
+        {isOpen && (
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              top: "calc(100% + 4px)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 4,
+              zIndex: 50,
+              minWidth: 180,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            {!showTripPicker ? (
+              targets.map((t) => {
+                const hasAnyTrips =
+                  tripExps.length > 0 || sharedTrips.length > 0;
+                // If target is "trip" and existing trips exist, show sub-menu
+                if (t === "trip" && hasAnyTrips) {
+                  return (
+                    <button
+                      key={t}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoveToTripPicker(expId);
+                      }}
+                      style={_menuItemStyle}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background =
+                          "rgba(255,255,255,0.07)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = "none")
+                      }
+                    >
+                      {EXPENSE_TYPES[t].emoji} Move to Trip ▸
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    key={t}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveExpenseTo(expId, t);
+                      close();
+                    }}
+                    style={_menuItemStyle}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background =
+                        "rgba(255,255,255,0.07)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "none")
+                    }
+                  >
+                    {EXPENSE_TYPES[t].emoji} Move to {EXPENSE_TYPES[t].label}
+                  </button>
+                );
+              })
+            ) : (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMoveToTripPicker(null);
+                  }}
+                  style={{
+                    ..._menuItemStyle,
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    padding: "5px 12px",
+                  }}
+                >
+                  ◂ Back
+                </button>
+                {tripExps.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      padding: "4px 12px 2px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    My Trips
+                  </div>
+                )}
+                {tripExps.map((trip) => (
+                  <button
+                    key={trip.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveExpenseToTrip(expId, trip.id, false);
+                      close();
+                    }}
+                    style={_menuItemStyle}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background =
+                        "rgba(255,255,255,0.07)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "none")
+                    }
+                  >
+                    ✈️ {trip.name}
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        opacity: 0.5,
+                        fontSize: 10,
+                      }}
+                    >
+                      {(trip.items || []).length} items
+                    </span>
+                  </button>
+                ))}
+                {sharedTrips.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      padding: "6px 12px 2px",
+                      fontWeight: 600,
+                      borderTop:
+                        tripExps.length > 0
+                          ? "1px solid var(--border)"
+                          : "none",
+                      marginTop: tripExps.length > 0 ? 2 : 0,
+                    }}
+                  >
+                    🤝 Shared Trips
+                  </div>
+                )}
+                {sharedTrips.map((trip) => (
+                  <button
+                    key={`s_${trip.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      moveExpenseToTrip(expId, trip.id, true);
+                      close();
+                    }}
+                    style={_menuItemStyle}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background =
+                        "rgba(255,255,255,0.07)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "none")
+                    }
+                  >
+                    🤝 {trip.name}
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        opacity: 0.5,
+                        fontSize: 10,
+                      }}
+                    >
+                      {(trip.items || []).length} items
+                    </span>
+                  </button>
+                ))}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveExpenseTo(expId, "trip");
+                    close();
+                  }}
+                  style={{
+                    ..._menuItemStyle,
+                    borderTop: "1px solid var(--border)",
+                    marginTop: 2,
+                    paddingTop: 8,
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background =
+                      "rgba(255,255,255,0.07)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "none")
+                  }
+                >
+                  ➕ Create new trip
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const tabs = ["overview", "income", "expenses"];
 
@@ -770,11 +1457,186 @@ export default function Budget({
         <div>
           <div className="grid-3 section-gap">
             <div className="metric-card">
-              <div className="metric-label">Income</div>
+              <div className="metric-label">
+                Income
+                <InfoModal title="Income breakdown">
+                  {incomes.map((inc) => (
+                    <div
+                      key={inc.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "3px 0",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      }}
+                    >
+                      <span>{inc.name}</span>
+                      <span style={{ fontWeight: 600 }}>{fmt(inc.amount)}</span>
+                    </div>
+                  ))}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 6,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color: "var(--green)",
+                    }}
+                  >
+                    <span>Total</span>
+                    <span>{fmt(totalIncome)}</span>
+                  </div>
+                </InfoModal>
+              </div>
               <div className="metric-value green-text">{fmt(totalIncome)}</div>
             </div>
             <div className="metric-card">
-              <div className="metric-label">Expenses</div>
+              <div className="metric-label">
+                Expenses
+                <InfoModal title="Expenses breakdown">
+                  {monthlyExps.length > 0 && (
+                    <>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        🔁 Monthly ({monthlyExps.length})
+                      </div>
+                      {monthlyExps.map((e) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "2px 0",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span>{e.name}</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {fmt(e.amount)}
+                          </span>
+                        </div>
+                      ))}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontWeight: 600,
+                          padding: "4px 0 8px",
+                          borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        }}
+                      >
+                        <span>Monthly subtotal</span>
+                        <span>
+                          {fmt(monthlyExps.reduce((s, x) => s + x.amount, 0))}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {tripExps.length > 0 && (
+                    <>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          marginTop: 8,
+                          marginBottom: 4,
+                        }}
+                      >
+                        ✈️ My Trips ({tripExps.length})
+                      </div>
+                      {tripExps.map((e) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "2px 0",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span>{e.name}</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {fmt(e.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {sharedTrips.length > 0 && (
+                    <>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          marginTop: 8,
+                          marginBottom: 4,
+                          color: "var(--green)",
+                        }}
+                      >
+                        🤝 Shared Trips ({sharedTrips.length})
+                      </div>
+                      {sharedTrips.map((e) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "2px 0",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span>{e.name}</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {fmt(e.amount || 0)}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {onetimeExps.length > 0 && (
+                    <>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          marginTop: 8,
+                          marginBottom: 4,
+                        }}
+                      >
+                        💳 One-time ({onetimeExps.length})
+                      </div>
+                      {onetimeExps.map((e) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "2px 0",
+                            fontSize: 12,
+                          }}
+                        >
+                          <span>{e.name}</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {fmt(e.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 8,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color: "var(--red)",
+                    }}
+                  >
+                    <span>Total</span>
+                    <span>{fmt(totalExpenses)}</span>
+                  </div>
+                </InfoModal>
+              </div>
               <div className="metric-value red-text">{fmt(totalExpenses)}</div>
             </div>
             <div className="metric-card">
@@ -1162,7 +2024,15 @@ export default function Budget({
                                 +{fmt(e.amount)}
                               </span>
                               <button
-                                onClick={() => deleteIncEntry(inc, e.id)}
+                                onClick={async () => {
+                                  if (
+                                    await confirm(
+                                      "Delete entry?",
+                                      `Remove this ${e.type || "income"} entry of ${fmt(e.amount)}?`,
+                                    )
+                                  )
+                                    deleteIncEntry(inc, e.id);
+                                }}
                                 style={{
                                   background: "none",
                                   border: "none",
@@ -1533,49 +2403,1243 @@ export default function Budget({
       )}
 
       {tab === "expenses" && (
-        <div className="card">
+        <div>
+          {/* ── Expense sub-tabs ── */}
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
+              gap: 4,
               marginBottom: "1rem",
             }}
           >
-            <div className="card-title" style={{ marginBottom: 0 }}>
-              Expenses
-            </div>
-            <button
-              className="btn-primary"
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
-              onClick={addExpense}
-            >
-              <Plus size={13} /> Add
-            </button>
+            {[
+              {
+                key: "monthly",
+                icon: <Repeat size={12} />,
+                count: monthlyExps.length,
+              },
+              {
+                key: "trip",
+                icon: <Plane size={12} />,
+                count: tripExps.length + sharedTrips.length,
+              },
+              {
+                key: "onetime",
+                icon: <CreditCard size={12} />,
+                count: onetimeExps.length,
+              },
+            ].map(({ key, icon, count }) => {
+              const meta = EXPENSE_TYPES[key];
+              const active = expTab === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setExpTab(key)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "var(--radius-sm)",
+                    background: active
+                      ? "rgba(255,255,255,0.08)"
+                      : "transparent",
+                    color: active ? meta.color : "var(--text-muted)",
+                    border: active
+                      ? `1px solid ${meta.color}33`
+                      : "1px solid var(--border)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {icon} {meta.label}
+                  {count > 0 && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 10,
+                        background: active
+                          ? `${meta.color}22`
+                          : "rgba(255,255,255,0.05)",
+                        color: active ? meta.color : "var(--text-muted)",
+                      }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          {expenses.map((exp) => {
-            const entries = exp.entries || [];
-            const isOpen = !!expandedExp[exp.id];
-            const ef = getEntryForm(exp.id);
-            const thisMonth = new Date().toISOString().slice(0, 7);
-            const spentThisMonth = entries
-              .filter((e) => e.date?.slice(0, 7) === thisMonth)
-              .reduce((s, e) => s + e.amount, 0);
-            return (
+
+          {/* ══════════════════ MONTHLY EXPENSES ══════════════════ */}
+          {expTab === "monthly" && (
+            <div className="card">
               <div
-                key={exp.id}
-                style={{ borderBottom: "1px solid var(--border)" }}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "1rem",
+                }}
               >
-                {/* Main row — two-line layout so mobile stays readable */}
-                <div style={{ padding: "8px 0 4px" }}>
-                  {/* Line 1: Name + Amount + Action buttons */}
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  <Repeat size={14} style={{ marginRight: 6, opacity: 0.5 }} />
+                  Monthly Expenses
+                </div>
+                <button
+                  className="btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  onClick={addMonthlyExpense}
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+
+              {monthlyExps.length === 0 && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    padding: "1rem 0",
+                    textAlign: "center",
+                  }}
+                >
+                  No monthly expenses yet. Add recurring costs like rent,
+                  groceries, or subscriptions.
+                </div>
+              )}
+
+              {monthlyExps.map((exp) => {
+                const entries = exp.entries || [];
+                const isOpen = !!expandedExp[exp.id];
+                const ef = getEntryForm(exp.id);
+                const thisMonth = new Date().toISOString().slice(0, 7);
+                const spentThisMonth = entries
+                  .filter((e) => e.date?.slice(0, 7) === thisMonth)
+                  .reduce((s, e) => s + e.amount, 0);
+                return (
                   <div
+                    key={exp.id}
                     style={{
-                      display: "flex",
-                      gap: 8,
-                      alignItems: "center",
-                      marginBottom: 6,
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "12px 14px",
+                      marginBottom: 8,
+                      borderLeft: "3px solid var(--blue)",
                     }}
+                  >
+                    {/* Row 1: Name + Amount + Actions */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <input
+                        value={exp.name}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, name: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      {entries.length > 0 ? (
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            textAlign: "right",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {fmt(exp.amount)}
+                          {spentThisMonth > 0 && (
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "var(--text-muted)",
+                                fontWeight: 400,
+                              }}
+                            >
+                              {fmt(spentThisMonth)} this mo
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          value={exp.amount}
+                          onChange={(e) =>
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id
+                                  ? { ...x, amount: Number(e.target.value) }
+                                  : x,
+                              ),
+                            )
+                          }
+                          style={{ width: 90, flexShrink: 0 }}
+                          min="0"
+                          placeholder="₹"
+                        />
+                      )}
+                      <button
+                        onClick={() => {
+                          toggleExpandExp(exp.id);
+                          if (!isOpen) setEF(exp.id, {});
+                        }}
+                        title="Log purchases"
+                        style={{
+                          background:
+                            entries.length > 0
+                              ? "var(--gold-dim)"
+                              : "rgba(255,255,255,0.06)",
+                          border:
+                            entries.length > 0
+                              ? "1px solid var(--gold-border)"
+                              : "1px solid var(--border)",
+                          color:
+                            entries.length > 0
+                              ? "var(--gold)"
+                              : "var(--text-muted)",
+                          borderRadius: 6,
+                          padding: "4px 8px",
+                          fontSize: 11,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <CalendarDays size={11} />
+                        {entries.length > 0 ? entries.length : "Log"}
+                      </button>
+                      <MoveButton expId={exp.id} currentType="monthly" />
+                      <button
+                        className="btn-danger"
+                        aria-label={`Delete ${exp.name}`}
+                        onClick={async () => {
+                          if (
+                            await confirm(
+                              "Delete expense?",
+                              `Remove "${exp.name}"?`,
+                            )
+                          )
+                            updatePerson(
+                              "expenses",
+                              expenses.filter((x) => x.id !== exp.id),
+                            );
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+
+                    {/* Row 2: Category pill + Recurrence */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <select
+                        value={exp.category}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? {
+                                    ...x,
+                                    category: e.target.value,
+                                    subCategory: "",
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "0 1 130px", fontSize: 12 }}
+                      >
+                        {EXPENSE_CATEGORIES.map((c) => (
+                          <option key={c}>{c}</option>
+                        ))}
+                      </select>
+                      {EXPENSE_SUBCATEGORIES[exp.category] && (
+                        <select
+                          value={exp.subCategory || ""}
+                          onChange={(e) =>
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id
+                                  ? { ...x, subCategory: e.target.value }
+                                  : x,
+                              ),
+                            )
+                          }
+                          style={{ flex: "0 1 130px", fontSize: 12 }}
+                        >
+                          <option value="">— sub —</option>
+                          {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
+                      <select
+                        value={exp.recurrence || "monthly"}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, recurrence: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "0 0 96px", fontSize: 12 }}
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="variable">Variable</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                      {exp.recurrence === "yearly" && (
+                        <select
+                          value={exp.recurrenceMonth ?? 0}
+                          onChange={(e) =>
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id
+                                  ? {
+                                      ...x,
+                                      recurrenceMonth: Number(e.target.value),
+                                    }
+                                  : x,
+                              ),
+                            )
+                          }
+                          style={{ flex: "0 0 64px", fontSize: 12 }}
+                        >
+                          {[
+                            "Jan",
+                            "Feb",
+                            "Mar",
+                            "Apr",
+                            "May",
+                            "Jun",
+                            "Jul",
+                            "Aug",
+                            "Sep",
+                            "Oct",
+                            "Nov",
+                            "Dec",
+                          ].map((m, i) => (
+                            <option key={m} value={i}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {exp.recurrence === "quarterly" && (
+                        <select
+                          value={(exp.recurrenceMonths ?? [0, 3, 6, 9])[0]}
+                          onChange={(e) => {
+                            const start = Number(e.target.value);
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id
+                                  ? {
+                                      ...x,
+                                      recurrenceMonths: [
+                                        start,
+                                        (start + 3) % 12,
+                                        (start + 6) % 12,
+                                        (start + 9) % 12,
+                                      ],
+                                    }
+                                  : x,
+                              ),
+                            );
+                          }}
+                          style={{ flex: "0 0 64px", fontSize: 12 }}
+                        >
+                          {["Jan", "Feb", "Mar"].map((m, i) => (
+                            <option key={m} value={i}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        type="date"
+                        value={exp.date || ""}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, date: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "0 0 130px", fontSize: 12 }}
+                        title="Expense start date"
+                      />
+                    </div>
+
+                    {/* Entries panel (purchase log) */}
+                    {isOpen && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: "10px 12px",
+                          background: "var(--bg-card)",
+                          borderRadius: "var(--radius-sm)",
+                          borderLeft: `3px solid ${personColor}`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            marginBottom: 8,
+                            textTransform: "uppercase",
+                            letterSpacing: ".06em",
+                          }}
+                        >
+                          Purchase log
+                        </div>
+                        {entries.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            {[...entries]
+                              .sort((a, b) => b.date.localeCompare(a.date))
+                              .map((e) => (
+                                <div
+                                  key={e.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "4px 0",
+                                    borderBottom: "1px solid var(--border)",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: "var(--text-muted)",
+                                      fontVariantNumeric: "tabular-nums",
+                                      flexShrink: 0,
+                                      width: 72,
+                                    }}
+                                  >
+                                    {e.date.slice(5).replace("-", " ")}
+                                  </span>
+                                  <span
+                                    style={{
+                                      flex: 1,
+                                      color: "var(--text-secondary)",
+                                    }}
+                                  >
+                                    {e.note || "—"}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontWeight: 600,
+                                      color: "var(--red)",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {fmt(e.amount)}
+                                  </span>
+                                  <button
+                                    onClick={async () => {
+                                      if (
+                                        await confirm(
+                                          "Delete entry?",
+                                          `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                        )
+                                      )
+                                        deleteEntry(exp, e.id);
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      color: "var(--text-muted)",
+                                      padding: 2,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <input
+                            type="date"
+                            value={ef.date}
+                            onChange={(e) =>
+                              setEF(exp.id, { date: e.target.value })
+                            }
+                            style={{ flex: "0 0 130px" }}
+                          />
+                          <input
+                            type="number"
+                            placeholder="₹"
+                            value={ef.amount}
+                            onChange={(e) =>
+                              setEF(exp.id, { amount: e.target.value })
+                            }
+                            style={{ flex: "0 0 90px" }}
+                            min="0"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Note"
+                            value={ef.note}
+                            onChange={(e) =>
+                              setEF(exp.id, { note: e.target.value })
+                            }
+                            style={{ flex: 1, minWidth: 100 }}
+                          />
+                          <button
+                            className="btn-primary"
+                            style={{
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "6px 12px",
+                            }}
+                            onClick={() => addEntry(exp)}
+                            disabled={!ef.amount || !ef.date}
+                          >
+                            <Plus size={11} /> Log
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {monthlyExps.length > 0 && (
+                <div
+                  style={{
+                    textAlign: "right",
+                    paddingTop: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  Monthly total:{" "}
+                  <span className="red-text">
+                    {fmt(monthlyExps.reduce((s, x) => s + x.amount, 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════ TRIPS & EVENTS ══════════════════ */}
+          {expTab === "trip" && (
+            <div className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "1rem",
+                }}
+              >
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  <Plane size={14} style={{ marginRight: 6, opacity: 0.5 }} />
+                  Trips & Events
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    className="btn-primary"
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    onClick={addSharedTrip}
+                    title="Create a trip shared between both persons"
+                  >
+                    <Users size={13} /> Shared trip
+                  </button>
+                  <button
+                    className="btn-primary"
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    onClick={addTrip}
+                  >
+                    <Plus size={13} /> My trip
+                  </button>
+                </div>
+              </div>
+
+              {allTrips.length === 0 && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    padding: "1rem 0",
+                    textAlign: "center",
+                  }}
+                >
+                  No trips yet. Create one to group travel, hotel, food &amp;
+                  shopping expenses together.
+                </div>
+              )}
+
+              {allTrips.map((trip) => {
+                const items = trip.items || [];
+                const total = tripTotal(trip);
+                const isShared = trip._isShared;
+                const tripKey = isShared ? `shared_${trip.id}` : `${trip.id}`;
+                const isOpen = !!expandedTrips[tripKey];
+                const tif = getTripIF(tripKey);
+                const openCats = tripCatOpen[tripKey] || new Set();
+                const catGroups = {};
+                items.forEach((i) => {
+                  if (!catGroups[i.category]) catGroups[i.category] = [];
+                  catGroups[i.category].push(i);
+                });
+                const sortedCats = Object.entries(catGroups).sort(
+                  (a, b) =>
+                    b[1].reduce((s, i) => s + i.amount, 0) -
+                    a[1].reduce((s, i) => s + i.amount, 0),
+                );
+                const toggleCat = (cat) =>
+                  setTripCatOpen((s) => {
+                    const prev = new Set(s[tripKey] || []);
+                    if (prev.has(cat)) prev.delete(cat);
+                    else prev.add(cat);
+                    return { ...s, [tripKey]: prev };
+                  });
+                const hasBudget = (trip.budget || 0) > 0;
+                const budgetPct = hasBudget
+                  ? Math.round((total / trip.budget) * 100)
+                  : 0;
+                const overBudget = hasBudget && total > trip.budget;
+                const updateTripField = (field, value) => {
+                  if (isShared) {
+                    updateShared(
+                      "trips",
+                      sharedTrips.map((x) =>
+                        x.id === trip.id ? { ...x, [field]: value } : x,
+                      ),
+                    );
+                  } else {
+                    updatePerson(
+                      "expenses",
+                      expenses.map((x) =>
+                        x.id === trip.id ? { ...x, [field]: value } : x,
+                      ),
+                    );
+                  }
+                };
+
+                return (
+                  <div
+                    key={tripKey}
+                    style={{
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "14px 16px",
+                      marginBottom: 10,
+                      borderLeft: isShared
+                        ? "3px solid var(--green)"
+                        : "3px solid var(--purple)",
+                    }}
+                  >
+                    {/* Trip header */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 8,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => toggleTrip(tripKey)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && toggleTrip(tripKey)
+                      }
+                    >
+                      <span style={{ fontSize: 18, flexShrink: 0 }}>
+                        {isShared ? "🤝" : "✈️"}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>
+                            {trip.name}
+                          </span>
+                          {isShared && (
+                            <span
+                              style={{
+                                fontSize: 9,
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                background: "var(--green-dim)",
+                                color: "var(--green)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              Shared
+                            </span>
+                          )}
+                          {trip.startDate && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              <MapPin size={10} style={{ marginRight: 3 }} />
+                              {trip.startDate.slice(5).replace("-", "/")}
+                              {trip.endDate
+                                ? ` – ${trip.endDate.slice(5).replace("-", "/")}`
+                                : ""}
+                            </span>
+                          )}
+                          <span
+                            style={{ fontSize: 11, color: "var(--text-muted)" }}
+                          >
+                            {items.length} item{items.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 16,
+                            fontWeight: 700,
+                            color: overBudget
+                              ? "var(--red)"
+                              : "var(--text-primary)",
+                          }}
+                        >
+                          {fmt(total)}
+                        </div>
+                        {hasBudget && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: overBudget
+                                ? "var(--red)"
+                                : "var(--text-muted)",
+                            }}
+                          >
+                            {budgetPct}% of {fmt(trip.budget)} budget
+                          </div>
+                        )}
+                      </div>
+                      {!isShared && (
+                        <MoveButton expId={trip.id} currentType="trip" />
+                      )}
+                      <button
+                        className="btn-danger"
+                        aria-label={`Delete ${trip.name}`}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (
+                            await confirm(
+                              "Delete trip?",
+                              `Remove "${trip.name}" and all its items?`,
+                            )
+                          ) {
+                            if (isShared) {
+                              updateShared(
+                                "trips",
+                                sharedTrips.filter((x) => x.id !== trip.id),
+                              );
+                            } else {
+                              updatePerson(
+                                "expenses",
+                                expenses.filter((x) => x.id !== trip.id),
+                              );
+                            }
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      {isOpen ? (
+                        <ChevronUp
+                          size={14}
+                          style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                        />
+                      ) : (
+                        <ChevronDown
+                          size={14}
+                          style={{ color: "var(--text-muted)", flexShrink: 0 }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Budget bar */}
+                    {hasBudget && (
+                      <div style={{ marginBottom: isOpen ? 12 : 0 }}>
+                        <div
+                          style={{
+                            position: "relative",
+                            height: 6,
+                            borderRadius: 3,
+                            background: "rgba(255,255,255,0.07)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: Math.min(100, budgetPct) + "%",
+                              height: "100%",
+                              background: overBudget
+                                ? "var(--red)"
+                                : "var(--purple)",
+                              borderRadius: 3,
+                              transition: "width 0.3s",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Expanded: trip details */}
+                    {isOpen && (
+                      <div>
+                        {/* Edit trip meta */}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            marginBottom: 12,
+                          }}
+                        >
+                          <input
+                            value={trip.name}
+                            onChange={(e) =>
+                              updateTripField("name", e.target.value)
+                            }
+                            placeholder="Trip name"
+                            style={{ flex: "1 1 140px" }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <input
+                            type="date"
+                            value={trip.startDate || ""}
+                            onChange={(e) =>
+                              updateTripField("startDate", e.target.value)
+                            }
+                            style={{ flex: "0 0 130px", fontSize: 12 }}
+                            title="Start date"
+                          />
+                          <input
+                            type="date"
+                            value={trip.endDate || ""}
+                            onChange={(e) =>
+                              updateTripField("endDate", e.target.value)
+                            }
+                            style={{ flex: "0 0 130px", fontSize: 12 }}
+                            title="End date"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Budget (₹)"
+                            value={trip.budget || ""}
+                            onChange={(e) =>
+                              updateTripField("budget", Number(e.target.value))
+                            }
+                            style={{ flex: "0 0 110px", fontSize: 12 }}
+                            min="0"
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isShared) convertToPersonal(trip);
+                              else convertToShared(trip);
+                            }}
+                            title={
+                              isShared
+                                ? "Convert to personal trip"
+                                : "Convert to shared trip (visible to both)"
+                            }
+                            style={{
+                              background: isShared
+                                ? "rgba(255,255,255,0.06)"
+                                : "var(--green-dim)",
+                              border: isShared
+                                ? "1px solid var(--border)"
+                                : "1px solid rgba(76,175,130,0.3)",
+                              color: isShared
+                                ? "var(--text-muted)"
+                                : "var(--green)",
+                              borderRadius: 6,
+                              padding: "4px 10px",
+                              fontSize: 11,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              flexShrink: 0,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <Users size={11} />{" "}
+                            {isShared ? "Make personal" : "Make shared"}
+                          </button>
+                        </div>
+
+                        {/* Category accordion */}
+                        {sortedCats.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            {sortedCats.map(([cat, catItems]) => {
+                              const catTotal = catItems.reduce(
+                                (s, i) => s + i.amount,
+                                0,
+                              );
+                              const isCatOpen =
+                                sortedCats.length === 1 || openCats.has(cat);
+                              return (
+                                <div key={cat}>
+                                  <div
+                                    onClick={() => {
+                                      if (sortedCats.length > 1) toggleCat(cat);
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                      padding: "7px 0",
+                                      borderBottom: "1px solid var(--border)",
+                                      cursor:
+                                        sortedCats.length > 1
+                                          ? "pointer"
+                                          : "default",
+                                      userSelect: "none",
+                                    }}
+                                  >
+                                    {sortedCats.length > 1 && (
+                                      <ChevronDown
+                                        size={12}
+                                        style={{
+                                          transition: "transform 0.2s",
+                                          transform: isCatOpen
+                                            ? "rotate(0deg)"
+                                            : "rotate(-90deg)",
+                                          flexShrink: 0,
+                                          color: "var(--text-muted)",
+                                        }}
+                                      />
+                                    )}
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        padding: "2px 8px",
+                                        borderRadius: 4,
+                                        background: "var(--purple-dim)",
+                                        color: "var(--purple)",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {cat}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: 11,
+                                        color: "var(--text-muted)",
+                                      }}
+                                    >
+                                      {catItems.length} item
+                                      {catItems.length !== 1 ? "s" : ""}
+                                    </span>
+                                    <span style={{ flex: 1 }} />
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        fontSize: 12,
+                                        color: "var(--red)",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {fmt(catTotal)}
+                                    </span>
+                                    {total > 0 && (
+                                      <span
+                                        style={{
+                                          fontSize: 10,
+                                          color: "var(--text-muted)",
+                                          flexShrink: 0,
+                                          minWidth: 32,
+                                          textAlign: "right",
+                                        }}
+                                      >
+                                        {Math.round((catTotal / total) * 100)}%
+                                      </span>
+                                    )}
+                                  </div>
+                                  {isCatOpen && (
+                                    <div
+                                      style={{
+                                        paddingLeft:
+                                          sortedCats.length > 1 ? 18 : 0,
+                                      }}
+                                    >
+                                      {catItems.map((item) => (
+                                        <div
+                                          key={item.id}
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                            padding: "5px 0",
+                                            borderBottom:
+                                              "1px solid var(--border)",
+                                            fontSize: 12,
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              flex: 1,
+                                              color: "var(--text-secondary)",
+                                            }}
+                                          >
+                                            {item.name}
+                                          </span>
+                                          {isShared && item.addedBy && (
+                                            <span
+                                              style={{
+                                                fontSize: 9,
+                                                padding: "1px 5px",
+                                                borderRadius: 3,
+                                                background:
+                                                  "rgba(255,255,255,0.06)",
+                                                color: "var(--text-muted)",
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              {item.addedBy}
+                                            </span>
+                                          )}
+                                          <span
+                                            style={{
+                                              fontWeight: 600,
+                                              color: "var(--red)",
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            {fmt(item.amount)}
+                                          </span>
+                                          <button
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              if (
+                                                await confirm(
+                                                  "Delete item?",
+                                                  `Remove "${item.name}" (${fmt(item.amount)}) from this trip?`,
+                                                )
+                                              )
+                                                deleteTripItem(
+                                                  trip,
+                                                  item.id,
+                                                  isShared,
+                                                );
+                                            }}
+                                            style={{
+                                              background: "none",
+                                              border: "none",
+                                              cursor: "pointer",
+                                              color: "var(--text-muted)",
+                                              padding: 2,
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            <X size={11} />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Add item form */}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <select
+                            value={tif.category}
+                            onChange={(e) =>
+                              setTIF(tripKey, { category: e.target.value })
+                            }
+                            style={{ flex: "0 0 110px", fontSize: 12 }}
+                          >
+                            {TRIP_CATEGORIES.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="Item (e.g. Flight tickets)"
+                            value={tif.name}
+                            onChange={(e) =>
+                              setTIF(tripKey, { name: e.target.value })
+                            }
+                            style={{ flex: 1, minWidth: 120 }}
+                          />
+                          <input
+                            type="number"
+                            placeholder="₹"
+                            value={tif.amount}
+                            onChange={(e) =>
+                              setTIF(tripKey, { amount: e.target.value })
+                            }
+                            style={{ flex: "0 0 90px" }}
+                            min="0"
+                          />
+                          <button
+                            className="btn-primary"
+                            style={{
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "6px 12px",
+                            }}
+                            onClick={() => addTripItem(trip, isShared)}
+                            disabled={!tif.name || !tif.amount}
+                          >
+                            <Plus size={11} /> Add
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {allTrips.length > 0 && (
+                <div
+                  style={{
+                    textAlign: "right",
+                    paddingTop: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  Trips total:{" "}
+                  <span className="red-text">
+                    {fmt(
+                      allTrips.reduce(
+                        (s, x) => s + (x.amount || tripTotal(x)),
+                        0,
+                      ),
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════ ONE-TIME EXPENSES ══════════════════ */}
+          {expTab === "onetime" && (
+            <div className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "1rem",
+                }}
+              >
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  <CreditCard
+                    size={14}
+                    style={{ marginRight: 6, opacity: 0.5 }}
+                  />
+                  One-time Purchases
+                </div>
+                <button
+                  className="btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  onClick={addOnetimeExpense}
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+
+              {onetimeExps.length === 0 && (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    padding: "1rem 0",
+                    textAlign: "center",
+                  }}
+                >
+                  No one-time expenses. Add big purchases like electronics,
+                  furniture, or medical bills.
+                </div>
+              )}
+
+              {onetimeExps.map((exp) => (
+                <div
+                  key={exp.id}
+                  style={{
+                    background: "var(--bg-card2)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "12px 14px",
+                    marginBottom: 8,
+                    borderLeft: "3px solid var(--gold)",
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
                     <input
                       value={exp.name}
@@ -1591,80 +3655,24 @@ export default function Budget({
                       }
                       style={{ flex: 1, minWidth: 0 }}
                     />
-                    {entries.length > 0 ? (
-                      <div
-                        style={{
-                          flexShrink: 0,
-                          textAlign: "right",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "var(--text-secondary)",
-                        }}
-                      >
-                        {fmt(exp.amount)}
-                        {spentThisMonth > 0 && (
-                          <div
-                            style={{
-                              fontSize: 10,
-                              color: "var(--text-muted)",
-                              fontWeight: 400,
-                            }}
-                          >
-                            {fmt(spentThisMonth)} this mo.
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <input
-                        type="number"
-                        value={exp.amount}
-                        onChange={(e) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? { ...x, amount: Number(e.target.value) }
-                                : x,
-                            ),
-                          )
-                        }
-                        style={{ width: 90, flexShrink: 0 }}
-                        min="0"
-                      />
-                    )}
-                    {/* Log entries toggle */}
-                    <button
-                      onClick={() => {
-                        toggleExpandExp(exp.id);
-                        if (!isOpen) setEF(exp.id, {});
-                      }}
-                      title="Log purchases with dates"
-                      style={{
-                        background:
-                          entries.length > 0
-                            ? "var(--gold-dim)"
-                            : "rgba(255,255,255,0.06)",
-                        border:
-                          entries.length > 0
-                            ? "1px solid var(--gold-border)"
-                            : "1px solid var(--border)",
-                        color:
-                          entries.length > 0
-                            ? "var(--gold)"
-                            : "var(--text-muted)",
-                        borderRadius: 6,
-                        padding: "4px 8px",
-                        fontSize: 11,
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <CalendarDays size={11} />
-                      {entries.length > 0 ? entries.length : "Log"}
-                    </button>
+                    <input
+                      type="number"
+                      value={exp.amount}
+                      onChange={(e) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id
+                              ? { ...x, amount: Number(e.target.value) }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ width: 100, flexShrink: 0 }}
+                      min="0"
+                      placeholder="₹"
+                    />
+                    <MoveButton expId={exp.id} currentType="onetime" />
                     <button
                       className="btn-danger"
                       aria-label={`Delete ${exp.name}`}
@@ -1672,7 +3680,7 @@ export default function Budget({
                         if (
                           await confirm(
                             "Delete expense?",
-                            `Remove "${exp.name}" from your expenses?`,
+                            `Remove "${exp.name}"?`,
                           )
                         )
                           updatePerson(
@@ -1684,15 +3692,13 @@ export default function Budget({
                       <Trash2 size={13} />
                     </button>
                   </div>
-
-                  {/* Line 2: Date + Category + Subcategory + Recurrence + optional pickers */}
                   <div
                     style={{
                       display: "flex",
                       gap: 6,
                       alignItems: "center",
                       flexWrap: "wrap",
-                      paddingBottom: 4,
+                      marginTop: 8,
                     }}
                   >
                     <input
@@ -1708,8 +3714,7 @@ export default function Budget({
                           ),
                         )
                       }
-                      title="Date this expense was added / starts from"
-                      style={{ flex: "0 0 128px", fontSize: 12 }}
+                      style={{ flex: "0 0 130px", fontSize: 12 }}
                     />
                     <select
                       value={exp.category}
@@ -1718,299 +3723,50 @@ export default function Budget({
                           "expenses",
                           expenses.map((x) =>
                             x.id === exp.id
-                              ? {
-                                  ...x,
-                                  category: e.target.value,
-                                  subCategory: "",
-                                }
+                              ? { ...x, category: e.target.value }
                               : x,
                           ),
                         )
                       }
-                      style={{ flex: "1 1 120px", fontSize: 12 }}
+                      style={{ flex: "0 1 130px", fontSize: 12 }}
                     >
                       {EXPENSE_CATEGORIES.map((c) => (
                         <option key={c}>{c}</option>
                       ))}
                     </select>
-                    {EXPENSE_SUBCATEGORIES[exp.category] && (
-                      <select
-                        value={exp.subCategory || ""}
-                        onChange={(e) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? { ...x, subCategory: e.target.value }
-                                : x,
-                            ),
-                          )
-                        }
-                        style={{ flex: "1 1 120px", fontSize: 12 }}
-                      >
-                        <option value="">— sub-category —</option>
-                        {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
-                          <option key={s}>{s}</option>
-                        ))}
-                      </select>
-                    )}
-                    {/* Recurrence selector */}
-                    <select
-                      value={exp.recurrence || "monthly"}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, recurrence: e.target.value }
-                              : x,
-                          ),
-                        )
-                      }
-                      title="How often this expense recurs"
-                      style={{
-                        flex: "0 0 96px",
-                        fontSize: 12,
-                        color:
-                          (exp.recurrence || "monthly") === "monthly"
-                            ? "var(--text-secondary)"
-                            : exp.recurrence === "variable"
-                              ? "var(--accent-blue, #60a5fa)"
-                              : "var(--gold)",
-                        borderColor:
-                          exp.recurrence === "variable"
-                            ? "var(--accent-blue, #60a5fa)"
-                            : (exp.recurrence || "monthly") !== "monthly"
-                              ? "var(--gold-border)"
-                              : undefined,
-                      }}
-                    >
-                      <option value="monthly">Monthly</option>
-                      <option value="variable">Variable</option>
-                      <option value="quarterly">Quarterly</option>
-                      <option value="yearly">Yearly</option>
-                      <option value="once">One-off</option>
-                    </select>
-                    {/* Due-month picker for yearly */}
-                    {exp.recurrence === "yearly" && (
-                      <select
-                        value={exp.recurrenceMonth ?? 0}
-                        onChange={(e) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? {
-                                    ...x,
-                                    recurrenceMonth: Number(e.target.value),
-                                  }
-                                : x,
-                            ),
-                          )
-                        }
-                        title="Month in which this expense falls"
-                        style={{ flex: "0 0 72px", fontSize: 12 }}
-                      >
-                        {[
-                          "Jan",
-                          "Feb",
-                          "Mar",
-                          "Apr",
-                          "May",
-                          "Jun",
-                          "Jul",
-                          "Aug",
-                          "Sep",
-                          "Oct",
-                          "Nov",
-                          "Dec",
-                        ].map((m, i) => (
-                          <option key={m} value={i}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {/* Quarter start month for quarterly */}
-                    {exp.recurrence === "quarterly" && (
-                      <select
-                        value={(exp.recurrenceMonths ?? [0, 3, 6, 9])[0]}
-                        onChange={(e) => {
-                          const start = Number(e.target.value);
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? {
-                                    ...x,
-                                    recurrenceMonths: [
-                                      start,
-                                      (start + 3) % 12,
-                                      (start + 6) % 12,
-                                      (start + 9) % 12,
-                                    ],
-                                  }
-                                : x,
-                            ),
-                          );
-                        }}
-                        title="First month of the quarter cycle"
-                        style={{ flex: "0 0 72px", fontSize: 12 }}
-                      >
-                        {["Jan", "Feb", "Mar"].map((m, i) => (
-                          <option key={m} value={i}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-                    )}
                   </div>
                 </div>
+              ))}
 
-                {/* Entries panel */}
-                {isOpen && (
-                  <div
-                    style={{
-                      margin: "0 0 10px 12px",
-                      padding: "10px 12px",
-                      background: "var(--bg-card2)",
-                      borderRadius: "var(--radius-sm)",
-                      borderLeft: `3px solid ${personColor}`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        marginBottom: 8,
-                        textTransform: "uppercase",
-                        letterSpacing: ".06em",
-                      }}
-                    >
-                      Purchase log — each entry shows in Cash Flow by its actual
-                      date
-                    </div>
+              {onetimeExps.length > 0 && (
+                <div
+                  style={{
+                    textAlign: "right",
+                    paddingTop: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  One-time total:{" "}
+                  <span className="red-text">
+                    {fmt(onetimeExps.reduce((s, x) => s + x.amount, 0))}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
-                    {/* Entry list */}
-                    {entries.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
-                        {[...entries]
-                          .sort((a, b) => b.date.localeCompare(a.date))
-                          .map((e) => (
-                            <div
-                              key={e.id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                padding: "4px 0",
-                                borderBottom: "1px solid var(--border)",
-                                fontSize: 12,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  color: "var(--text-muted)",
-                                  fontVariantNumeric: "tabular-nums",
-                                  flexShrink: 0,
-                                  width: 72,
-                                }}
-                              >
-                                {e.date.slice(5).replace("-", " ")}
-                              </span>
-                              <span
-                                style={{
-                                  flex: 1,
-                                  color: "var(--text-secondary)",
-                                }}
-                              >
-                                {e.note || "—"}
-                              </span>
-                              <span
-                                style={{
-                                  fontWeight: 600,
-                                  color: "var(--red)",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {fmt(e.amount)}
-                              </span>
-                              <button
-                                onClick={() => deleteEntry(exp, e.id)}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  cursor: "pointer",
-                                  color: "var(--text-muted)",
-                                  padding: 2,
-                                  flexShrink: 0,
-                                }}
-                                title="Remove entry"
-                              >
-                                <X size={11} />
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-
-                    {/* Add entry form */}
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <input
-                        type="date"
-                        value={ef.date}
-                        onChange={(e) =>
-                          setEF(exp.id, { date: e.target.value })
-                        }
-                        style={{ flex: "0 0 130px" }}
-                      />
-                      <input
-                        type="number"
-                        placeholder="Amount (₹)"
-                        value={ef.amount}
-                        onChange={(e) =>
-                          setEF(exp.id, { amount: e.target.value })
-                        }
-                        style={{ flex: "0 0 110px" }}
-                        min="0"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Vendor / note  (e.g. Amazon Now)"
-                        value={ef.note}
-                        onChange={(e) =>
-                          setEF(exp.id, { note: e.target.value })
-                        }
-                        style={{ flex: 1, minWidth: 120 }}
-                      />
-                      <button
-                        className="btn-primary"
-                        style={{
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                        onClick={() => addEntry(exp)}
-                        disabled={!ef.amount || !ef.date}
-                      >
-                        <Plus size={11} /> Log
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <div style={{ textAlign: "right", paddingTop: 12, fontWeight: 600 }}>
-            Total: <span className="red-text">{fmt(totalExpenses)}</span>
+          {/* Overall total across all expense types */}
+          <div
+            style={{
+              textAlign: "right",
+              paddingTop: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--text-secondary)",
+            }}
+          >
+            All expenses: <span className="red-text">{fmt(totalExpenses)}</span>
           </div>
         </div>
       )}
@@ -2019,10 +3775,13 @@ export default function Budget({
   );
 }
 
-export function HouseholdBudget({ abhav, aanya }) {
+export function HouseholdBudget({ abhav, aanya, shared }) {
   const abhavIncome = (abhav?.incomes || []).reduce((s, x) => s + x.amount, 0);
   const aanyaIncome = (aanya?.incomes || []).reduce((s, x) => s + x.amount, 0);
   const totalIncome = abhavIncome + aanyaIncome;
+
+  const sharedTrips = shared?.trips || [];
+  const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
 
   const abhavExpenses = (abhav?.expenses || []).reduce(
     (s, x) => s + x.amount,
@@ -2032,7 +3791,7 @@ export function HouseholdBudget({ abhav, aanya }) {
     (s, x) => s + x.amount,
     0,
   );
-  const totalExpenses = abhavExpenses + aanyaExpenses;
+  const totalExpenses = abhavExpenses + aanyaExpenses + sharedTripTotal;
 
   const surplus = totalIncome - totalExpenses;
   const savingsRate =
@@ -2041,15 +3800,31 @@ export function HouseholdBudget({ abhav, aanya }) {
   // { cat: { total, abhav, aanya, subs: { sub: { total, abhav, aanya } } } }
   const mergeGrouped = (data, key) =>
     (data?.expenses || []).reduce((acc, e) => {
-      const cat = e.category;
-      if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
-      acc[cat].total += e.amount;
-      acc[cat][key] = (acc[cat][key] || 0) + e.amount;
-      const sub = e.subCategory || "";
-      if (!acc[cat].subs[sub])
-        acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
-      acc[cat].subs[sub].total += e.amount;
-      acc[cat].subs[sub][key] = (acc[cat].subs[sub][key] || 0) + e.amount;
+      if (e.expenseType === "trip") {
+        // Expand trip items into categories
+        for (const item of e.items || []) {
+          const cat = item.category || "Others";
+          if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+          acc[cat].total += item.amount || 0;
+          acc[cat][key] = (acc[cat][key] || 0) + (item.amount || 0);
+          const sub = e.name || "";
+          if (!acc[cat].subs[sub])
+            acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+          acc[cat].subs[sub].total += item.amount || 0;
+          acc[cat].subs[sub][key] =
+            (acc[cat].subs[sub][key] || 0) + (item.amount || 0);
+        }
+      } else {
+        const cat = e.category;
+        if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+        acc[cat].total += e.amount;
+        acc[cat][key] = (acc[cat][key] || 0) + e.amount;
+        const sub = e.subCategory || "";
+        if (!acc[cat].subs[sub])
+          acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+        acc[cat].subs[sub].total += e.amount;
+        acc[cat].subs[sub][key] = (acc[cat].subs[sub][key] || 0) + e.amount;
+      }
       return acc;
     }, {});
 
@@ -2082,23 +3857,38 @@ export function HouseholdBudget({ abhav, aanya }) {
       grouped[cat].subs[sub].aanya += sv.aanya || 0;
     });
   }
+  // Merge shared trips into grouped (attribute by addedBy)
+  for (const trip of sharedTrips) {
+    for (const item of trip.items || []) {
+      const cat = item.category || "Others";
+      if (!grouped[cat])
+        grouped[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+      grouped[cat].total += item.amount || 0;
+      const personKey = (item.addedBy || "").toLowerCase().includes("aanya")
+        ? "aanya"
+        : "abhav";
+      grouped[cat][personKey] += item.amount || 0;
+      const sub = trip.name || "";
+      if (!grouped[cat].subs[sub])
+        grouped[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+      grouped[cat].subs[sub].total += item.amount || 0;
+      grouped[cat].subs[sub][personKey] += item.amount || 0;
+    }
+  }
 
   // Keep flat versions for budget rule section
-  const aCats = Object.fromEntries(
+  const _aCats = Object.fromEntries(
     Object.entries(aGrouped).map(([c, v]) => [c, v.total]),
   );
-  const anCats = Object.fromEntries(
+  const _anCats = Object.fromEntries(
     Object.entries(anGrouped).map(([c, v]) => [c, v.total]),
   );
   const allCats = Object.keys(grouped).sort(
     (a, b) => grouped[b].total - grouped[a].total,
   );
-  // Combined flat map for BudgetRuleSection
+  // Combined flat map for BudgetRuleSection (includes shared trips)
   const hhExpByCategory = Object.fromEntries(
-    [...new Set([...Object.keys(aCats), ...Object.keys(anCats)])].map((c) => [
-      c,
-      (aCats[c] || 0) + (anCats[c] || 0),
-    ]),
+    Object.entries(grouped).map(([c, v]) => [c, v.total]),
   );
 
   const [rule, setRule] = useState("50/30/20");
@@ -2117,7 +3907,57 @@ export function HouseholdBudget({ abhav, aanya }) {
 
       <div className="grid-3 section-gap">
         <div className="metric-card">
-          <div className="metric-label">Combined income</div>
+          <div className="metric-label">
+            Combined income
+            <InfoModal title="Combined Income">
+              {(abhav?.incomes || []).map((inc) => (
+                <div
+                  key={inc.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "2px 0",
+                    fontSize: 12,
+                  }}
+                >
+                  <span>
+                    <span style={{ color: "var(--abhav)" }}>●</span> {inc.name}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>{fmt(inc.amount)}</span>
+                </div>
+              ))}
+              {(aanya?.incomes || []).map((inc) => (
+                <div
+                  key={inc.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "2px 0",
+                    fontSize: 12,
+                  }}
+                >
+                  <span>
+                    <span style={{ color: "var(--aanya)" }}>●</span> {inc.name}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>{fmt(inc.amount)}</span>
+                </div>
+              ))}
+              <div
+                style={{
+                  borderTop: "1px solid rgba(255,255,255,0.12)",
+                  marginTop: 6,
+                  paddingTop: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: "var(--green)",
+                }}
+              >
+                <span>Total</span>
+                <span>{fmt(totalIncome)}</span>
+              </div>
+            </InfoModal>
+          </div>
           <div className="metric-value green-text">{fmt(totalIncome)}</div>
           <div className="metric-sub">
             <span style={{ color: "var(--abhav)" }}>{fmt(abhavIncome)}</span>
@@ -2126,12 +3966,107 @@ export function HouseholdBudget({ abhav, aanya }) {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Combined expenses</div>
+          <div className="metric-label">
+            Combined expenses
+            <InfoModal title="Combined Expenses">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "3px 0",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <span>
+                  <span style={{ color: "var(--abhav)" }}>●</span> Abhav's
+                  expenses
+                </span>
+                <span style={{ fontWeight: 600 }}>{fmt(abhavExpenses)}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "3px 0",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <span>
+                  <span style={{ color: "var(--aanya)" }}>●</span> Aanya's
+                  expenses
+                </span>
+                <span style={{ fontWeight: 600 }}>{fmt(aanyaExpenses)}</span>
+              </div>
+              {sharedTripTotal > 0 && (
+                <>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: "var(--green)",
+                      marginTop: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    🤝 Shared Trips
+                  </div>
+                  {sharedTrips.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "2px 0",
+                        fontSize: 12,
+                      }}
+                    >
+                      <span>🤝 {t.name}</span>
+                      <span style={{ fontWeight: 600 }}>
+                        {fmt(t.amount || 0)}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div
+                style={{
+                  borderTop: "1px solid rgba(255,255,255,0.12)",
+                  marginTop: 8,
+                  paddingTop: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: "var(--red)",
+                }}
+              >
+                <span>Total</span>
+                <span>{fmt(totalExpenses)}</span>
+              </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 11,
+                  color: "#777",
+                  fontStyle: "italic",
+                }}
+              >
+                Includes all monthly, trip, one-time expenses from both persons
+                + shared trips. This is the standing budget total.
+              </div>
+            </InfoModal>
+          </div>
           <div className="metric-value red-text">{fmt(totalExpenses)}</div>
           <div className="metric-sub">
             <span style={{ color: "var(--abhav)" }}>{fmt(abhavExpenses)}</span>
             {" · "}
             <span style={{ color: "var(--aanya)" }}>{fmt(aanyaExpenses)}</span>
+            {sharedTripTotal > 0 && (
+              <>
+                {" · "}
+                <span style={{ color: "var(--green)" }}>
+                  🤝 {fmt(sharedTripTotal)}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <div className="metric-card">
