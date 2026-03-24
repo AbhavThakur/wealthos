@@ -1,4 +1,28 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+
+function useSessionState(key, initial) {
+  const [val, setVal] = useState(() => {
+    try {
+      const s = sessionStorage.getItem(key);
+      return s !== null ? JSON.parse(s) : initial;
+    } catch {
+      return initial;
+    }
+  });
+  const set = useCallback(
+    (v) => {
+      setVal(v);
+      try {
+        sessionStorage.setItem(key, JSON.stringify(v));
+      } catch {
+        /* empty */
+      }
+    },
+    [key],
+  );
+  return [val, set];
+}
+
 import {
   fmt,
   nextId,
@@ -7,7 +31,7 @@ import {
   lumpCorpus,
 } from "../utils/finance";
 import { Plus, Trash2, Search, RefreshCw, Bell, BellOff } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm, useUndoToast } from "../App";
 import { autoRecurringRules } from "../context/DataContext";
 
 export function Debts({ data, personName, personColor, updatePerson }) {
@@ -19,6 +43,7 @@ export function Debts({ data, personName, personColor, updatePerson }) {
     rate: "",
     tenure: "",
   });
+  const [prepay, setPrepay] = useState({ loanId: "", amount: "" });
   const { confirm, dialog } = useConfirm();
 
   const totalEMI = debts.reduce((s, d) => s + d.emi, 0);
@@ -27,7 +52,13 @@ export function Debts({ data, personName, personColor, updatePerson }) {
   const dti = income > 0 ? Math.round((totalEMI / income) * 100) : 0;
 
   const add = () => {
-    if (!n.name) return;
+    if (!n.name || !n.outstanding || !n.rate || !n.tenure) return;
+    if (
+      Number(n.outstanding) <= 0 ||
+      Number(n.rate) <= 0 ||
+      Number(n.tenure) <= 0
+    )
+      return;
     const emi = calcEMI(
       Number(n.outstanding),
       Number(n.rate),
@@ -260,6 +291,175 @@ export function Debts({ data, personName, personColor, updatePerson }) {
             ))}
         </div>
       )}
+      {debts.length > 0 && (
+        <div className="card" style={{ marginTop: "1rem" }}>
+          <div className="card-title">🧮 Prepayment Calculator</div>
+          <div className="grid-2" style={{ marginBottom: 12, gap: 8 }}>
+            <div>
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
+                Loan
+              </label>
+              <select
+                value={prepay.loanId}
+                onChange={(e) =>
+                  setPrepay({ ...prepay, loanId: e.target.value })
+                }
+              >
+                <option value="">Select loan</option>
+                {debts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
+                Prepay amount (₹)
+              </label>
+              <input
+                type="number"
+                placeholder="e.g. 200000"
+                value={prepay.amount}
+                onChange={(e) =>
+                  setPrepay({ ...prepay, amount: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          {(() => {
+            const loan = debts.find(
+              (d) => String(d.id) === String(prepay.loanId),
+            );
+            const amt = Number(prepay.amount);
+            if (!loan || !amt || amt <= 0)
+              return (
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Select a loan and enter a prepayment amount to see impact.
+                </div>
+              );
+            const newOut = Math.max(0, loan.outstanding - amt);
+            const oldEMI = loan.emi;
+            const oldTenure = loan.tenure;
+            const totalOldInterest = oldEMI * oldTenure - loan.outstanding;
+            const mr = loan.rate / 100 / 12;
+            const newTenure =
+              mr > 0
+                ? Math.ceil(
+                    Math.log(oldEMI / (oldEMI - newOut * mr)) /
+                      Math.log(1 + mr),
+                  )
+                : Math.ceil(newOut / oldEMI);
+            const totalNewInterest1 = oldEMI * newTenure - newOut;
+            const newEMI = calcEMI(newOut, loan.rate, oldTenure);
+            const totalNewInterest2 = newEMI * oldTenure - newOut;
+            return (
+              <div>
+                <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Option A: Reduce tenure
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      New tenure:{" "}
+                      <strong style={{ color: "var(--green)" }}>
+                        {newTenure} months
+                      </strong>{" "}
+                      <span
+                        style={{ color: "var(--text-muted)", fontSize: 11 }}
+                      >
+                        (was {oldTenure})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      Save:{" "}
+                      <strong style={{ color: "var(--green)" }}>
+                        {fmt(
+                          Math.round(
+                            Math.max(0, totalOldInterest - totalNewInterest1),
+                          ),
+                        )}
+                      </strong>{" "}
+                      interest
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Option B: Reduce EMI
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      New EMI:{" "}
+                      <strong style={{ color: "var(--green)" }}>
+                        {fmt(newEMI)}
+                      </strong>{" "}
+                      <span
+                        style={{ color: "var(--text-muted)", fontSize: 11 }}
+                      >
+                        (was {fmt(oldEMI)})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      Save:{" "}
+                      <strong style={{ color: "var(--green)" }}>
+                        {fmt(
+                          Math.round(
+                            Math.max(0, totalOldInterest - totalNewInterest2),
+                          ),
+                        )}
+                      </strong>{" "}
+                      interest
+                    </div>
+                  </div>
+                </div>
+                <div className="tip">
+                  💡 Reducing tenure saves more interest. Reducing EMI improves
+                  monthly cash flow.
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
       {dialog}
     </div>
   );
@@ -269,8 +469,11 @@ const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
 
 export function Transactions({ data, personName, personColor, updatePerson }) {
   const transactions = data?.transactions || [];
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useSessionState(`txn_search_${personName}`, "");
+  const [filter, setFilter] = useSessionState(
+    `txn_filter_${personName}`,
+    "all",
+  );
   const [showAdd, setShowAdd] = useState(false);
   const [n, setN] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -279,10 +482,12 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
     type: "expense",
     category: "Food",
   });
-  const { confirm, dialog } = useConfirm();
+  const { dialog } = useConfirm();
+  const { showUndo, toastEl } = useUndoToast();
 
   const add = () => {
     if (!n.desc || !n.amount) return;
+    if (Number(n.amount) <= 0) return;
     const amt =
       n.type === "income"
         ? Math.abs(Number(n.amount))
@@ -579,14 +784,21 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
               <button
                 className="btn-danger"
                 aria-label={`Delete ${tx.desc}`}
-                onClick={async () => {
-                  if (
-                    await confirm("Delete transaction?", `Remove "${tx.desc}"?`)
-                  )
-                    updatePerson(
-                      "transactions",
-                      transactions.filter((x) => x.id !== tx.id),
-                    );
+                onClick={() => {
+                  const prev = [...transactions];
+                  updatePerson(
+                    "transactions",
+                    transactions.filter((x) => x.id !== tx.id),
+                  );
+                  if (tx.auto) {
+                    const key = `${tx.date}|${tx.desc}`;
+                    const dismissed = data?.dismissedAutoTxns || [];
+                    if (!dismissed.includes(key))
+                      updatePerson("dismissedAutoTxns", [...dismissed, key]);
+                  }
+                  showUndo(`Deleted "${tx.desc}"`, () =>
+                    updatePerson("transactions", prev),
+                  );
                 }}
               >
                 <Trash2 size={13} />
@@ -608,6 +820,7 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
         )}
       </div>
       {dialog}
+      {toastEl}
     </div>
   );
 }
@@ -640,29 +853,189 @@ function calcTax(income, slabs, ded = 0) {
   return Math.round(tax * 1.04);
 }
 
+function slabBreakdown(income, slabs, ded = 0) {
+  const taxable = Math.max(0, income - ded);
+  return slabs
+    .map(([from, to, rate]) => {
+      const chunk = Math.max(0, Math.min(taxable, to) - from);
+      return { from, to, rate, chunk, tax: Math.round((chunk * rate) / 100) };
+    })
+    .filter((r) => r.chunk > 0);
+}
+
 export function TaxPlanner({ data, personName, personColor, updatePerson }) {
   const t = data?.taxInfo || {};
   const annualIncome =
     (data?.incomes || []).reduce((s, x) => s + x.amount, 0) * 12;
   const update = (key, val) => updatePerson("taxInfo", { ...t, [key]: val });
 
-  const old80C = Math.min(150000, ((t.elss || 0) + (t.ppf || 0)) * 12);
-  const oldHRA = Math.min(
-    (t.hra || 0) * 12 * 0.5,
-    (t.basicSalary || 0) * 12 * 0.4,
+  // Auto-detect ELSS & PPF SIPs from investments if user hasn't entered manually
+  const invs = data?.investments || [];
+  const autoELSS = invs
+    .filter((i) => i.type === "Mutual Fund" && /elss/i.test(i.name || ""))
+    .reduce((s, i) => s + (i.amount || 0), 0);
+  const autoPPF = invs
+    .filter((i) => i.type === "PPF")
+    .reduce((s, i) => s + (i.amount || 0), 0);
+  const autoEPF = invs
+    .filter((i) => i.type === "EPF")
+    .reduce((s, i) => s + (i.amount || 0), 0);
+
+  // Auto-detect insurance premiums from Insurance tracker
+  const insurances = data?.insurances || [];
+  const autoHealthIns = insurances
+    .filter((i) => /health|critical/i.test(i.type || ""))
+    .reduce((s, i) => {
+      const annual =
+        i.premiumFreq === "monthly"
+          ? (i.premium || 0) * 12
+          : i.premiumFreq === "quarterly"
+            ? (i.premium || 0) * 4
+            : i.premium || 0;
+      return s + annual;
+    }, 0);
+  const autoLifeIns = insurances
+    .filter((i) => /life|term/i.test(i.type || ""))
+    .reduce((s, i) => {
+      const annual =
+        i.premiumFreq === "monthly"
+          ? (i.premium || 0) * 12
+          : i.premiumFreq === "quarterly"
+            ? (i.premium || 0) * 4
+            : i.premium || 0;
+      return s + annual;
+    }, 0);
+
+  // PF from payslip if user set basicSalary (12% of basic is employee EPF)
+  const payslipEPF = t.basicSalary
+    ? Math.min(1800, Math.round(t.basicSalary * 0.12)) * 12
+    : 0;
+  // Use whichever is available: manual EPF investment, or payslip-derived
+  const effectiveEPF = autoEPF > 0 ? autoEPF * 12 : payslipEPF || 0;
+  const elssMonthly = t.elss || autoELSS;
+  const ppfMonthly = t.ppf || autoPPF;
+
+  // 80C: ELSS + PPF + EPF + life insurance premiums (capped ₹1.5L)
+  const lifePremium = (t.lifeInsurance || 0) * 12 + autoLifeIns;
+  const old80C = Math.min(
+    150000,
+    elssMonthly * 12 + ppfMonthly * 12 + effectiveEPF + lifePremium,
   );
+  // HRA exemption: min of (actual HRA, 50% of basic for metro, rent - 10% basic)
+  const annualHRA = (t.hra || 0) * 12;
+  const annualBasic = (t.basicSalary || 0) * 12;
+  const annualRent = (t.monthlyRent || 0) * 12;
+  const hraExempt =
+    annualHRA > 0
+      ? Math.min(
+          annualHRA,
+          annualBasic * 0.5, // metro city (Bangalore)
+          Math.max(0, annualRent - annualBasic * 0.1),
+        )
+      : 0;
+  const oldHRA = hraExempt;
   const oldNPS = Math.min(50000, (t.nps || 0) * 12);
-  const oldMed = Math.min(25000, (t.medicalInsurance || 0) * 12);
+  // 80D: self + family (₹25k) + parents (₹25k / ₹50k if senior)
+  const healthInsAnnual = (t.medicalInsurance || 0) * 12 + autoHealthIns;
+  const med80DSelf = Math.min(25000, healthInsAnnual);
+  const med80DParents = Math.min(
+    t.parentsSenior ? 50000 : 25000,
+    (t.parentsInsurance || 0) * 12,
+  );
+  const oldMed = med80DSelf + med80DParents;
   const oldHL = Math.min(200000, (t.homeLoanInterest || 0) * 12);
-  const totalOldDed = old80C + oldHRA + 50000 + oldNPS + oldMed + oldHL;
+  // 80E: education loan interest (no cap)
+  const old80E = (t.educationLoanInterest || 0) * 12;
+  const totalOldDed =
+    old80C + oldHRA + 50000 + oldNPS + oldMed + oldHL + old80E;
   const oldTax = calcTax(annualIncome, OLD_SLABS, totalOldDed);
   const newTax = calcTax(annualIncome, NEW_SLABS, 75000);
   const better = oldTax <= newTax ? "old" : "new";
   const saving = Math.abs(oldTax - newTax);
   const remaining80C = Math.max(
     0,
-    150000 - ((t.elss || 0) + (t.ppf || 0)) * 12,
+    150000 - (elssMonthly * 12 + ppfMonthly * 12 + effectiveEPF + lifePremium),
   );
+
+  // Gross salary breakdown from payslip
+  const grossMonthly =
+    (t.basicSalary || 0) +
+    (t.hra || 0) +
+    (t.specialAllowance || 0) +
+    (t.lta || 0) +
+    (t.communicationAllowance || 0);
+
+  const grossAnnual = grossMonthly * 12;
+
+  // New Regime detailed breakdown (this year FY 2025-26)
+  const newStdDed = 75000;
+  const newTaxableIncome = Math.max(0, grossAnnual - newStdDed);
+  const newSlabs = slabBreakdown(grossAnnual, NEW_SLABS, newStdDed);
+  const newBaseTax = newSlabs.reduce((s, r) => s + r.tax, 0);
+  const newRebate = grossAnnual <= 700000 ? newBaseTax : 0;
+  const newTaxAfterRebate = newBaseTax - newRebate;
+  const newCess = Math.round(newTaxAfterRebate * 0.04);
+  const newFinalTax = newTaxAfterRebate + newCess;
+
+  // Last year Form 16 data (FY 2024-25, AY 2025-26)
+  const lastYearForm16 = {
+    gross: 1261833,
+    stdDed: 75000,
+    taxable: 1186833,
+    baseTax: 78025,
+    cess: 3121,
+    total: 81146,
+    tds: 81145,
+    period: "Apr 2024 – Mar 2025",
+    employer: "BBY Services India LLP",
+  };
+
+  // Deductions breakdown for display
+  const dedRows = [
+    { section: "80C", label: "ELSS SIPs", amount: elssMonthly * 12, cap: null },
+    { section: "80C", label: "PPF", amount: ppfMonthly * 12, cap: null },
+    {
+      section: "80C",
+      label: "EPF (PF contribution)",
+      amount: effectiveEPF,
+      cap: null,
+    },
+    {
+      section: "80C",
+      label: "Life insurance premium",
+      amount: lifePremium,
+      cap: null,
+    },
+    {
+      section: "80C",
+      label: "80C Total (capped ₹1.5L)",
+      amount: old80C,
+      cap: 150000,
+      isTotal: true,
+    },
+    { section: "HRA", label: "HRA Exemption", amount: oldHRA, cap: null },
+    { section: "Std", label: "Standard Deduction", amount: 50000, cap: 50000 },
+    { section: "80CCD", label: "NPS (80CCD1B)", amount: oldNPS, cap: 50000 },
+    {
+      section: "80D",
+      label: "Health insurance — self",
+      amount: med80DSelf,
+      cap: 25000,
+    },
+    {
+      section: "80D",
+      label: "Health insurance — parents",
+      amount: med80DParents,
+      cap: t.parentsSenior ? 50000 : 25000,
+    },
+    { section: "24b", label: "Home loan interest", amount: oldHL, cap: 200000 },
+    {
+      section: "80E",
+      label: "Education loan interest",
+      amount: old80E,
+      cap: null,
+    },
+  ].filter((r) => r.amount > 0 || r.isTotal);
 
   const fi = (key, label) => (
     <div>
@@ -820,6 +1193,252 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
           </div>
         </div>
       )}
+
+      {/* This Year Tax — New Regime Breakdown */}
+      {grossAnnual > 0 && (
+        <div
+          className="card section-gap"
+          style={{ border: "1px solid var(--abhav)" }}
+        >
+          <div className="card-title">
+            🧾 This Year's Tax — New Regime (FY 2025-26)
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: "8px 16px",
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: "var(--text-secondary)" }}>
+              Gross Salary (from payslip)
+            </span>
+            <span style={{ textAlign: "right", fontWeight: 600 }}>
+              {fmt(grossAnnual)}
+            </span>
+
+            <span style={{ color: "var(--text-secondary)" }}>
+              Less: Standard Deduction
+            </span>
+            <span style={{ textAlign: "right", color: "var(--green)" }}>
+              −{fmt(newStdDed)}
+            </span>
+
+            <div
+              style={{
+                gridColumn: "1/-1",
+                borderTop: "1px solid var(--border)",
+                margin: "2px 0",
+              }}
+            />
+
+            <span style={{ fontWeight: 600 }}>Taxable Income</span>
+            <span style={{ textAlign: "right", fontWeight: 600 }}>
+              {fmt(newTaxableIncome)}
+            </span>
+          </div>
+
+          <div
+            style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}
+          >
+            Slab-wise tax:
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto auto",
+              gap: "4px 12px",
+              fontSize: 12,
+              marginTop: 6,
+            }}
+          >
+            <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>
+              Slab
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textAlign: "right",
+              }}
+            >
+              Income
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textAlign: "right",
+              }}
+            >
+              Tax
+            </span>
+            {newSlabs.map((r, i) => [
+              <span key={i + "s"} style={{ color: "var(--text-secondary)" }}>
+                {fmt(r.from)}–{r.to === Infinity ? "∞" : fmt(r.to)} @ {r.rate}%
+              </span>,
+              <span key={i + "c"} style={{ textAlign: "right" }}>
+                {fmt(r.chunk)}
+              </span>,
+              <span
+                key={i + "t"}
+                style={{ textAlign: "right", color: "var(--red)" }}
+              >
+                {fmt(r.tax)}
+              </span>,
+            ])}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: "6px 16px",
+              fontSize: 13,
+              marginTop: 12,
+              borderTop: "1px solid var(--border)",
+              paddingTop: 10,
+            }}
+          >
+            <span style={{ color: "var(--text-secondary)" }}>
+              Tax before cess
+            </span>
+            <span style={{ textAlign: "right" }}>{fmt(newBaseTax)}</span>
+
+            {newRebate > 0 && (
+              <>
+                <span style={{ color: "var(--green)" }}>
+                  Less: Rebate u/s 87A
+                </span>
+                <span style={{ textAlign: "right", color: "var(--green)" }}>
+                  −{fmt(newRebate)}
+                </span>
+              </>
+            )}
+
+            <span style={{ color: "var(--text-secondary)" }}>
+              Health &amp; Education Cess (4%)
+            </span>
+            <span style={{ textAlign: "right" }}>{fmt(newCess)}</span>
+
+            <div
+              style={{
+                gridColumn: "1/-1",
+                borderTop: "1px solid var(--border)",
+                margin: "2px 0",
+              }}
+            />
+
+            <span style={{ fontWeight: 700, fontSize: 15 }}>
+              Total Tax Payable
+            </span>
+            <span
+              style={{
+                textAlign: "right",
+                fontWeight: 700,
+                fontSize: 15,
+                color: "var(--red)",
+              }}
+            >
+              {fmt(newFinalTax)}
+            </span>
+
+            <span style={{ color: "var(--text-secondary)" }}>
+              Monthly TDS (approx.)
+            </span>
+            <span style={{ textAlign: "right", fontWeight: 600 }}>
+              {fmt(Math.round(newFinalTax / 12))}/mo
+            </span>
+          </div>
+
+          {annualIncome > 0 && annualIncome !== grossAnnual && (
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}
+            >
+              💡 Using payslip gross ({fmt(grossAnnual)}/yr) for this
+              calculation. Your Budget income is {fmt(annualIncome)}/yr
+              (take-home).
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Last Year Form 16 Reference */}
+      <div className="card section-gap" style={{ opacity: 0.85 }}>
+        <div className="card-title">
+          📄 Last Year — FY 2024-25 (from Form 16)
+        </div>
+        <div
+          style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}
+        >
+          {lastYearForm16.employer} · {lastYearForm16.period} · New Regime
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: "5px 16px",
+            fontSize: 13,
+          }}
+        >
+          <span style={{ color: "var(--text-secondary)" }}>Gross Salary</span>
+          <span style={{ textAlign: "right" }}>
+            {fmt(lastYearForm16.gross)}
+          </span>
+
+          <span style={{ color: "var(--text-secondary)" }}>
+            Standard Deduction
+          </span>
+          <span style={{ textAlign: "right", color: "var(--green)" }}>
+            −{fmt(lastYearForm16.stdDed)}
+          </span>
+
+          <span style={{ color: "var(--text-secondary)" }}>Taxable Income</span>
+          <span style={{ textAlign: "right" }}>
+            {fmt(lastYearForm16.taxable)}
+          </span>
+
+          <div
+            style={{
+              gridColumn: "1/-1",
+              borderTop: "1px solid var(--border)",
+              margin: "2px 0",
+            }}
+          />
+
+          <span style={{ color: "var(--text-secondary)" }}>Tax</span>
+          <span style={{ textAlign: "right" }}>
+            {fmt(lastYearForm16.baseTax)}
+          </span>
+
+          <span style={{ color: "var(--text-secondary)" }}>Cess (4%)</span>
+          <span style={{ textAlign: "right" }}>{fmt(lastYearForm16.cess)}</span>
+
+          <span style={{ fontWeight: 600 }}>Total Tax</span>
+          <span
+            style={{ textAlign: "right", fontWeight: 600, color: "var(--red)" }}
+          >
+            {fmt(lastYearForm16.total)}
+          </span>
+
+          <span style={{ color: "var(--text-secondary)" }}>TDS Deducted</span>
+          <span style={{ textAlign: "right", color: "var(--green)" }}>
+            {fmt(lastYearForm16.tds)}
+          </span>
+        </div>
+        {grossAnnual > lastYearForm16.gross && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "var(--gold)" }}>
+            📈 Salary increased by {fmt(grossAnnual - lastYearForm16.gross)}/yr
+            (
+            {Math.round(
+              ((grossAnnual - lastYearForm16.gross) / lastYearForm16.gross) *
+                100,
+            )}
+            %) compared to last year.
+          </div>
+        )}
+      </div>
       <div className="card section-gap">
         <div className="card-title">Your details (monthly amounts)</div>
         <div className="grid-2">
@@ -842,6 +1461,9 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             {fi("basicSalary", "Basic salary")}
             {fi("hra", "HRA")}
             {fi("lta", "LTA")}
+            {fi("specialAllowance", "Special allowance")}
+            {fi("communicationAllowance", "Communication allowance")}
+            {fi("monthlyRent", "Monthly rent paid (for HRA calc)")}
           </div>
           <div>
             <div
@@ -857,11 +1479,221 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             {fi("elss", "ELSS SIP (80C)")}
             {fi("ppf", "PPF (80C)")}
             {fi("nps", "NPS (80CCD)")}
-            {fi("medicalInsurance", "Medical insurance")}
-            {fi("homeLoanInterest", "Home loan interest")}
+            {fi("lifeInsurance", "Life insurance premium (80C)")}
+            {fi("medicalInsurance", "Health insurance — self (80D)")}
+            {fi("parentsInsurance", "Health insurance — parents (80D)")}
+            <div>
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!t.parentsSenior}
+                  onChange={(e) => update("parentsSenior", e.target.checked)}
+                />
+                Parents are senior citizens (60+)
+              </label>
+            </div>
+            {fi("homeLoanInterest", "Home loan interest (24b)")}
+            {fi("educationLoanInterest", "Education loan interest (80E)")}
           </div>
         </div>
+        {(autoELSS > 0 ||
+          autoPPF > 0 ||
+          autoEPF > 0 ||
+          autoHealthIns > 0 ||
+          autoLifeIns > 0) && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(76,175,130,0.08)",
+              border: "1px solid rgba(76,175,130,0.2)",
+              fontSize: 12,
+              color: "var(--text-secondary)",
+            }}
+          >
+            💡 Auto-detected: {autoELSS > 0 && `ELSS ${fmt(autoELSS)}/mo `}
+            {autoPPF > 0 && `PPF ${fmt(autoPPF)}/mo `}
+            {autoEPF > 0 && `EPF ${fmt(autoEPF)}/mo `}
+            {autoHealthIns > 0 && `Health ins ${fmt(autoHealthIns)}/yr `}
+            {autoLifeIns > 0 && `Life ins ${fmt(autoLifeIns)}/yr`}
+          </div>
+        )}
       </div>
+
+      {/* Gross Salary Breakdown from Payslip */}
+      {grossMonthly > 0 && (
+        <div className="card section-gap">
+          <div className="card-title">📋 Salary Breakdown (from payslip)</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: "6px 16px",
+              fontSize: 13,
+            }}
+          >
+            {[
+              ["Basic", t.basicSalary],
+              ["HRA", t.hra],
+              ["Special Allowance", t.specialAllowance],
+              ["LTA", t.lta],
+              ["Communication", t.communicationAllowance],
+            ]
+              .filter(([, v]) => v > 0)
+              .map(([label, val]) => [
+                <span
+                  key={label + "l"}
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  {label}
+                </span>,
+                <span key={label + "v"} style={{ textAlign: "right" }}>
+                  {fmt(val)}/mo
+                </span>,
+              ])}
+            <div
+              style={{
+                gridColumn: "1/-1",
+                borderTop: "1px solid var(--border)",
+                margin: "4px 0",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Gross monthly</span>
+            <span style={{ textAlign: "right", fontWeight: 600 }}>
+              {fmt(grossMonthly)}
+            </span>
+            <span style={{ fontWeight: 600 }}>Gross annual</span>
+            <span
+              style={{
+                textAlign: "right",
+                fontWeight: 600,
+                color: "var(--gold)",
+              }}
+            >
+              {fmt(grossMonthly * 12)}
+            </span>
+          </div>
+          {annualIncome > 0 && annualIncome !== grossMonthly * 12 && (
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}
+            >
+              ⚠ Your Budget income ({fmt(annualIncome)}/yr) differs from payslip
+              gross ({fmt(grossMonthly * 12)}/yr). Tax is calculated on Budget
+              income (take-home × 12).
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Deductions Breakdown (Old Regime) */}
+      {dedRows.length > 0 && (
+        <div className="card section-gap">
+          <div className="card-title">📊 Deductions Breakdown (Old Regime)</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr auto auto",
+              gap: "6px 12px",
+              fontSize: 12,
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>
+              Section
+            </span>
+            <span style={{ fontWeight: 600, color: "var(--text-muted)" }}>
+              Deduction
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textAlign: "right",
+              }}
+            >
+              Amount
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                textAlign: "right",
+              }}
+            >
+              Limit
+            </span>
+            {dedRows.map((r, i) => [
+              <span
+                key={i + "s"}
+                className={`tag ${r.isTotal ? "tag-green" : ""}`}
+                style={{ fontSize: 10 }}
+              >
+                {r.section}
+              </span>,
+              <span
+                key={i + "l"}
+                style={{ fontSize: 13, fontWeight: r.isTotal ? 600 : 400 }}
+              >
+                {r.label}
+              </span>,
+              <span
+                key={i + "a"}
+                style={{
+                  textAlign: "right",
+                  fontSize: 13,
+                  fontWeight: r.isTotal ? 600 : 400,
+                  color: r.amount > 0 ? "var(--green)" : "var(--text-muted)",
+                }}
+              >
+                {fmt(r.amount)}
+              </span>,
+              <span
+                key={i + "c"}
+                style={{
+                  textAlign: "right",
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {r.cap ? fmt(r.cap) : "—"}
+              </span>,
+            ])}
+            <div
+              style={{
+                gridColumn: "1/-1",
+                borderTop: "1px solid var(--border)",
+                margin: "4px 0",
+              }}
+            />
+            <span />
+            <span style={{ fontWeight: 600, fontSize: 13 }}>
+              Total deductions
+            </span>
+            <span
+              style={{
+                textAlign: "right",
+                fontWeight: 600,
+                fontSize: 14,
+                color: "var(--green)",
+              }}
+            >
+              {fmt(totalOldDed)}
+            </span>
+            <span />
+          </div>
+        </div>
+      )}
+
       {remaining80C > 0 && (
         <div className="tip">
           💡 ₹{remaining80C.toLocaleString("en-IN")} of 80C limit unused. Invest
@@ -869,6 +1701,148 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
           {Math.round(remaining80C * 0.3).toLocaleString("en-IN")} in taxes.
         </div>
       )}
+
+      {/* Tax Guidance */}
+      <div className="card section-gap">
+        <div className="card-title">🧭 Tax-Saving Guidance</div>
+        {(() => {
+          const tips = [];
+          // 80C gap
+          if (remaining80C > 0)
+            tips.push({
+              priority: "high",
+              text: `Invest ₹${remaining80C.toLocaleString("en-IN")} more in ELSS/PPF to max 80C. Monthly SIP of ₹${Math.round(remaining80C / 12).toLocaleString("en-IN")} would do it.`,
+            });
+          // NPS
+          if (!t.nps || t.nps === 0)
+            tips.push({
+              priority: "high",
+              text: "Start NPS contributions for extra ₹50,000 deduction under 80CCD(1B) — beyond the ₹1.5L 80C limit.",
+            });
+          // Health insurance
+          if (med80DSelf < 25000)
+            tips.push({
+              priority: "medium",
+              text: `Your health insurance premium is ₹${med80DSelf.toLocaleString("en-IN")}/yr. You can claim up to ₹25,000 under 80D. Consider a top-up health plan.`,
+            });
+          // Parents insurance
+          if (med80DParents === 0)
+            tips.push({
+              priority: "medium",
+              text: "Buy health insurance for parents — claim up to ₹50,000/yr (senior) or ₹25,000 (non-senior) under 80D.",
+            });
+          // HRA
+          if (t.hra > 0 && (!t.monthlyRent || t.monthlyRent === 0))
+            tips.push({
+              priority: "high",
+              text: "Enter your monthly rent to calculate HRA exemption. This can save ₹50,000–₹2,00,000+ in taxable income.",
+            });
+          // Home loan
+          if (oldHL === 0)
+            tips.push({
+              priority: "low",
+              text: "Home loan interest up to ₹2L/yr is deductible under Section 24(b) — relevant when you purchase a property.",
+            });
+          // Regime advice
+          if (better === "new" && totalOldDed < 200000)
+            tips.push({
+              priority: "info",
+              text: "New regime is better for you because your deductions are low. Focus on investing for growth rather than tax-saving.",
+            });
+          if (better === "old" && saving > 20000)
+            tips.push({
+              priority: "info",
+              text: `Old regime saves you ${fmt(saving)}/yr. Make sure to declare all deductions to your employer to reduce TDS.`,
+            });
+          // Advance tax
+          if (annualIncome > 0) {
+            const betterTax = Math.min(oldTax, newTax);
+            const monthlyTDS = Math.round(betterTax / 12);
+            tips.push({
+              priority: "info",
+              text: `Estimated annual tax: ${fmt(betterTax)}. That's ~${fmt(monthlyTDS)}/mo in TDS. Verify with your Form 16 / 26AS on the income tax portal.`,
+            });
+          }
+          // Key dates
+          tips.push({
+            priority: "info",
+            text: "📅 Key dates: Declare investments to employer by Jan. File ITR by Jul 31. Advance tax: Jun 15, Sep 15, Dec 15, Mar 15.",
+          });
+
+          const colors = {
+            high: "var(--red)",
+            medium: "var(--gold)",
+            low: "var(--text-secondary)",
+            info: "var(--abhav)",
+          };
+          const icons = { high: "🔴", medium: "🟡", low: "⚪", info: "ℹ️" };
+          return tips.map((tip, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "8px 0",
+                borderBottom:
+                  i < tips.length - 1 ? "1px solid var(--border)" : "none",
+                alignItems: "flex-start",
+              }}
+            >
+              <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>
+                {icons[tip.priority]}
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  color: colors[tip.priority],
+                  lineHeight: 1.5,
+                }}
+              >
+                {tip.text}
+              </span>
+            </div>
+          ));
+        })()}
+        <div
+          style={{
+            marginTop: 12,
+            padding: "8px 12px",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-card2)",
+            fontSize: 11,
+            color: "var(--text-muted)",
+            lineHeight: 1.6,
+          }}
+        >
+          📎 Verify on:{" "}
+          <a
+            href="https://eportal.incometax.gov.in"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--abhav)" }}
+          >
+            incometax.gov.in
+          </a>{" "}
+          (26AS/AIS) ·{" "}
+          <a
+            href="https://cleartax.in/s/income-tax-calculator"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--abhav)" }}
+          >
+            ClearTax Calculator
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--abhav)" }}
+          >
+            ITR Filing Guide
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1643,12 +2617,33 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   );
 }
 
-export function Settings({ sharedData, updateShared, resetData }) {
+export function Settings({
+  sharedData,
+  updateShared,
+  updatePerson,
+  resetData,
+  listBackups,
+  restoreBackup,
+  createManualBackup,
+  seedDevFromProd,
+  pushDevToProd,
+  onExport,
+}) {
   const profile = sharedData?.profile || {};
   const [p, setP] = useState(profile);
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [backups, setBackups] = useState(null); // null = not loaded
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [restoringId, setRestoringId] = useState(null);
+  const [restoreMsg, setRestoreMsg] = useState("");
+  const [backupMsg, setBackupMsg] = useState("");
+  const [backingUp, setBackingUp] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [showPushConfirm, setShowPushConfirm] = useState(false);
+  const [pushConfirmText, setPushConfirmText] = useState("");
 
   const save = () => {
     updateShared("profile", p);
@@ -1751,6 +2746,459 @@ export function Settings({ sharedData, updateShared, resetData }) {
           </div>
         </div>
       </div>
+
+      {/* Apply Payslip Data */}
+      {updatePerson && (
+        <div className="card section-gap">
+          <div className="card-title">📋 Apply Salary Slip — Dec 2025</div>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              lineHeight: 1.6,
+              marginBottom: 12,
+            }}
+          >
+            One-click apply Abhav's salary slip data (BBY Services, Dec 2025).
+            Sets income to ₹1,84,601 take-home and fills Tax Planner fields.
+          </p>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 12,
+            }}
+          >
+            <div>Basic: ₹96,545 · HRA: ₹38,618 · LTA: ₹8,042</div>
+            <div>PF: ₹11,585 · Prof Tax: ₹200 · Income Tax: ₹33,341</div>
+            <div>
+              Gross: ₹2,29,777 · Deductions: ₹45,176 ·{" "}
+              <strong style={{ color: "var(--green)" }}>Net: ₹1,84,601</strong>
+            </div>
+          </div>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              updatePerson("abhav", "incomes", [
+                {
+                  id: 1,
+                  name: "BBY Services Salary",
+                  amount: 184601,
+                  type: "salary",
+                },
+              ]);
+              updatePerson("abhav", "taxInfo", {
+                basicSalary: 96545,
+                hra: 38618,
+                lta: 8042,
+                specialAllowance: 84572,
+                communicationAllowance: 2000,
+              });
+              setBackupMsg(
+                "✓ Abhav's income & tax planner updated from salary slip",
+              );
+              setTimeout(() => setBackupMsg(""), 4000);
+            }}
+          >
+            Apply to Abhav's Profile
+          </button>
+        </div>
+      )}
+
+      {/* Data Export */}
+      {onExport && (
+        <div className="card section-gap">
+          <div className="card-title">📤 Data Export</div>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              lineHeight: 1.6,
+              marginBottom: 12,
+            }}
+          >
+            Download all your data as CSV files (incomes, expenses, investments,
+            transactions, debts, insurance, subscriptions, goals, net worth
+            history).
+          </p>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              const count = onExport();
+              setBackupMsg(`✓ Exported ${count} CSV files`);
+              setTimeout(() => setBackupMsg(""), 4000);
+            }}
+          >
+            📥 Export All Data (CSV)
+          </button>
+        </div>
+      )}
+
+      {/* Data Backups & Restore */}
+      {listBackups && (
+        <div className="card section-gap">
+          <div className="card-title">🛡️ Data Backups</div>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              lineHeight: 1.6,
+              marginBottom: 12,
+            }}
+          >
+            Automatic backups are created before every save. You can also create
+            a manual backup or restore any previous state.
+          </p>
+          {backupMsg && (
+            <div
+              style={{
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--green-dim)",
+                border: "1px solid rgba(76,175,130,0.3)",
+                color: "var(--green)",
+                fontSize: 13,
+                marginBottom: 12,
+              }}
+            >
+              {backupMsg}
+            </div>
+          )}
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 12,
+            }}
+          >
+            {createManualBackup && (
+              <button
+                className="btn-primary"
+                onClick={async () => {
+                  setBackingUp(true);
+                  try {
+                    const docs = await createManualBackup(
+                      "manual backup — " +
+                        new Date().toLocaleDateString("en-IN"),
+                    );
+                    setBackupMsg(`✓ Backed up: ${docs.join(", ")}`);
+                    setTimeout(() => setBackupMsg(""), 4000);
+                  } catch (err) {
+                    setBackupMsg(`Error: ${err.message}`);
+                  }
+                  setBackingUp(false);
+                }}
+                disabled={backingUp}
+              >
+                {backingUp ? "Saving…" : "💾 Backup Now"}
+              </button>
+            )}
+            {seedDevFromProd && (
+              <button
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                }}
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "Copy production data into the dev collection? This will overwrite dev data.",
+                    )
+                  )
+                    return;
+                  setSeeding(true);
+                  try {
+                    const docs = await seedDevFromProd();
+                    setBackupMsg(`✓ Copied prod → dev: ${docs.join(", ")}`);
+                    setTimeout(() => setBackupMsg(""), 4000);
+                  } catch (err) {
+                    setBackupMsg(`Error: ${err.message}`);
+                  }
+                  setSeeding(false);
+                }}
+                disabled={seeding}
+              >
+                {seeding ? "Copying…" : "📋 Copy Prod → Dev"}
+              </button>
+            )}
+            {pushDevToProd && (
+              <button
+                style={{
+                  background: "rgba(239,83,80,0.1)",
+                  border: "1px solid rgba(239,83,80,0.3)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  color: "#ef5350",
+                  cursor: "pointer",
+                }}
+                onClick={() => setShowPushConfirm(true)}
+                disabled={pushing}
+              >
+                {pushing ? "Pushing…" : "🚀 Push Dev → Prod"}
+              </button>
+            )}
+          </div>
+          {/* Double-confirmation dialog for Dev → Prod push */}
+          {showPushConfirm && (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: "var(--radius-sm)",
+                background: "rgba(239,83,80,0.08)",
+                border: "1px solid rgba(239,83,80,0.25)",
+                marginBottom: 12,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#ef5350",
+                  marginBottom: 8,
+                }}
+              >
+                ⚠️ This will overwrite PRODUCTION data
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  marginBottom: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                Your current dev data will replace all production data (abhav,
+                aanya, shared). A backup of prod will be created automatically
+                before overwriting.
+                <br />
+                Type <strong>PUSH</strong> to confirm:
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={pushConfirmText}
+                  onChange={(e) => setPushConfirmText(e.target.value)}
+                  placeholder="Type PUSH"
+                  style={{ width: 120, textTransform: "uppercase" }}
+                  autoFocus
+                />
+                <button
+                  className="btn-primary"
+                  style={{
+                    background:
+                      pushConfirmText.trim().toUpperCase() === "PUSH"
+                        ? "#ef5350"
+                        : "var(--border)",
+                    cursor:
+                      pushConfirmText.trim().toUpperCase() === "PUSH"
+                        ? "pointer"
+                        : "not-allowed",
+                  }}
+                  disabled={
+                    pushConfirmText.trim().toUpperCase() !== "PUSH" || pushing
+                  }
+                  onClick={async () => {
+                    setPushing(true);
+                    try {
+                      const docs = await pushDevToProd();
+                      setBackupMsg(`✓ Pushed dev → prod: ${docs.join(", ")}`);
+                      setTimeout(() => setBackupMsg(""), 4000);
+                    } catch (err) {
+                      setBackupMsg(`Error: ${err.message}`);
+                    }
+                    setPushing(false);
+                    setShowPushConfirm(false);
+                    setPushConfirmText("");
+                  }}
+                >
+                  {pushing ? "Pushing…" : "Confirm Push"}
+                </button>
+                <button
+                  style={{
+                    background: "none",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px 16px",
+                    fontSize: 13,
+                    color: "var(--text-secondary)",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => {
+                    setShowPushConfirm(false);
+                    setPushConfirmText("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {!backups ? (
+            <button
+              className="btn-primary"
+              onClick={async () => {
+                setLoadingBackups(true);
+                const b = await listBackups();
+                setBackups(b);
+                setLoadingBackups(false);
+              }}
+              disabled={loadingBackups}
+            >
+              {loadingBackups ? "Loading…" : "View Backups"}
+            </button>
+          ) : (
+            <>
+              {restoreMsg && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--green-dim)",
+                    border: "1px solid rgba(76,175,130,0.3)",
+                    color: "var(--green)",
+                    fontSize: 13,
+                    marginBottom: 12,
+                  }}
+                >
+                  {restoreMsg}
+                </div>
+              )}
+              {backups.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    padding: "12px 0",
+                  }}
+                >
+                  No backups yet. Backups are created automatically as you use
+                  the app.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 350, overflowY: "auto" }}>
+                  {backups.map((b) => {
+                    const ts = b.timestamp ? new Date(b.timestamp) : null;
+                    const label = ts
+                      ? ts.toLocaleString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Unknown time";
+                    const docLabel =
+                      b.docId === "abhav"
+                        ? "Abhav"
+                        : b.docId === "aanya"
+                          ? "Aanya"
+                          : "Shared";
+                    const d = b.data || {};
+                    const preview =
+                      b.docId === "shared"
+                        ? `${(d.trips || []).length} trips, ${(d.goals || []).length} goals`
+                        : `${(d.incomes || []).length} incomes, ${(d.expenses || []).length} expenses, ${(d.investments || []).length} investments`;
+                    return (
+                      <div
+                        key={b.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "8px 0",
+                          borderBottom: "1px solid var(--border)",
+                          fontSize: 12,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            background:
+                              b.docId === "shared"
+                                ? "var(--green-dim)"
+                                : b.docId === "abhav"
+                                  ? "var(--abhav-dim, rgba(96,165,250,0.12))"
+                                  : "var(--aanya-dim, rgba(244,114,182,0.12))",
+                            color:
+                              b.docId === "shared"
+                                ? "var(--green)"
+                                : b.docId === "abhav"
+                                  ? "var(--abhav, #60a5fa)"
+                                  : "var(--aanya, #f472b6)",
+                            fontWeight: 600,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {docLabel}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: "var(--text-secondary)" }}>
+                            {label}
+                          </div>
+                          <div
+                            style={{ color: "var(--text-muted)", fontSize: 11 }}
+                          >
+                            {preview}
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Restore ${docLabel} data from ${label}? Your current data will be backed up first.`,
+                              )
+                            )
+                              return;
+                            setRestoringId(b.id);
+                            try {
+                              await restoreBackup(b.id);
+                              setRestoreMsg(
+                                `✓ Restored ${docLabel} data from ${label}`,
+                              );
+                              setTimeout(() => setRestoreMsg(""), 4000);
+                            } catch (err) {
+                              setRestoreMsg(`Error: ${err.message}`);
+                            }
+                            setRestoringId(null);
+                          }}
+                          disabled={restoringId === b.id}
+                          style={{
+                            background: "rgba(255,255,255,0.06)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius-sm)",
+                            padding: "4px 10px",
+                            fontSize: 11,
+                            color: "var(--text-secondary)",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {restoringId === b.id ? "Restoring…" : "Restore"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                className="btn-ghost"
+                style={{ marginTop: 8 }}
+                onClick={() => setBackups(null)}
+              >
+                Close
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Danger zone */}
       <div
@@ -1923,8 +3371,11 @@ const CF_TABS = [
 
 export function CashFlow({ data, personName, personColor, updatePerson }) {
   const [tab, setTab] = useState("schedule");
-  const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("all");
+  const [search, setSearch] = useSessionState(`cf_search_${personName}`, "");
+  const [filterType, setFilterType] = useSessionState(
+    `cf_filter_${personName}`,
+    "all",
+  );
   const [showAddTx, setShowAddTx] = useState(false);
   const [showAddRule, setShowAddRule] = useState(false);
   const [expandedSchedCats, setExpandedSchedCats] = useState({});

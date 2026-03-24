@@ -17,6 +17,13 @@ import {
   CashFlow,
   HouseholdCashFlow,
 } from "./pages/OtherPages";
+import {
+  Insurance,
+  HouseholdInsurance,
+  Subscriptions,
+  HouseholdSubscriptions,
+} from "./pages/MorePages";
+import { exportAllData } from "./utils/exportData";
 import Onboarding from "./pages/Onboarding";
 
 const PAGE_TITLES = {
@@ -27,6 +34,8 @@ const PAGE_TITLES = {
   networth: "Net Worth",
   debts: "Debts & EMIs",
   cashflow: "Cash Flow",
+  insurance: "Insurance",
+  subscriptions: "Subscriptions",
   alerts: "Budget Alerts",
   tax: "Tax Planner",
   settings: "Settings",
@@ -191,6 +200,74 @@ export function useConfirm() {
   return { confirm, dialog };
 }
 
+// Hook for soft-delete with undo toast
+export function useUndoToast() {
+  const [toast, setToast] = useState(null);
+  const timerRef = { current: null };
+
+  const showUndo = useCallback((label, onUndo) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setToast({ label, onUndo });
+    timerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  const toastEl = toast ? (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 24,
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-sm)",
+        padding: "10px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+        zIndex: 9999,
+        fontSize: 13,
+        color: "var(--text-primary)",
+      }}
+    >
+      <span>{toast.label}</span>
+      <button
+        style={{
+          background: "var(--gold-dim)",
+          color: "var(--gold)",
+          border: "1px solid var(--gold-border)",
+          borderRadius: 4,
+          padding: "4px 10px",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+        onClick={() => {
+          toast.onUndo();
+          setToast(null);
+        }}
+      >
+        Undo
+      </button>
+      <button
+        style={{
+          background: "none",
+          border: "none",
+          color: "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 16,
+        }}
+        onClick={() => setToast(null)}
+      >
+        ×
+      </button>
+    </div>
+  ) : null;
+
+  return { showUndo, toastEl };
+}
+
 function App() {
   const { user } = useAuth();
   if (user === undefined) return <LoadingScreen />;
@@ -213,6 +290,11 @@ function AppInner() {
     updateShared,
     takeSnapshot,
     resetData,
+    listBackups,
+    restoreBackup,
+    createManualBackup,
+    seedDevFromProd,
+    pushDevToProd,
   } = useData();
   const { logout } = useAuth();
   const [page, setPage] = useState("dashboard");
@@ -338,19 +420,85 @@ function AppInner() {
         return both(BudgetAlerts);
       case "tax":
         return both(TaxPlanner);
+      case "insurance":
+        return isHousehold ? (
+          <HouseholdInsurance
+            abhav={abhav}
+            aanya={aanya}
+            updatePerson={updatePerson}
+          />
+        ) : (
+          both(Insurance)
+        );
+      case "subscriptions":
+        return isHousehold ? (
+          <HouseholdSubscriptions
+            abhav={abhav}
+            aanya={aanya}
+            updatePerson={updatePerson}
+          />
+        ) : (
+          both(Subscriptions)
+        );
       case "settings":
         return (
           <Settings
             sharedData={shared}
             updateShared={updateShared}
+            updatePerson={updatePerson}
             logout={logout}
             resetData={resetData}
+            listBackups={listBackups}
+            restoreBackup={restoreBackup}
+            createManualBackup={createManualBackup}
+            seedDevFromProd={seedDevFromProd}
+            pushDevToProd={pushDevToProd}
+            onExport={() => exportAllData(abhav, aanya, shared)}
           />
         );
       default:
         return null;
     }
   })();
+
+  // ── Badge counts for sidebar notifications ──────────────────────────────
+  const badges = {};
+  if (abhav && aanya) {
+    // Insurance renewals within 30 days
+    const now = new Date();
+    const renewals = [
+      ...(abhav.insurances || []),
+      ...(aanya.insurances || []),
+    ].filter((i) => {
+      if (!i.renewalDate) return false;
+      const diff = (new Date(i.renewalDate) - now) / 86400000;
+      return diff >= 0 && diff <= 30;
+    });
+    if (renewals.length) badges.insurance = renewals.length;
+
+    // Budget alerts breached
+    const checkAlerts = (d) =>
+      (d?.budgetAlerts || []).filter((a) => {
+        if (!a.active) return false;
+        const spent = (d?.expenses || [])
+          .filter(
+            (e) => e.category === a.category && e.expenseType === "monthly",
+          )
+          .reduce((s, e) => s + e.amount, 0);
+        return spent > a.limit;
+      }).length;
+    const alertCount = checkAlerts(abhav) + checkAlerts(aanya);
+    if (alertCount) badges.alerts = alertCount;
+
+    // Goals nearing deadline (within 30 days)
+    const urgentGoals = (shared?.goals || []).filter((g) => {
+      if (!g.deadline) return false;
+      const diff = (new Date(g.deadline) - now) / 86400000;
+      const saved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+      return diff >= 0 && diff <= 30 && saved < g.target;
+    });
+    if (urgentGoals.length) badges.goals = urgentGoals.length;
+  }
 
   return (
     <>
@@ -359,6 +507,7 @@ function AppInner() {
         setPage={setPage}
         profile={profile}
         setProfile={setProfile}
+        badges={badges}
       />
       <div className="app-layout">
         <main

@@ -15,3 +15,8 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Dev mode flag — when true, data reads/writes use "dev_data" subcollection
+// instead of "data" under the same households collection.
+// Set VITE_ENV=dev in .env.local when developing to isolate from prod data.
+export const IS_DEV = import.meta.env.VITE_ENV === "dev";

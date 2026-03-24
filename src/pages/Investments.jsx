@@ -28,7 +28,17 @@ import {
   sipCorpus,
   weekdayCountInMonth,
 } from "../utils/finance";
-import { Plus, Trash2, Edit3, Check, X, Info, Download } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Edit3,
+  Check,
+  X,
+  Info,
+  Download,
+  Pause,
+  Play,
+} from "lucide-react";
 import { useConfirm } from "../App";
 
 // ─── mfapi.in helpers ────────────────────────────────────────────────────────
@@ -250,6 +260,8 @@ const SIPCard = memo(function SIPCard({
   });
   const [showHistory, setShowHistory] = useState(false);
   const [chartView, setChartView] = useState("projection"); // "projection" | "breakdown" | "actual"
+  const [showReal, setShowReal] = useState(false); // inflation-adjusted toggle
+  const INFLATION = 6; // India CPI avg ~6%
 
   const corpusHistory = inv.corpusHistory || [];
   const sortedHistory = [...corpusHistory].sort(
@@ -468,6 +480,18 @@ const SIPCard = memo(function SIPCard({
     return pts;
   })();
 
+  // Apply inflation discount for "real value" view
+  const deflate = (val, years) =>
+    showReal ? val / Math.pow(1 + INFLATION / 100, years) : val;
+  const displayChartData = chartData.map((d, i) => ({
+    ...d,
+    corpus: Math.round(deflate(d.corpus, i)),
+    invested: Math.round(deflate(d.invested, i)),
+    ...(d.expected != null
+      ? { expected: Math.round(deflate(d.expected, i)) }
+      : {}),
+  }));
+
   // Breakdown chart: invested vs gains stacked per year
   const breakdownData =
     !isFDInv && !isOneTimeInv
@@ -500,8 +524,28 @@ const SIPCard = memo(function SIPCard({
   return (
     <div
       className="card section-gap"
-      style={{ borderLeft: `3px solid ${personColor}` }}
+      style={{
+        borderLeft: `3px solid ${personColor}`,
+        ...(inv.paused ? { opacity: 0.55 } : {}),
+      }}
     >
+      {inv.paused && (
+        <div
+          style={{
+            display: "inline-block",
+            background: "var(--gold)",
+            color: "#000",
+            fontSize: 10,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 4,
+            marginBottom: 8,
+            letterSpacing: 0.5,
+          }}
+        >
+          PAUSED
+        </div>
+      )}
       {editing ? (
         <div>
           <div className="grid-2" style={{ marginBottom: 12 }}>
@@ -1060,6 +1104,17 @@ const SIPCard = memo(function SIPCard({
               )}
             </div>
             <div style={{ display: "flex", gap: 4 }}>
+              {!isFDInv && !isOneTimeInv && (
+                <button
+                  className="btn-icon"
+                  aria-label={inv.paused ? "Resume SIP" : "Pause SIP"}
+                  title={inv.paused ? "Resume SIP" : "Pause SIP"}
+                  onClick={() => onUpdate({ ...inv, paused: !inv.paused })}
+                  style={inv.paused ? { color: "var(--gold)" } : {}}
+                >
+                  {inv.paused ? <Play size={13} /> : <Pause size={13} />}
+                </button>
+              )}
               <button
                 className="btn-icon"
                 aria-label={`Edit ${inv.name}`}
@@ -1787,12 +1842,41 @@ const SIPCard = memo(function SIPCard({
                 ))}
               </div>
 
+              {/* Inflation toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showReal}
+                    onChange={() => setShowReal(!showReal)}
+                    style={{ width: 14, height: 14 }}
+                  />
+                  Inflation-adjusted ({INFLATION}%)
+                </label>
+              </div>
+
               {/* Projection chart */}
               {chartView === "projection" && (
                 <div style={{ height: 180 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
-                      data={chartData}
+                      data={displayChartData}
                       margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
                     >
                       <defs>

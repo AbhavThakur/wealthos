@@ -14,6 +14,8 @@ import {
   Bell,
   Menu,
   X,
+  Shield,
+  RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -25,6 +27,8 @@ const NAV = [
   { id: "networth", icon: TrendingDown, label: "Net Worth" },
   { id: "debts", icon: CreditCard, label: "Debts & EMIs" },
   { id: "cashflow", icon: Activity, label: "Cash Flow" },
+  { id: "insurance", icon: Shield, label: "Insurance" },
+  { id: "subscriptions", icon: RefreshCw, label: "Subscriptions" },
   { id: "alerts", icon: Bell, label: "Budget Alerts" },
   { id: "tax", icon: Calculator, label: "Tax Planner" },
   { id: "settings", icon: Settings, label: "Settings" },
@@ -58,6 +62,7 @@ function SidebarContent({
   setProfile,
   logout,
   onClose,
+  badges,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -197,7 +202,27 @@ function SidebarContent({
             }}
           >
             <Icon size={14} />
-            {label}
+            {label}{" "}
+            {badges?.[id] > 0 && (
+              <span
+                style={{
+                  marginLeft: "auto",
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: "var(--red)",
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 5px",
+                }}
+              >
+                {badges[id]}
+              </span>
+            )}{" "}
           </button>
         ))}
       </nav>
@@ -222,7 +247,13 @@ function SidebarContent({
   );
 }
 
-export default function Sidebar({ page, setPage, profile, setProfile }) {
+export default function Sidebar({
+  page,
+  setPage,
+  profile,
+  setProfile,
+  badges,
+}) {
   const { logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const drawerRef = useRef(null);
@@ -373,6 +404,7 @@ export default function Sidebar({ page, setPage, profile, setProfile }) {
               setProfile={setProfile}
               logout={logout}
               onClose={() => setMobileOpen(false)}
+              badges={badges}
             />
           </div>
         </div>
@@ -386,6 +418,7 @@ export default function Sidebar({ page, setPage, profile, setProfile }) {
           profile={profile}
           setProfile={setProfile}
           logout={logout}
+          badges={badges}
         />
       </aside>
     </>

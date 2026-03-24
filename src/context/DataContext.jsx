@@ -6,10 +6,27 @@ import {
   useState,
   useCallback,
 } from "react";
-import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import {
+  doc,
+  onSnapshot,
+  setDoc,
+  getDoc,
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db, IS_DEV } from "../firebase";
 import { lumpCorpus, freqToMonthly } from "../utils/finance";
 import { useAuth } from "./AuthContext";
+
+// Firestore paths — dev uses "dev_data" subcollection; prod uses "data"
+const COL_HOUSEHOLDS = "households";
+const SUBCOL_DATA = IS_DEV ? "dev_data" : "data";
 
 const DataContext = createContext(null);
 
@@ -25,6 +42,9 @@ const EMPTY_PERSON = {
   assets: [],
   liabilities: [],
   taxInfo: {},
+  insurances: [],
+  subscriptions: [],
+  dismissedAutoTxns: [],
 };
 
 const EMPTY_SHARED = {
@@ -106,9 +126,10 @@ function autoRecurringRules(data) {
     });
   }
 
-  // SIP investment rules (skip FD, lump-sum, and one-time types)
+  // SIP investment rules (skip FD, lump-sum, one-time, and paused)
   for (const inv of data.investments || []) {
-    if (inv.type === "FD" || inv.frequency === "onetime") continue;
+    if (inv.type === "FD" || inv.frequency === "onetime" || inv.paused)
+      continue;
     // yearly SIPs only fire once a year — still show in recurring list but
     // the transaction generation handles them differently below
     rules.push({
@@ -145,6 +166,7 @@ function autoRecurringRules(data) {
 
 function applyRecurring(data) {
   const transactions = data.transactions || [];
+  const dismissed = data.dismissedAutoTxns || [];
   // Manual rules (user-created, stored in Firestore)
   const manualRules = (data.recurringRules || []).filter((r) => !r.auto);
   // Auto rules derived from budget + investments + debts
@@ -184,10 +206,12 @@ function applyRecurring(data) {
     const dateStr = `${ym}-${String(rule.dayOfMonth).padStart(2, "0")}`;
     if (new Date(dateStr) > now) continue;
 
-    const exists = transactions.some(
+    const key = `${dateStr}|${rule.desc}`;
+    const isDismissed = dismissed.includes(key);
+    const exists = result.some(
       (t) => t.date === dateStr && t.desc === rule.desc && t.auto,
     );
-    if (!exists) {
+    if (!exists && !isDismissed) {
       maxId++;
       result.unshift({
         id: maxId,
@@ -217,7 +241,7 @@ export function DataProvider({ children }) {
     const unsubs = [];
 
     const watch = (docId, setter, defaultData) => {
-      const ref = doc(db, "households", uid, "data", docId);
+      const ref = doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, docId);
       getDoc(ref).then((snap) => {
         if (!snap.exists()) setDoc(ref, defaultData);
       });
@@ -248,12 +272,100 @@ export function DataProvider({ children }) {
     return () => unsubs.forEach((u) => u());
   }, [user]);
 
+  // ── Max backups to keep per document ────────────────────────────────────
+  const MAX_BACKUPS = 50;
+
+  // Save a backup snapshot of the current document before overwriting it.
+  // Stored in households/{uid}/backups/{docId}_{timestamp}
+  const backupBeforeSave = useCallback(
+    async (docId) => {
+      if (!user) return;
+      const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const current = snap.data();
+      // Don't backup empty docs
+      const hasData = Object.values(current).some(
+        (v) => Array.isArray(v) && v.length > 0,
+      );
+      if (!hasData && docId !== "shared") return;
+
+      const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
+      await addDoc(backupsCol, {
+        docId,
+        data: current,
+        createdAt: serverTimestamp(),
+        timestamp: new Date().toISOString(),
+      });
+
+      // Prune old backups — keep only the latest MAX_BACKUPS per docId
+      const allBackups = await getDocs(
+        query(backupsCol, orderBy("createdAt", "desc")),
+      );
+      const forDoc = allBackups.docs.filter((d) => d.data().docId === docId);
+      if (forDoc.length > MAX_BACKUPS) {
+        const toDelete = forDoc.slice(MAX_BACKUPS);
+        await Promise.all(toDelete.map((d) => deleteDoc(d.ref)));
+      }
+    },
+    [user],
+  );
+
+  // Write guard: reject writes that would wipe important arrays.
+  // Returns true if the write looks safe; false if suspicious.
+  const isWriteSafe = useCallback(
+    (docId, newData) => {
+      const current =
+        docId === "abhav" ? abhav : docId === "aanya" ? aanya : shared;
+      if (!current) return true; // first write, allow
+      // Check key arrays — if current has data but new is empty, block
+      const keys =
+        docId === "shared"
+          ? ["trips", "goals", "netWorthHistory"]
+          : ["incomes", "expenses", "investments", "debts", "goals"];
+      for (const key of keys) {
+        const curLen = (current[key] || []).length;
+        const newLen = (newData[key] || []).length;
+        // Block if current has 3+ items and new has 0 (bulk wipe)
+        if (curLen >= 3 && newLen === 0) {
+          console.error(
+            `[DataGuard] BLOCKED write to "${docId}.${key}": ` +
+              `would delete all ${curLen} items. This looks like a bug.`,
+          );
+          return false;
+        }
+      }
+      return true;
+    },
+    [abhav, aanya, shared],
+  );
+
+  // Debounce backup: only backup once every 30s per docId
+  const lastBackupRef = useRef({});
+
   const save = useCallback(
     async (docId, data) => {
       if (!user) return;
-      await setDoc(doc(db, "households", user.uid, "data", docId), data);
+      // Write guard
+      if (!isWriteSafe(docId, data)) {
+        console.error(
+          `[DataGuard] Write to "${docId}" rejected. Data preserved.`,
+        );
+        return;
+      }
+      // Auto-backup (throttled: max once per 30s per doc)
+      const now = Date.now();
+      const lastTime = lastBackupRef.current[docId] || 0;
+      if (now - lastTime > 30_000) {
+        lastBackupRef.current[docId] = now;
+        // Fire-and-forget — don't block the save
+        backupBeforeSave(docId).catch((err) =>
+          console.warn("[Backup] Failed:", err),
+        );
+      }
+      await setDoc(doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId), data);
     },
-    [user],
+    [user, isWriteSafe, backupBeforeSave],
   );
 
   const updatePerson = useCallback(
@@ -317,9 +429,9 @@ export function DataProvider({ children }) {
     const emptyAanya = { ...EMPTY_PERSON };
     const emptyShared = { ...EMPTY_SHARED };
     await Promise.all([
-      setDoc(doc(db, "households", uid, "data", "abhav"), emptyAbhav),
-      setDoc(doc(db, "households", uid, "data", "aanya"), emptyAanya),
-      setDoc(doc(db, "households", uid, "data", "shared"), emptyShared),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "abhav"), emptyAbhav),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "aanya"), emptyAanya),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "shared"), emptyShared),
     ]);
   }, [user]);
 
@@ -368,6 +480,11 @@ export function DataProvider({ children }) {
         (s, a) => s + (a.value || 0),
         0,
       );
+      // Savings accounts (tracked separately on NetWorth page)
+      const savingsTotal = (data.savingsAccounts || []).reduce(
+        (s, a) => s + (a.balance || 0),
+        0,
+      );
       // Debt outstanding (auto)
       const debtTotal = (data.debts || []).reduce(
         (s, d) => s + (d.outstanding || 0),
@@ -378,7 +495,7 @@ export function DataProvider({ children }) {
         (s, l) => s + (l.value || 0),
         0,
       );
-      return invTotal + manualAssets - (debtTotal + manualLiab);
+      return invTotal + manualAssets + savingsTotal - (debtTotal + manualLiab);
     };
 
     const snap = {
@@ -435,6 +552,117 @@ export function DataProvider({ children }) {
     }
   }, [loading, abhav, aanya, shared, takeSnapshot]);
 
+  // ── Backup listing & restore ────────────────────────────────────────────
+  const listBackups = useCallback(
+    async (docId) => {
+      if (!user) return [];
+      const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
+      const snap = await getDocs(
+        query(backupsCol, orderBy("createdAt", "desc"), limit(100)),
+      );
+      return snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((b) => !docId || b.docId === docId);
+    },
+    [user],
+  );
+
+  const restoreBackup = useCallback(
+    async (backupId) => {
+      if (!user) return;
+      const backupRef = doc(db, COL_HOUSEHOLDS, user.uid, "backups", backupId);
+      const snap = await getDoc(backupRef);
+      if (!snap.exists()) throw new Error("Backup not found");
+      const { docId, data } = snap.data();
+      // Backup current state BEFORE restoring (so restore is itself reversible)
+      await backupBeforeSave(docId);
+      // Write the backed-up data directly to the doc
+      const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+      await setDoc(ref, data);
+      // Update local state
+      if (docId === "abhav") setAbhav(data);
+      else if (docId === "aanya") setAanya(data);
+      else if (docId === "shared") setShared(data);
+    },
+    [user, backupBeforeSave],
+  );
+
+  // Manual backup: save all 3 docs right now (not throttled)
+  const createManualBackup = useCallback(
+    async (note = "manual backup") => {
+      if (!user) return;
+      const DOCS = ["abhav", "aanya", "shared"];
+      const results = [];
+      for (const docId of DOCS) {
+        const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) continue;
+        const data = snap.data();
+        const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
+        await addDoc(backupsCol, {
+          docId,
+          data,
+          createdAt: serverTimestamp(),
+          timestamp: new Date().toISOString(),
+          note,
+        });
+        results.push(docId);
+      }
+      return results;
+    },
+    [user],
+  );
+
+  // Copy production data into dev subcollection (both under "households")
+  const seedDevFromProd = useCallback(async () => {
+    if (!user) return;
+    const DOCS = ["abhav", "aanya", "shared"];
+    const results = [];
+    for (const docId of DOCS) {
+      // Read from prod (always "data" subcollection)
+      const prodRef = doc(db, "households", user.uid, "data", docId);
+      const snap = await getDoc(prodRef);
+      if (!snap.exists()) continue;
+      const data = snap.data();
+      // Write to dev ("dev_data" subcollection under same households collection)
+      const devRef = doc(db, "households", user.uid, "dev_data", docId);
+      await setDoc(devRef, data);
+      results.push(docId);
+    }
+    return results;
+  }, [user]);
+
+  // Push dev data into production (dev_data → data). Backs up prod first.
+  const pushDevToProd = useCallback(async () => {
+    if (!user) return;
+    const DOCS = ["abhav", "aanya", "shared"];
+    const results = [];
+    for (const docId of DOCS) {
+      // Read from dev
+      const devRef = doc(db, "households", user.uid, "dev_data", docId);
+      const snap = await getDoc(devRef);
+      if (!snap.exists()) continue;
+      const data = snap.data();
+      // Backup current prod before overwriting
+      const prodRef = doc(db, "households", user.uid, "data", docId);
+      const prodSnap = await getDoc(prodRef);
+      if (prodSnap.exists()) {
+        const backupsCol = collection(db, "households", user.uid, "backups");
+        await addDoc(backupsCol, {
+          docId,
+          data: prodSnap.data(),
+          createdAt: serverTimestamp(),
+          timestamp: new Date().toISOString(),
+          note: "auto-backup before dev→prod push",
+        });
+      }
+      // Write dev data to prod
+      await setDoc(prodRef, data);
+      results.push(docId);
+    }
+    return results;
+  }, [user]);
+
   return (
     <DataContext.Provider
       value={{
@@ -448,6 +676,11 @@ export function DataProvider({ children }) {
         updateShared,
         takeSnapshot,
         resetData,
+        listBackups,
+        restoreBackup,
+        createManualBackup,
+        seedDevFromProd,
+        pushDevToProd,
       }}
     >
       {children}

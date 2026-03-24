@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { EmergencyFundCard } from "./MorePages";
 import {
   PieChart,
   Pie,
@@ -272,7 +273,10 @@ const DEFAULT_ORDER = [
   "cashflow",
   "persons",
   "comparison",
+  "monthcompare",
   "goals",
+  "emergency",
+  "cashforecast",
   "projection",
 ];
 
@@ -1334,30 +1338,51 @@ export default function Dashboard({ abhav, aanya, shared }) {
     aanya?.incomes,
     selectedMonth,
   );
+  // Previous month stats for month-over-month comparison
+  const prevYm = (() => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    const d = new Date(y, m - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const aPrevTx = statsFromTxns(
+    abhav?.transactions,
+    abhav?.expenses,
+    abhav?.incomes,
+    prevYm,
+  );
+  const bPrevTx = statsFromTxns(
+    aanya?.transactions,
+    aanya?.expenses,
+    aanya?.incomes,
+    prevYm,
+  );
+  const prevHasData =
+    aPrevTx.income > 0 ||
+    aPrevTx.expenses > 0 ||
+    bPrevTx.income > 0 ||
+    bPrevTx.expenses > 0;
+
   const aStanding = personStats(abhav); // standing config (for corpus20)
   const bStanding = personStats(aanya);
 
   // Always use standing expenses (matches Budget page totals) so per-person
   // cards are consistent with the Budget page. Income uses actual entries
   // when available; investments/debts from standing config.
-  const recalc = (standing, sharedShare = 0) => {
-    const { income, investments, debts } = standing;
-    const expenses = standing.expenses + sharedShare;
+  const recalc = (standing) => {
+    const { income, expenses, investments, debts } = standing;
     const savings = income - expenses - investments - debts;
     const savingsRate =
       income > 0
         ? Math.round(((investments + Math.max(0, savings)) / income) * 100)
         : 0;
-    return { ...standing, expenses, savings, savingsRate };
+    return { ...standing, savings, savingsRate };
   };
+  const a = recalc(aStanding);
+  const b = recalc(bStanding);
 
   // Shared trips (joint trips visible to both persons)
   const sharedTrips = shared?.trips || [];
   const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
-  const sharedTripShare = Math.round(sharedTripTotal / 2);
-
-  const a = recalc(aStanding, sharedTripShare);
-  const b = recalc(bStanding, sharedTripShare);
 
   // Expense breakdown for info modals
   const abhavMonthly = (abhav?.expenses || [])
@@ -2099,6 +2124,138 @@ export default function Dashboard({ abhav, aanya, shared }) {
       </div>
     ),
 
+    monthcompare: prevHasData
+      ? (() => {
+          const curIncome = aTxStats.income + bTxStats.income;
+          const curExp = aTxStats.expenses + bTxStats.expenses;
+          const curInvest = aTxStats.investments + bTxStats.investments;
+          const curSavings = curIncome - curExp - curInvest;
+          const prvIncome = aPrevTx.income + bPrevTx.income;
+          const prvExp = aPrevTx.expenses + bPrevTx.expenses;
+          const prvInvest = aPrevTx.investments + bPrevTx.investments;
+          const prvSavings = prvIncome - prvExp - prvInvest;
+          const [pY, pM] = prevYm.split("-");
+          const prevLabel = `${MONTH_NAMES[parseInt(pM, 10) - 1]} ${pY}`;
+          const rows = [
+            { label: "Income", cur: curIncome, prev: prvIncome },
+            { label: "Expenses", cur: curExp, prev: prvExp },
+            { label: "Investments", cur: curInvest, prev: prvInvest },
+            { label: "Net Savings", cur: curSavings, prev: prvSavings },
+          ];
+          return (
+            <div className="card section-gap">
+              <div className="card-title">Month over Month</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  marginBottom: 12,
+                }}
+              >
+                {selLabel} vs {prevLabel}
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto auto",
+                  gap: "10px 16px",
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  Category
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-secondary)",
+                    textAlign: "right",
+                  }}
+                >
+                  {prevLabel}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-secondary)",
+                    textAlign: "right",
+                  }}
+                >
+                  {selLabel}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "var(--text-secondary)",
+                    textAlign: "center",
+                  }}
+                >
+                  Change
+                </span>
+                {rows.map((r) => {
+                  const delta = r.cur - r.prev;
+                  const pct =
+                    r.prev > 0
+                      ? Math.round((delta / r.prev) * 100)
+                      : r.cur > 0
+                        ? 100
+                        : 0;
+                  const isGood =
+                    r.label === "Expenses" ? delta <= 0 : delta >= 0;
+                  return [
+                    <span key={r.label + "l"} style={{ fontSize: 13 }}>
+                      {r.label}
+                    </span>,
+                    <span
+                      key={r.label + "p"}
+                      style={{
+                        fontSize: 13,
+                        textAlign: "right",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {fmt(r.prev)}
+                    </span>,
+                    <span
+                      key={r.label + "c"}
+                      style={{
+                        fontSize: 13,
+                        textAlign: "right",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {fmt(r.cur)}
+                    </span>,
+                    <span
+                      key={r.label + "d"}
+                      style={{
+                        fontSize: 12,
+                        textAlign: "center",
+                        color: isGood ? "var(--green)" : "var(--red)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {delta === 0
+                        ? "—"
+                        : `${delta > 0 ? "▲" : "▼"} ${Math.abs(pct)}%`}
+                    </span>,
+                  ];
+                })}
+              </div>
+            </div>
+          );
+        })()
+      : null,
+
     goals:
       sharedGoals.length > 0 ? (
         <div className="card section-gap">
@@ -2240,6 +2397,137 @@ export default function Dashboard({ abhav, aanya, shared }) {
         </div>
       </div>
     ),
+
+    emergency: <EmergencyFundCard abhav={abhav} aanya={aanya} />,
+
+    cashforecast: (() => {
+      const hInc = aStanding.income + bStanding.income;
+      const hExp = aStanding.expenses + bStanding.expenses;
+      const hInv = aStanding.investments + bStanding.investments;
+      const hDebt = aStanding.debts + bStanding.debts;
+      const monthlyNet = hInc - hExp - hInv - hDebt;
+      const liquid =
+        (abhav?.assets || [])
+          .filter((a) => a.type === "cash" || a.type === "savings")
+          .reduce((s, a) => s + (a.value || 0), 0) +
+        (aanya?.assets || [])
+          .filter((a) => a.type === "cash" || a.type === "savings")
+          .reduce((s, a) => s + (a.value || 0), 0) +
+        (abhav?.savingsAccounts || []).reduce(
+          (s, a) => s + (a.balance || 0),
+          0,
+        ) +
+        (aanya?.savingsAccounts || []).reduce(
+          (s, a) => s + (a.balance || 0),
+          0,
+        );
+      const MONTHS = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      const now = new Date();
+      const forecastData = [];
+      let cumBal = liquid;
+      for (let i = 0; i < 6; i++) {
+        const m = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        cumBal += monthlyNet;
+        forecastData.push({
+          month: `${MONTHS[m.getMonth()]} ${String(m.getFullYear()).slice(2)}`,
+          balance: Math.round(cumBal),
+          income: Math.round(hInc),
+          outflow: Math.round(hExp + hInv + hDebt),
+        });
+      }
+      const minBal = Math.min(...forecastData.map((d) => d.balance));
+      return (
+        <div className="card">
+          <div className="card-title">📈 6-Month Cash Flow Forecast</div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 12,
+            }}
+          >
+            Based on current income, expenses, SIPs & EMIs
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart
+              data={forecastData}
+              margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
+            >
+              <defs>
+                <linearGradient id="fcGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="5%"
+                    stopColor={minBal < 0 ? "var(--red)" : "var(--green)"}
+                    stopOpacity={0.3}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={minBal < 0 ? "var(--red)" : "var(--green)"}
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="month"
+                tick={{ fontSize: 11, fill: "#55535e" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+                formatter={(v) => fmt(v)}
+              />
+              <Area
+                type="monotone"
+                dataKey="balance"
+                stroke={minBal < 0 ? "var(--red)" : "var(--green)"}
+                fill="url(#fcGrad)"
+                strokeWidth={2}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+          {minBal < 0 && (
+            <div
+              className="tip"
+              style={{
+                background: "rgba(239,83,80,0.08)",
+                borderColor: "rgba(239,83,80,0.3)",
+                marginTop: 8,
+              }}
+            >
+              ⚠️ Cash balance goes negative by{" "}
+              {forecastData.find((d) => d.balance < 0)?.month}. Review spending
+              or boost income.
+            </div>
+          )}
+          {monthlyNet > 0 && minBal >= 0 && (
+            <div className="tip" style={{ marginTop: 8 }}>
+              💡 Surplus of {fmt(Math.round(monthlyNet))}/mo — consider
+              increasing SIPs or prepaying a loan.
+            </div>
+          )}
+        </div>
+      );
+    })(),
   };
 
   return (
