@@ -534,6 +534,103 @@ input[type="number"] {
   .grid-2 {
     grid-template-columns: 1fr !important;
   }
+  /* Budget: income rows — stack vertically */
+  .budget-income-row {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-income-row input,
+  .budget-income-row select,
+  .budget-income-row > div[role="button"] {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  .budget-income-row .budget-exp-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    width: 100%;
+  }
+  /* Budget: expense rows — stack on mobile */
+  .budget-exp-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+  }
+  .budget-exp-row input,
+  .budget-exp-row > div[role="button"] {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  .budget-exp-row .budget-exp-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+  }
+  /* Budget: entry form rows — wrap nicely */
+  .budget-entry-form {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-entry-form input,
+  .budget-entry-form > div[role="button"] {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  .budget-entry-form button {
+    width: 100%;
+    justify-content: center;
+  }
+  /* Budget: expense meta row (category, recurrence, sub) */
+  .budget-exp-meta {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-exp-meta select,
+  .budget-exp-meta input {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  /* Budget: one-time expense row, trip items */
+  .budget-onetime-row {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-onetime-row input,
+  .budget-onetime-row > div[role="button"] {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  .budget-onetime-row .budget-exp-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .budget-onetime-meta {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-onetime-meta input,
+  .budget-onetime-meta select {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  /* Budget: trip item form */
+  .budget-trip-item-form {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .budget-trip-item-form input,
+  .budget-trip-item-form select,
+  .budget-trip-item-form > div[role="button"] {
+    flex: unset !important;
+    width: 100% !important;
+  }
+  .budget-trip-item-form button {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ── Reduced motion ── */

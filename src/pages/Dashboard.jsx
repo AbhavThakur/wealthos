@@ -413,8 +413,10 @@ function buildCashFlow(
     }
   }
 
-  // Track which expenses have been covered by entries or transactions
-  const expensesCoveredThisMonth = new Set();
+  // Track which expenses have been covered by transactions (keyed by name)
+  const txnCoveredThisMonth = new Set();
+  // Track which expenses have been covered by dated entries (keyed by id)
+  const entryCoveredThisMonth = new Set();
 
   const process = (txns) => {
     for (const t of txns || []) {
@@ -454,23 +456,22 @@ function buildCashFlow(
           amount: amt,
           note: t.note || "",
         });
-        expensesCoveredThisMonth.add(`${t.desc}::${ym}`);
+        txnCoveredThisMonth.add(`${t.desc}::${ym}`);
       }
     }
   };
 
-  // Process budget expense entries (each has its own date + note/vendor)
+  // Process budget expense entries (each has its own date + note/vendor).
+  // Entries are a purchase log — the *standing* expense amount is the budget total.
+  // We add entries to `detail` (for the schedule view) but use `exp.amount`
+  // for the aggregate so the cash flow total matches the Budget page.
   const processExps = (exps) => {
     for (const exp of exps || []) {
+      const monthsWithEntries = new Set();
       for (const e of exp.entries || []) {
         if (!e.date) continue;
         const ym = e.date.slice(0, 7);
         ensure(ym);
-        if (exp.category === "EMI") {
-          map[ym].emis += e.amount;
-        } else {
-          map[ym].expenses += e.amount;
-        }
         map[ym].detail.push({
           expName: exp.name,
           category: exp.category,
@@ -479,7 +480,16 @@ function buildCashFlow(
           amount: e.amount,
           note: e.note || "",
         });
-        expensesCoveredThisMonth.add(`${exp.name}::${ym}`);
+        monthsWithEntries.add(ym);
+        entryCoveredThisMonth.add(`${exp.id}::${ym}`);
+      }
+      // Add the standing budget amount once per month (not the entry sum)
+      for (const ym of monthsWithEntries) {
+        if (exp.category === "EMI") {
+          map[ym].emis += exp.amount;
+        } else {
+          map[ym].expenses += exp.amount;
+        }
       }
     }
   };
@@ -549,8 +559,9 @@ function buildCashFlow(
       const months = exp.recurrenceMonths || [0, 3, 6, 9];
       if (!months.includes(curMonth)) continue;
     }
-    // Skip if already covered by entries or transactions
-    if (expensesCoveredThisMonth.has(`${exp.name}::${curYm}`)) continue;
+    // Skip if already covered by entries (by id) or transactions (by name)
+    if (entryCoveredThisMonth.has(`${exp.id}::${curYm}`)) continue;
+    if (txnCoveredThisMonth.has(`${exp.name}::${curYm}`)) continue;
     if (exp.amount > 0) {
       ensure(curYm);
       map[curYm].expenses += exp.amount;
@@ -1326,21 +1337,27 @@ export default function Dashboard({ abhav, aanya, shared }) {
   const aStanding = personStats(abhav); // standing config (for corpus20)
   const bStanding = personStats(aanya);
 
-  // Use transaction stats if the month has any income/expense data, else fall back to standing
-  const aHasData =
-    aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;
-  const bHasData =
-    bTxStats.income > 0 || bTxStats.expenses > 0 || bTxStats.investments > 0;
-  const a = aHasData
-    ? { ...aTxStats, corpus20: aStanding.corpus20 }
-    : aStanding;
-  const b = bHasData
-    ? { ...bTxStats, corpus20: bStanding.corpus20 }
-    : bStanding;
+  // Always use standing expenses (matches Budget page totals) so per-person
+  // cards are consistent with the Budget page. Income uses actual entries
+  // when available; investments/debts from standing config.
+  const recalc = (standing, sharedShare = 0) => {
+    const { income, investments, debts } = standing;
+    const expenses = standing.expenses + sharedShare;
+    const savings = income - expenses - investments - debts;
+    const savingsRate =
+      income > 0
+        ? Math.round(((investments + Math.max(0, savings)) / income) * 100)
+        : 0;
+    return { ...standing, expenses, savings, savingsRate };
+  };
 
   // Shared trips (joint trips visible to both persons)
   const sharedTrips = shared?.trips || [];
   const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
+  const sharedTripShare = Math.round(sharedTripTotal / 2);
+
+  const a = recalc(aStanding, sharedTripShare);
+  const b = recalc(bStanding, sharedTripShare);
 
   // Expense breakdown for info modals
   const abhavMonthly = (abhav?.expenses || [])
@@ -1361,6 +1378,10 @@ export default function Dashboard({ abhav, aanya, shared }) {
   const aanyaOnetime = (aanya?.expenses || [])
     .filter((e) => e.expenseType === "onetime")
     .reduce((s, x) => s + x.amount, 0);
+  const aHasData =
+    aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;
+  const bHasData =
+    bTxStats.income > 0 || bTxStats.expenses > 0 || bTxStats.investments > 0;
   const usingTxData = aHasData || bHasData;
 
   const hIncome = a.income + b.income;

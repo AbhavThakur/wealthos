@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 // Module-level counter for entry IDs — avoids impure Date.now() in render scope
@@ -125,6 +125,161 @@ function InfoModal({ title, children }) {
       </button>
       {overlay}
     </>
+  );
+}
+
+// ── Mobile-friendly input modal ──────────────────────────────────────────────
+// On small screens, inputs get cropped. Tapping opens a full-width bottom sheet
+// to edit the value comfortably. On desktop this is a no-op (children render inline).
+function useMobileCheck() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 480,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 480px)");
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
+function MobileEditModal({ label, value, onChange, type = "text", onClose }) {
+  const [local, setLocal] = useState(String(value ?? ""));
+  return createPortal(
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        zIndex: 99999,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#1a1a24",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: "16px 16px 0 0",
+          padding: "20px 20px 28px",
+          width: "100%",
+          maxWidth: 420,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--text-muted)",
+            marginBottom: 10,
+            textTransform: "uppercase",
+            letterSpacing: ".06em",
+          }}
+        >
+          {label}
+        </div>
+        <input
+          autoFocus
+          type={type}
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          style={{
+            width: "100%",
+            fontSize: 16,
+            padding: "12px 14px",
+            marginBottom: 14,
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onChange(type === "number" ? Number(local) : local);
+              onClose();
+            }
+          }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-primary"
+            style={{ flex: 1 }}
+            onClick={() => {
+              onChange(type === "number" ? Number(local) : local);
+              onClose();
+            }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// Wrapper: on mobile, tapping opens the modal; on desktop, renders an inline input.
+function MobileInput({
+  value,
+  onChange,
+  type = "text",
+  label = "Edit",
+  style = {},
+  ...rest
+}) {
+  const isMobile = useMobileCheck();
+  const [editing, setEditing] = useState(false);
+
+  if (isMobile) {
+    return (
+      <>
+        <div
+          onClick={() => setEditing(true)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && setEditing(true)}
+          style={{
+            background: "var(--bg-input)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            padding: "8px 12px",
+            fontSize: 13,
+            color: value ? "var(--text-primary)" : "var(--text-muted)",
+            cursor: "pointer",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            ...style,
+          }}
+          aria-label={label}
+        >
+          {value || rest.placeholder || label}
+        </div>
+        {editing && (
+          <MobileEditModal
+            label={label}
+            value={value}
+            onChange={onChange}
+            type={type}
+            onClose={() => setEditing(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) =>
+        onChange(type === "number" ? Number(e.target.value) : e.target.value)
+      }
+      style={style}
+      {...rest}
+    />
   );
 }
 
@@ -792,11 +947,10 @@ export default function Budget({
       note: f.note.trim(),
     };
     const newEntries = [...(exp.entries || []), entry];
-    const newAmount = newEntries.reduce((s, e) => s + e.amount, 0);
     updatePerson(
       "expenses",
       expenses.map((x) =>
-        x.id === exp.id ? { ...x, entries: newEntries, amount: newAmount } : x,
+        x.id === exp.id ? { ...x, entries: newEntries } : x,
       ),
     );
     setEntryForm((s) => ({
@@ -806,11 +960,10 @@ export default function Budget({
   };
   const deleteEntry = (exp, entryId) => {
     const newEntries = (exp.entries || []).filter((e) => e.id !== entryId);
-    const newAmount = newEntries.reduce((s, e) => s + e.amount, 0);
     updatePerson(
       "expenses",
       expenses.map((x) =>
-        x.id === exp.id ? { ...x, entries: newEntries, amount: newAmount } : x,
+        x.id === exp.id ? { ...x, entries: newEntries } : x,
       ),
     );
   };
@@ -1826,6 +1979,7 @@ export default function Budget({
             return (
               <div key={inc.id} style={{ marginBottom: 4 }}>
                 <div
+                  className="budget-income-row"
                   style={{
                     display: "flex",
                     gap: 8,
@@ -1836,17 +1990,18 @@ export default function Budget({
                       : "1px solid var(--border)",
                   }}
                 >
-                  <input
+                  <MobileInput
                     value={inc.name}
-                    onChange={(e) =>
+                    label="Income name"
+                    onChange={(v) =>
                       updatePerson(
                         "incomes",
                         incomes.map((x) =>
-                          x.id === inc.id ? { ...x, name: e.target.value } : x,
+                          x.id === inc.id ? { ...x, name: v } : x,
                         ),
                       )
                     }
-                    style={{ flex: 3 }}
+                    style={{ flex: 3, minWidth: 0 }}
                   />
                   <select
                     value={inc.type}
@@ -1864,70 +2019,79 @@ export default function Budget({
                       <option key={t}>{t}</option>
                     ))}
                   </select>
-                  <input
+                  <MobileInput
                     type="number"
                     value={inc.amount}
-                    onChange={(e) =>
+                    label="Income amount"
+                    onChange={(v) =>
                       updatePerson(
                         "incomes",
                         incomes.map((x) =>
-                          x.id === inc.id
-                            ? { ...x, amount: Number(e.target.value) }
-                            : x,
+                          x.id === inc.id ? { ...x, amount: Number(v) } : x,
                         ),
                       )
                     }
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, minWidth: 0 }}
                     min="0"
                   />
-                  {/* Variable income log toggle */}
-                  <button
-                    onClick={() => toggleExpandInc(inc.id)}
-                    title="Log variable income (bonus, freelance, dividend…)"
+                  <div
+                    className="budget-exp-actions"
                     style={{
-                      background:
-                        incEntries.length > 0
-                          ? "var(--green-dim)"
-                          : "rgba(255,255,255,0.06)",
-                      border:
-                        incEntries.length > 0
-                          ? "1px solid rgba(76,175,130,0.3)"
-                          : "1px solid var(--border)",
-                      color:
-                        incEntries.length > 0
-                          ? "var(--green)"
-                          : "var(--text-muted)",
-                      borderRadius: 6,
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      cursor: "pointer",
                       display: "flex",
+                      gap: 6,
                       alignItems: "center",
-                      gap: 4,
                       flexShrink: 0,
                     }}
                   >
-                    <CalendarDays size={11} />
-                    {incEntries.length > 0 ? incEntries.length : "+"}
-                  </button>
-                  <button
-                    className="btn-danger"
-                    aria-label={`Delete ${inc.name}`}
-                    onClick={async () => {
-                      if (
-                        await confirm(
-                          "Delete income?",
-                          `Remove "${inc.name}" from your income sources?`,
+                    {/* Variable income log toggle */}
+                    <button
+                      onClick={() => toggleExpandInc(inc.id)}
+                      title="Log variable income (bonus, freelance, dividend…)"
+                      style={{
+                        background:
+                          incEntries.length > 0
+                            ? "var(--green-dim)"
+                            : "rgba(255,255,255,0.06)",
+                        border:
+                          incEntries.length > 0
+                            ? "1px solid rgba(76,175,130,0.3)"
+                            : "1px solid var(--border)",
+                        color:
+                          incEntries.length > 0
+                            ? "var(--green)"
+                            : "var(--text-muted)",
+                        borderRadius: 6,
+                        padding: "4px 8px",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <CalendarDays size={11} />
+                      {incEntries.length > 0 ? incEntries.length : "+"}
+                    </button>
+                    <button
+                      className="btn-danger"
+                      aria-label={`Delete ${inc.name}`}
+                      onClick={async () => {
+                        if (
+                          await confirm(
+                            "Delete income?",
+                            `Remove "${inc.name}" from your income sources?`,
+                          )
                         )
-                      )
-                        updatePerson(
-                          "incomes",
-                          incomes.filter((x) => x.id !== inc.id),
-                        );
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                          updatePerson(
+                            "incomes",
+                            incomes.filter((x) => x.id !== inc.id),
+                          );
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Variable income entries panel */}
@@ -2051,6 +2215,7 @@ export default function Budget({
                     )}
 
                     <div
+                      className="budget-entry-form"
                       style={{
                         display: "flex",
                         gap: 6,
@@ -2066,13 +2231,12 @@ export default function Budget({
                         }
                         style={{ flex: "0 0 130px" }}
                       />
-                      <input
+                      <MobileInput
                         type="number"
                         placeholder="Amount (₹)"
                         value={ief.amount}
-                        onChange={(e) =>
-                          setIEF(inc.id, { amount: e.target.value })
-                        }
+                        label="Amount"
+                        onChange={(v) => setIEF(inc.id, { amount: v })}
                         style={{ flex: "0 0 110px" }}
                         min="0"
                       />
@@ -2089,13 +2253,11 @@ export default function Budget({
                           </option>
                         ))}
                       </select>
-                      <input
-                        type="text"
+                      <MobileInput
                         placeholder="Note (e.g. Q1 bonus)"
                         value={ief.note}
-                        onChange={(e) =>
-                          setIEF(inc.id, { note: e.target.value })
-                        }
+                        label="Note"
+                        onChange={(v) => setIEF(inc.id, { note: v })}
                         style={{ flex: 1, minWidth: 100 }}
                       />
                       <button
@@ -2532,6 +2694,7 @@ export default function Budget({
                   >
                     {/* Row 1: Name + Amount + Actions */}
                     <div
+                      className="budget-exp-row"
                       style={{
                         display: "flex",
                         gap: 8,
@@ -2539,15 +2702,14 @@ export default function Budget({
                         marginBottom: 8,
                       }}
                     >
-                      <input
+                      <MobileInput
                         value={exp.name}
-                        onChange={(e) =>
+                        label="Expense name"
+                        onChange={(v) =>
                           updatePerson(
                             "expenses",
                             expenses.map((x) =>
-                              x.id === exp.id
-                                ? { ...x, name: e.target.value }
-                                : x,
+                              x.id === exp.id ? { ...x, name: v } : x,
                             ),
                           )
                         }
@@ -2577,15 +2739,16 @@ export default function Budget({
                           )}
                         </div>
                       ) : (
-                        <input
+                        <MobileInput
                           type="number"
                           value={exp.amount}
-                          onChange={(e) =>
+                          label="Amount"
+                          onChange={(v) =>
                             updatePerson(
                               "expenses",
                               expenses.map((x) =>
                                 x.id === exp.id
-                                  ? { ...x, amount: Number(e.target.value) }
+                                  ? { ...x, amount: Number(v) }
                                   : x,
                               ),
                             )
@@ -2595,61 +2758,72 @@ export default function Budget({
                           placeholder="₹"
                         />
                       )}
-                      <button
-                        onClick={() => {
-                          toggleExpandExp(exp.id);
-                          if (!isOpen) setEF(exp.id, {});
-                        }}
-                        title="Log purchases"
+                      <div
+                        className="budget-exp-actions"
                         style={{
-                          background:
-                            entries.length > 0
-                              ? "var(--gold-dim)"
-                              : "rgba(255,255,255,0.06)",
-                          border:
-                            entries.length > 0
-                              ? "1px solid var(--gold-border)"
-                              : "1px solid var(--border)",
-                          color:
-                            entries.length > 0
-                              ? "var(--gold)"
-                              : "var(--text-muted)",
-                          borderRadius: 6,
-                          padding: "4px 8px",
-                          fontSize: 11,
-                          cursor: "pointer",
                           display: "flex",
+                          gap: 6,
                           alignItems: "center",
-                          gap: 4,
                           flexShrink: 0,
                         }}
                       >
-                        <CalendarDays size={11} />
-                        {entries.length > 0 ? entries.length : "Log"}
-                      </button>
-                      <MoveButton expId={exp.id} currentType="monthly" />
-                      <button
-                        className="btn-danger"
-                        aria-label={`Delete ${exp.name}`}
-                        onClick={async () => {
-                          if (
-                            await confirm(
-                              "Delete expense?",
-                              `Remove "${exp.name}"?`,
+                        <button
+                          onClick={() => {
+                            toggleExpandExp(exp.id);
+                            if (!isOpen) setEF(exp.id, {});
+                          }}
+                          title="Log purchases"
+                          style={{
+                            background:
+                              entries.length > 0
+                                ? "var(--gold-dim)"
+                                : "rgba(255,255,255,0.06)",
+                            border:
+                              entries.length > 0
+                                ? "1px solid var(--gold-border)"
+                                : "1px solid var(--border)",
+                            color:
+                              entries.length > 0
+                                ? "var(--gold)"
+                                : "var(--text-muted)",
+                            borderRadius: 6,
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <CalendarDays size={11} />
+                          {entries.length > 0 ? entries.length : "Log"}
+                        </button>
+                        <MoveButton expId={exp.id} currentType="monthly" />
+                        <button
+                          className="btn-danger"
+                          aria-label={`Delete ${exp.name}`}
+                          onClick={async () => {
+                            if (
+                              await confirm(
+                                "Delete expense?",
+                                `Remove "${exp.name}"?`,
+                              )
                             )
-                          )
-                            updatePerson(
-                              "expenses",
-                              expenses.filter((x) => x.id !== exp.id),
-                            );
-                        }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                              updatePerson(
+                                "expenses",
+                                expenses.filter((x) => x.id !== exp.id),
+                              );
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Row 2: Category pill + Recurrence */}
                     <div
+                      className="budget-exp-meta"
                       style={{
                         display: "flex",
                         gap: 6,
@@ -2897,6 +3071,7 @@ export default function Budget({
                           </div>
                         )}
                         <div
+                          className="budget-entry-form"
                           style={{
                             display: "flex",
                             gap: 6,
@@ -2912,23 +3087,20 @@ export default function Budget({
                             }
                             style={{ flex: "0 0 130px" }}
                           />
-                          <input
+                          <MobileInput
                             type="number"
                             placeholder="₹"
                             value={ef.amount}
-                            onChange={(e) =>
-                              setEF(exp.id, { amount: e.target.value })
-                            }
+                            label="Amount"
+                            onChange={(v) => setEF(exp.id, { amount: v })}
                             style={{ flex: "0 0 90px" }}
                             min="0"
                           />
-                          <input
-                            type="text"
+                          <MobileInput
                             placeholder="Note"
                             value={ef.note}
-                            onChange={(e) =>
-                              setEF(exp.id, { note: e.target.value })
-                            }
+                            label="Note"
+                            onChange={(v) => setEF(exp.id, { note: v })}
                             style={{ flex: 1, minWidth: 100 }}
                           />
                           <button
@@ -3505,6 +3677,7 @@ export default function Budget({
 
                         {/* Add item form */}
                         <div
+                          className="budget-trip-item-form"
                           style={{
                             display: "flex",
                             gap: 6,
@@ -3523,22 +3696,19 @@ export default function Budget({
                               <option key={c}>{c}</option>
                             ))}
                           </select>
-                          <input
-                            type="text"
-                            placeholder="Item (e.g. Flight tickets)"
+                          <MobileInput
                             value={tif.name}
-                            onChange={(e) =>
-                              setTIF(tripKey, { name: e.target.value })
-                            }
+                            label="Item name"
+                            placeholder="Item (e.g. Flight tickets)"
+                            onChange={(v) => setTIF(tripKey, { name: v })}
                             style={{ flex: 1, minWidth: 120 }}
                           />
-                          <input
+                          <MobileInput
                             type="number"
-                            placeholder="₹"
                             value={tif.amount}
-                            onChange={(e) =>
-                              setTIF(tripKey, { amount: e.target.value })
-                            }
+                            label="Amount"
+                            placeholder="₹"
+                            onChange={(v) => setTIF(tripKey, { amount: v })}
                             style={{ flex: "0 0 90px" }}
                             min="0"
                           />
@@ -3639,32 +3809,31 @@ export default function Budget({
                   }}
                 >
                   <div
+                    className="budget-onetime-row"
                     style={{ display: "flex", gap: 8, alignItems: "center" }}
                   >
-                    <input
+                    <MobileInput
                       value={exp.name}
-                      onChange={(e) =>
+                      label="Expense name"
+                      onChange={(v) =>
                         updatePerson(
                           "expenses",
                           expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, name: e.target.value }
-                              : x,
+                            x.id === exp.id ? { ...x, name: v } : x,
                           ),
                         )
                       }
                       style={{ flex: 1, minWidth: 0 }}
                     />
-                    <input
+                    <MobileInput
                       type="number"
                       value={exp.amount}
-                      onChange={(e) =>
+                      label="Amount"
+                      onChange={(v) =>
                         updatePerson(
                           "expenses",
                           expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, amount: Number(e.target.value) }
-                              : x,
+                            x.id === exp.id ? { ...x, amount: Number(v) } : x,
                           ),
                         )
                       }
@@ -3672,27 +3841,30 @@ export default function Budget({
                       min="0"
                       placeholder="₹"
                     />
-                    <MoveButton expId={exp.id} currentType="onetime" />
-                    <button
-                      className="btn-danger"
-                      aria-label={`Delete ${exp.name}`}
-                      onClick={async () => {
-                        if (
-                          await confirm(
-                            "Delete expense?",
-                            `Remove "${exp.name}"?`,
+                    <div className="budget-exp-actions">
+                      <MoveButton expId={exp.id} currentType="onetime" />
+                      <button
+                        className="btn-danger"
+                        aria-label={`Delete ${exp.name}`}
+                        onClick={async () => {
+                          if (
+                            await confirm(
+                              "Delete expense?",
+                              `Remove "${exp.name}"?`,
+                            )
                           )
-                        )
-                          updatePerson(
-                            "expenses",
-                            expenses.filter((x) => x.id !== exp.id),
-                          );
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                            updatePerson(
+                              "expenses",
+                              expenses.filter((x) => x.id !== exp.id),
+                            );
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                   <div
+                    className="budget-onetime-meta"
                     style={{
                       display: "flex",
                       gap: 6,
