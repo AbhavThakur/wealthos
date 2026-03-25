@@ -222,3 +222,112 @@ export const CAT_COLORS = {
   "Personal Care": "#b8a06a",
   Others: "#6b6b7a",
 };
+
+// ── Wealth Intelligence Utilities ─────────────────────────────────────────
+
+/**
+ * FIRE Ratio: invested corpus / annual expenses.
+ * Tells how many years of expenses your investments can cover.
+ * 25× = traditional FIRE target (4% withdrawal rule).
+ */
+export const fireRatio = (investedCorpus, annualExpenses) =>
+  annualExpenses > 0 ? investedCorpus / annualExpenses : 0;
+
+/**
+ * Retirement corpus needed for a desired monthly spend (in today's money)
+ * adjusted for inflation, assuming a 4% safe withdrawal rate.
+ *   corpusNeeded = monthlySpend × 12 × (1 + inflation)^yearsToRetire / withdrawalRate
+ */
+export const retirementCorpus = (
+  monthlySpend,
+  yearsToRetire,
+  inflation = 0.06,
+  withdrawalRate = 0.04,
+) => {
+  const futureAnnualSpend =
+    monthlySpend * 12 * Math.pow(1 + inflation, yearsToRetire);
+  return futureAnnualSpend / withdrawalRate;
+};
+
+/**
+ * Required monthly SIP to reach a target corpus in N months at given annual return.
+ * Inverse of sipCorpus: SIP = FV × r / ((1+r)^n − 1) / (1+r)
+ */
+export const requiredSIP = (targetAmount, rateAnnual, months) => {
+  if (months <= 0) return targetAmount;
+  const r = rateAnnual / 100 / 12;
+  if (r === 0) return targetAmount / months;
+  return targetAmount / (((Math.pow(1 + r, months) - 1) / r) * (1 + r));
+};
+
+/**
+ * Asset allocation breakdown from an investments array.
+ * Returns { equity, debt, gold, cash, other } as percentages.
+ */
+export const assetAllocation = (investments) => {
+  const EQUITY_TYPES = ["Mutual Fund", "Stocks", "ULIP"];
+  const DEBT_TYPES = ["PPF", "FD", "EPF", "NPS"];
+  const GOLD_TYPES = ["Gold"];
+
+  let equity = 0,
+    debt = 0,
+    gold = 0,
+    other = 0;
+  for (const inv of investments || []) {
+    const val = inv.existingCorpus || inv.amount || 0;
+    if (EQUITY_TYPES.includes(inv.type)) equity += val;
+    else if (DEBT_TYPES.includes(inv.type)) debt += val;
+    else if (GOLD_TYPES.includes(inv.type)) gold += val;
+    else other += val;
+  }
+  const total = equity + debt + gold + other;
+  if (total === 0) return { equity: 0, debt: 0, gold: 0, other: 0, total: 0 };
+  return {
+    equity: Math.round((equity / total) * 100),
+    debt: Math.round((debt / total) * 100),
+    gold: Math.round((gold / total) * 100),
+    other: Math.round((other / total) * 100),
+    total,
+  };
+};
+
+/**
+ * Total current corpus across all investments (sum of existingCorpus).
+ */
+export const currentCorpus = (investments) =>
+  (investments || []).reduce((s, x) => s + (x.existingCorpus || 0), 0);
+
+/**
+ * Unused 80C limit. maxLimit = 1,50,000.
+ * Scans investments for ELSS, PPF, EPF, ULIP, life insurance.
+ */
+export const unused80C = (investments, insurances) => {
+  const MAX = 150000;
+  let used = 0;
+  for (const inv of investments || []) {
+    const amt = freqToMonthly(inv.amount, inv.frequency) * 12;
+    if (inv.type === "Mutual Fund" && /elss/i.test(inv.name)) used += amt;
+    else if (["PPF", "EPF", "ULIP"].includes(inv.type)) used += amt;
+  }
+  for (const ins of insurances || []) {
+    if (ins.type === "Life") used += ins.premium || 0;
+  }
+  return Math.max(0, MAX - Math.min(used, MAX));
+};
+
+/**
+ * Insurance adequacy: life cover should be 10–15× annual income.
+ * Returns { currentCover, recommended, gap, adequate }.
+ */
+export const insuranceAdequacy = (insurances, annualIncome) => {
+  const currentCover = (insurances || [])
+    .filter((i) => i.type === "Life")
+    .reduce((s, i) => s + (i.coverage || 0), 0);
+  const recommended = annualIncome * 12;
+  return {
+    currentCover,
+    recommended,
+    gap: Math.max(0, recommended - currentCover),
+    adequate: currentCover >= annualIncome * 10,
+  };
+};

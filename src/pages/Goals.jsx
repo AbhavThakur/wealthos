@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fmt, nextId, monthsUntil } from "../utils/finance";
+import { fmt, nextId, monthsUntil, requiredSIP } from "../utils/finance";
 import { Plus, Edit3, Trash2, Check, X } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 
@@ -328,6 +328,30 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
               >
                 {pct}% complete
               </div>
+              {/* SIP adequacy: show required monthly SIP to reach goal */}
+              {months > 0 && saved < target && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: "5px 10px",
+                    background: "rgba(201,168,76,0.06)",
+                    border: "1px solid rgba(201,168,76,0.12)",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    color: "var(--gold)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  💡 Save{" "}
+                  <strong>
+                    {fmt(Math.round(requiredSIP(target - saved, 10, months)))}
+                    /mo
+                  </strong>{" "}
+                  at 10% return to hit target by deadline
+                </div>
+              )}
             </div>
           </div>
         </div>

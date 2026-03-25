@@ -50,6 +50,7 @@ export function autoRecurringRules(data) {
       category: "Investment",
       dayOfMonth: inv.deductionDate || 15,
       frequency: inv.frequency || "monthly",
+      startDate: inv.startDate || null,
       active: true,
       auto: true,
       sourceType: "investment",

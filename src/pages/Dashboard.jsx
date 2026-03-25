@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { EmergencyFundCard } from "./MorePages";
 import {
   PieChart,
@@ -38,6 +37,13 @@ import {
   lumpCorpus,
   CAT_COLORS,
   freqToMonthly,
+  fireRatio,
+  retirementCorpus,
+  requiredSIP,
+  assetAllocation,
+  currentCorpus,
+  unused80C,
+  insuranceAdequacy,
 } from "../utils/finance";
 import {
   TrendingUp,
@@ -46,107 +52,15 @@ import {
   GripVertical,
   ChevronLeft,
   ChevronRight,
-  Info,
-  X,
+  Target,
+  ShieldCheck,
+  Flame,
+  PiggyBank,
+  Activity,
+  RefreshCw,
 } from "lucide-react";
-
-// Reusable info modal — portal-based overlay
-function InfoModal({ title, children }) {
-  const [open, setOpen] = useState(false);
-  const overlay = open
-    ? createPortal(
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.72)",
-            zIndex: 99999,
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            padding: "max(24px, 5vh) 24px 24px",
-            overflowY: "auto",
-          }}
-          onClick={() => setOpen(false)}
-        >
-          <div
-            style={{
-              background: "#1a1a24",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: "24px 28px",
-              maxWidth: 440,
-              width: "100%",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
-              color: "#eeeae4",
-              maxHeight: "85dvh",
-              overflowY: "auto",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 15, color: "#eeeae4" }}>
-                {title}
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                style={{
-                  background: "rgba(255,255,255,0.07)",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#aaa",
-                  padding: "4px 6px",
-                  borderRadius: 6,
-                  lineHeight: 1,
-                  display: "flex",
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div style={{ fontSize: 13, color: "#b0aab8", lineHeight: 1.8 }}>
-              {children}
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-  return (
-    <>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          lineHeight: 1,
-          color: "#888",
-          display: "inline-flex",
-          alignItems: "center",
-          verticalAlign: "middle",
-          marginLeft: 5,
-        }}
-        title={`About ${title}`}
-        aria-label={`Info about ${title}`}
-      >
-        <Info size={13} />
-      </button>
-      {overlay}
-    </>
-  );
-}
+import { InfoModal } from "../components/InfoModal";
+import { useMarketData } from "../hooks/useMarketData";
 
 // ── Month-aware stats from transactions ────────────────────────────────────
 function statsFromTxns(txns, exps, incomes, ym) {
@@ -270,6 +184,8 @@ function SortableSection({ id, children }) {
 const LS_KEY = "dashboard-section-order";
 const DEFAULT_ORDER = [
   "metrics",
+  "wealthinsights",
+  "marketpulse",
   "cashflow",
   "persons",
   "comparison",
@@ -1422,6 +1338,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
       : 0;
   const hCorpus20 = a.corpus20 + b.corpus20;
 
+  // ── Live market data ────────────────────────────────────────────────────
+  const allInv = [...(abhav?.investments || []), ...(aanya?.investments || [])];
+  const {
+    navMap,
+    goldPrice,
+    portfolio,
+    gainLoss,
+    loading: mktLoading,
+    lastSync,
+    refresh: refreshMarket,
+  } = useMarketData(allInv);
+
   const healthScore = (stats) =>
     Math.min(
       100,
@@ -1819,6 +1747,807 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             {hSavingsRate}%
           </div>
         </div>
+      </div>
+    ),
+
+    wealthinsights: (() => {
+      // ── Wealth Intelligence Calculations ──
+      const allInvestments = [
+        ...(abhav?.investments || []),
+        ...(aanya?.investments || []),
+      ];
+      const allInsurances = [
+        ...(abhav?.insurances || []),
+        ...(aanya?.insurances || []),
+      ];
+      const corpus = currentCorpus(allInvestments);
+      const annualExpenses = hExpenses * 12;
+      const fire = fireRatio(corpus, annualExpenses);
+      const allocation = assetAllocation(allInvestments);
+
+      // Retirement: assume retire at 60, current age ~30 (configurable)
+      const retireAge = shared?.profile?.retireAge || 60;
+      const currentAge = shared?.profile?.currentAge || 30;
+      const yearsToRetire = Math.max(1, retireAge - currentAge);
+      const monthlyExpenseToday = hExpenses;
+      const corpusNeeded = retirementCorpus(monthlyExpenseToday, yearsToRetire);
+      const corpusAtRetire = totalCorpus(corpus, hInvest, 12, yearsToRetire);
+      const retireGap = corpusNeeded - corpusAtRetire;
+      const retireOnTrack = retireGap <= 0;
+      const additionalSIPNeeded =
+        retireGap > 0 ? requiredSIP(retireGap, 12, yearsToRetire * 12) : 0;
+
+      // Unused 80C tax savings
+      const allInv80c = [
+        ...(abhav?.investments || []),
+        ...(aanya?.investments || []),
+      ];
+      const allIns80c = [
+        ...(abhav?.insurances || []),
+        ...(aanya?.insurances || []),
+      ];
+      const unused80c = unused80C(allInv80c, allIns80c);
+      const taxSavable = Math.round(unused80c * 0.3); // 30% slab assumed
+
+      // Insurance adequacy
+      const insAdequacy = insuranceAdequacy(allInsurances, hIncome * 12);
+
+      // Idle cash detection
+      const liquidCash =
+        (abhav?.savingsAccounts || []).reduce(
+          (s, a) => s + (a.balance || 0),
+          0,
+        ) +
+        (aanya?.savingsAccounts || []).reduce(
+          (s, a) => s + (a.balance || 0),
+          0,
+        );
+      const emergencyNeed = hExpenses * 6;
+      const excessCash = Math.max(0, liquidCash - emergencyNeed);
+
+      // Smart recommendations
+      const tips = [];
+      if (unused80c > 10000)
+        tips.push({
+          icon: "💸",
+          text: `Invest ${fmt(unused80c)} more in ELSS/PPF to save ~${fmt(taxSavable)} in tax`,
+          priority: 1,
+        });
+      if (!retireOnTrack)
+        tips.push({
+          icon: "🎯",
+          text: `Increase SIP by ${fmt(Math.round(additionalSIPNeeded))}/mo to hit retirement goal`,
+          priority: 2,
+        });
+      if (excessCash > 50000)
+        tips.push({
+          icon: "💤",
+          text: `${fmtCr(excessCash)} idle in savings — move to liquid fund or increase SIP`,
+          priority: 3,
+        });
+      if (!insAdequacy.adequate)
+        tips.push({
+          icon: "🛡️",
+          text: `Life cover gap of ${fmtCr(insAdequacy.gap)} — consider term insurance`,
+          priority: 4,
+        });
+      if (allocation.equity > 75)
+        tips.push({
+          icon: "⚖️",
+          text: `${allocation.equity}% in equity — consider diversifying to debt/gold`,
+          priority: 5,
+        });
+      if (hSavingsRate < 20 && tips.length < 4)
+        tips.push({
+          icon: "📈",
+          text: `Savings rate ${hSavingsRate}% — target 25%+ for faster wealth growth`,
+          priority: 6,
+        });
+
+      const allocColors = {
+        equity: "#5b9cf6",
+        debt: "#4caf82",
+        gold: "#c9a84c",
+        other: "#9b7fe8",
+      };
+
+      return (
+        <div
+          className="card"
+          style={{ border: "1px solid var(--gold-border)" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 16,
+            }}
+          >
+            <Sparkles size={18} color="var(--gold)" />
+            <span
+              className="card-title"
+              style={{ margin: 0, color: "var(--gold)" }}
+            >
+              Wealth Intelligence
+            </span>
+          </div>
+
+          {/* Top metrics row */}
+          <div className="grid-4 section-gap" style={{ marginBottom: 16 }}>
+            {/* FIRE Ratio */}
+            <div
+              style={{
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                }}
+              >
+                <Flame
+                  size={13}
+                  color={fire >= 25 ? "var(--green)" : "var(--gold)"}
+                />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  FIRE Ratio
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 22,
+                  color:
+                    fire >= 25
+                      ? "var(--green)"
+                      : fire >= 10
+                        ? "var(--gold)"
+                        : "var(--red)",
+                }}
+              >
+                {fire.toFixed(1)}×
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {fire >= 25
+                  ? "FIRE ready! 🎉"
+                  : fire >= 10
+                    ? "Building momentum"
+                    : "Early stages — keep investing"}
+              </div>
+            </div>
+
+            {/* Retirement readiness */}
+            <div
+              style={{
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                }}
+              >
+                <Target
+                  size={13}
+                  color={retireOnTrack ? "var(--green)" : "var(--red)"}
+                />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Retirement @ {retireAge}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 22,
+                  color: retireOnTrack ? "var(--green)" : "var(--gold)",
+                }}
+              >
+                {retireOnTrack ? "On Track ✓" : fmtCr(Math.round(retireGap))}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {retireOnTrack
+                  ? `${fmtCr(Math.round(corpusAtRetire))} projected`
+                  : `Need +${fmt(Math.round(additionalSIPNeeded))}/mo SIP`}
+              </div>
+            </div>
+
+            {/* Tax savings opportunity */}
+            <div
+              style={{
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                }}
+              >
+                <PiggyBank
+                  size={13}
+                  color={unused80c > 0 ? "var(--gold)" : "var(--green)"}
+                />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  80C Unused
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 22,
+                  color: unused80c > 0 ? "var(--gold)" : "var(--green)",
+                }}
+              >
+                {unused80c > 0 ? fmt(unused80c) : "Maxed ✓"}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {unused80c > 0
+                  ? `Save ~${fmt(taxSavable)} in tax`
+                  : "Full 80C utilized"}
+              </div>
+            </div>
+
+            {/* Insurance cover */}
+            <div
+              style={{
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 6,
+                }}
+              >
+                <ShieldCheck
+                  size={13}
+                  color={insAdequacy.adequate ? "var(--green)" : "var(--red)"}
+                />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Life Cover
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 22,
+                  color: insAdequacy.adequate ? "var(--green)" : "var(--red)",
+                }}
+              >
+                {insAdequacy.currentCover > 0
+                  ? fmtCr(insAdequacy.currentCover)
+                  : "None"}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {insAdequacy.adequate
+                  ? "Adequate coverage"
+                  : insAdequacy.gap > 0
+                    ? `Gap: ${fmtCr(insAdequacy.gap)}`
+                    : "Add term insurance"}
+              </div>
+            </div>
+          </div>
+
+          {/* Asset allocation bar */}
+          {allocation.total > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  marginBottom: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Asset Allocation</span>
+                <span style={{ color: "var(--text-muted)" }}>
+                  Corpus: {fmtCr(allocation.total)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  height: 10,
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  gap: 2,
+                }}
+              >
+                {["equity", "debt", "gold", "other"]
+                  .filter((k) => allocation[k] > 0)
+                  .map((k) => (
+                    <div
+                      key={k}
+                      style={{
+                        flex: allocation[k],
+                        background: allocColors[k],
+                        borderRadius: 3,
+                      }}
+                      title={`${k}: ${allocation[k]}%`}
+                    />
+                  ))}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  marginTop: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                {["equity", "debt", "gold", "other"]
+                  .filter((k) => allocation[k] > 0)
+                  .map((k) => (
+                    <span
+                      key={k}
+                      style={{ fontSize: 11, color: "var(--text-muted)" }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 8,
+                          height: 8,
+                          borderRadius: 2,
+                          background: allocColors[k],
+                          marginRight: 4,
+                          verticalAlign: "middle",
+                        }}
+                      />
+                      {k.charAt(0).toUpperCase() + k.slice(1)} {allocation[k]}%
+                    </span>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Portfolio Returns */}
+          {gainLoss.totalInvested > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "10px 14px",
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  Portfolio Returns
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    marginTop: 2,
+                  }}
+                >
+                  Invested {fmtCr(gainLoss.totalInvested)} → Current{" "}
+                  {fmtCr(gainLoss.totalCurrent)}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 20,
+                    color:
+                      gainLoss.absoluteGain >= 0
+                        ? "var(--green)"
+                        : "var(--red)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  {gainLoss.absoluteGain >= 0 ? "+" : ""}
+                  {fmtCr(Math.round(gainLoss.absoluteGain))}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color:
+                      gainLoss.percentGain >= 0 ? "var(--green)" : "var(--red)",
+                  }}
+                >
+                  {gainLoss.percentGain >= 0 ? "+" : ""}
+                  {gainLoss.percentGain.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Smart recommendations */}
+          {tips.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  marginBottom: 8,
+                }}
+              >
+                Smart Actions
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {tips
+                  .sort((a, b) => a.priority - b.priority)
+                  .slice(0, 4)
+                  .map((tip, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 12px",
+                        background: "rgba(201,168,76,0.06)",
+                        border: "1px solid rgba(201,168,76,0.12)",
+                        borderRadius: 8,
+                        fontSize: 13,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>
+                        {tip.icon}
+                      </span>
+                      <span>{tip.text}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Retirement projection detail */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: "10px 14px",
+              background: "var(--bg-card2)",
+              borderRadius: "var(--radius)",
+              fontSize: 12,
+              color: "var(--text-muted)",
+              lineHeight: 1.8,
+            }}
+          >
+            <strong style={{ color: "var(--text-secondary)" }}>
+              Retirement Math
+            </strong>
+            <br />
+            Current expenses: {fmt(monthlyExpenseToday)}/mo →{" "}
+            {fmt(
+              Math.round(monthlyExpenseToday * Math.pow(1.06, yearsToRetire)),
+            )}
+            /mo at age {retireAge} (6% inflation)
+            <br />
+            Corpus needed: {fmtCr(Math.round(corpusNeeded))} · You'll have:{" "}
+            {fmtCr(Math.round(corpusAtRetire))} at 12% returns
+            <br />
+            Current invested corpus: {fmtCr(corpus)} · Monthly SIPs:{" "}
+            {fmt(hInvest)}
+          </div>
+        </div>
+      );
+    })(),
+
+    marketpulse: (
+      <div
+        className="card"
+        style={{ border: "1px solid rgba(255,255,255,0.08)" }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Activity size={18} color="#5b9cf6" />
+            <span
+              className="card-title"
+              style={{ margin: 0, color: "#5b9cf6" }}
+            >
+              Market Pulse
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {lastSync && (
+              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                Synced{" "}
+                {lastSync.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+            <button
+              className="btn-ghost"
+              onClick={refreshMarket}
+              disabled={mktLoading}
+              style={{ padding: "2px 6px", opacity: mktLoading ? 0.5 : 1 }}
+              title="Refresh market data"
+              aria-label="Refresh market data"
+            >
+              <RefreshCw size={13} className={mktLoading ? "spin" : ""} />
+            </button>
+          </div>
+        </div>
+
+        {/* Portfolio overview row */}
+        <div className="grid-4 section-gap" style={{ marginBottom: 16 }}>
+          {/* Total Portfolio */}
+          <div
+            style={{
+              background: "var(--bg-card2)",
+              borderRadius: "var(--radius)",
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginBottom: 4,
+              }}
+            >
+              Portfolio Value
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 22,
+                color: "var(--text-primary)",
+              }}
+            >
+              {fmtCr(gainLoss.totalCurrent)}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              Invested: {fmtCr(gainLoss.totalInvested)}
+            </div>
+          </div>
+
+          {/* Total Gain/Loss */}
+          <div
+            style={{
+              background: "var(--bg-card2)",
+              borderRadius: "var(--radius)",
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginBottom: 4,
+              }}
+            >
+              Total Returns
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 22,
+                color:
+                  gainLoss.absoluteGain >= 0 ? "var(--green)" : "var(--red)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              {gainLoss.absoluteGain >= 0 ? (
+                <TrendingUp size={16} />
+              ) : (
+                <TrendingDown size={16} />
+              )}
+              {fmtCr(Math.abs(Math.round(gainLoss.absoluteGain)))}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color:
+                  gainLoss.percentGain >= 0 ? "var(--green)" : "var(--red)",
+              }}
+            >
+              {gainLoss.percentGain >= 0 ? "+" : ""}
+              {gainLoss.percentGain.toFixed(1)}% overall
+            </div>
+          </div>
+
+          {/* MF NAV Coverage */}
+          <div
+            style={{
+              background: "var(--bg-card2)",
+              borderRadius: "var(--radius)",
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginBottom: 4,
+              }}
+            >
+              Live MF NAVs
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 22,
+                color:
+                  portfolio.mfLiveCount > 0 ? "#5b9cf6" : "var(--text-muted)",
+              }}
+            >
+              {portfolio.mfLiveCount}/{portfolio.mfTotalCount}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              {portfolio.mfLiveCount > 0
+                ? "schemes with live NAV"
+                : "Add scheme codes to track"}
+            </div>
+          </div>
+
+          {/* Gold Price */}
+          <div
+            style={{
+              background: "var(--bg-card2)",
+              borderRadius: "var(--radius)",
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginBottom: 4,
+              }}
+            >
+              Gold Spot
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: 22,
+                color: "var(--gold)",
+              }}
+            >
+              {goldPrice
+                ? `₹${goldPrice.pricePerGram.toLocaleString("en-IN")}`
+                : "—"}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              {goldPrice ? `per gram · ${goldPrice.date}` : "Fetching…"}
+            </div>
+          </div>
+        </div>
+
+        {/* Per-MF NAV table */}
+        {navMap.size > 0 &&
+          (() => {
+            const mfInvs = allInv.filter(
+              (inv) =>
+                inv.type === "Mutual Fund" &&
+                inv.schemeCode &&
+                navMap.has(inv.schemeCode),
+            );
+            if (!mfInvs.length) return null;
+            return (
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    marginBottom: 8,
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Mutual Fund NAVs</span>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {mfInvs.length} fund{mfInvs.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    background: "var(--bg-card2)",
+                    borderRadius: "var(--radius)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {mfInvs.map((inv) => {
+                    const nd = navMap.get(inv.schemeCode);
+                    const invested = Number(inv.totalInvested) || 0;
+                    const current = inv.existingCorpus || 0;
+                    const gain = current - invested;
+                    const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+                    return (
+                      <div
+                        key={inv.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 12px",
+                          borderBottom: "1px solid var(--border)",
+                          fontSize: 12,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              color: "var(--text-primary)",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {inv.name}
+                          </div>
+                          <div
+                            style={{ color: "var(--text-muted)", fontSize: 10 }}
+                          >
+                            NAV ₹{nd.nav} · {nd.date}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            textAlign: "right",
+                            flexShrink: 0,
+                            marginLeft: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: "var(--text-primary)",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {fmt(current)}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: gain >= 0 ? "var(--green)" : "var(--red)",
+                            }}
+                          >
+                            {gain >= 0 ? "+" : ""}
+                            {fmt(Math.round(gain))} ({gainPct >= 0 ? "+" : ""}
+                            {gainPct.toFixed(1)}%)
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
       </div>
     ),
 

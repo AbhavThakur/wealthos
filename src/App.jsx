@@ -1,32 +1,112 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense, Component } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import Budget, { HouseholdBudget } from "./pages/Budget";
-import Investments, { HouseholdInvestments } from "./pages/Investments";
-import Goals from "./pages/Goals";
-import NetWorth from "./pages/NetWorth";
-import { BudgetAlerts } from "./pages/Recurring";
-import {
-  Debts,
-  TaxPlanner,
-  Settings,
-  HouseholdDebts,
-  CashFlow,
-  HouseholdCashFlow,
-} from "./pages/OtherPages";
-import {
-  Insurance,
-  HouseholdInsurance,
-  Subscriptions,
-  HouseholdSubscriptions,
-} from "./pages/MorePages";
 import { exportAllData } from "./utils/exportData";
 import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
 import useIdleTimer from "./hooks/useIdleTimer";
+import AIAdvisor from "./components/AIAdvisor";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
+
+// ── Error boundary to catch runtime crashes ─────────────────────────────────
+class PageErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: "2rem", color: "var(--red)" }}>
+          <h3>Something went wrong</h3>
+          <pre
+            style={{
+              fontSize: 12,
+              whiteSpace: "pre-wrap",
+              marginTop: 8,
+              color: "var(--text-secondary)",
+            }}
+          >
+            {this.state.error.message}
+            {"\n"}
+            {this.state.error.stack}
+          </pre>
+          <button
+            className="btn-ghost"
+            style={{ marginTop: 12 }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Lazy-loaded page components (route-level code splitting) ────────────────
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Budget = lazy(() =>
+  import("./pages/Budget").then((m) => ({ default: m.default })),
+);
+const HouseholdBudget = lazy(() =>
+  import("./pages/Budget").then((m) => ({ default: m.HouseholdBudget })),
+);
+const Investments = lazy(() => import("./pages/Investments"));
+const HouseholdInvestments = lazy(() =>
+  import("./pages/Investments").then((m) => ({
+    default: m.HouseholdInvestments,
+  })),
+);
+const Goals = lazy(() => import("./pages/Goals"));
+const NetWorth = lazy(() => import("./pages/NetWorth"));
+const BudgetAlerts = lazy(() =>
+  import("./pages/Recurring").then((m) => ({ default: m.BudgetAlerts })),
+);
+const Debts = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({ default: m.Debts })),
+);
+const TaxPlanner = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({ default: m.TaxPlanner })),
+);
+const Settings = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({ default: m.Settings })),
+);
+const HouseholdDebts = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({ default: m.HouseholdDebts })),
+);
+const CashFlow = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({ default: m.CashFlow })),
+);
+const HouseholdCashFlow = lazy(() =>
+  import("./pages/OtherPages").then((m) => ({
+    default: m.HouseholdCashFlow,
+  })),
+);
+const Insurance = lazy(() =>
+  import("./pages/MorePages").then((m) => ({ default: m.Insurance })),
+);
+const HouseholdInsurance = lazy(() =>
+  import("./pages/MorePages").then((m) => ({
+    default: m.HouseholdInsurance,
+  })),
+);
+const Subscriptions = lazy(() =>
+  import("./pages/MorePages").then((m) => ({ default: m.Subscriptions })),
+);
+const HouseholdSubscriptions = lazy(() =>
+  import("./pages/MorePages").then((m) => ({
+    default: m.HouseholdSubscriptions,
+  })),
+);
 
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -80,8 +160,43 @@ function LoadingScreen() {
 }
 
 function LoadingSkeleton() {
+  const online = useOnlineStatus();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div style={{ padding: "2rem", maxWidth: 1100 }}>
+      {(!online || slow) && (
+        <div
+          style={{
+            background: online ? "var(--gold-dim)" : "var(--red-dim, #3a2020)",
+            border: `1px solid ${online ? "var(--gold-border)" : "var(--red, #e55)"}`,
+            borderRadius: "var(--radius)",
+            padding: "12px 16px",
+            marginBottom: "1.5rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>
+            {!online
+              ? "📡 You're offline. Cached data will load if available."
+              : "⏳ Loading is taking longer than usual. Your connection may be slow."}
+          </span>
+          <button
+            className="btn-ghost"
+            onClick={() => window.location.reload()}
+            style={{ fontSize: 12, padding: "4px 12px", whiteSpace: "nowrap" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div
         className="skeleton"
         style={{ width: 200, height: 28, marginBottom: 8 }}
@@ -116,6 +231,51 @@ function LoadingSkeleton() {
           marginTop: "1.25rem",
         }}
       />
+    </div>
+  );
+}
+
+function OfflineBanner() {
+  const online = useOnlineStatus();
+  const [showReconnected, setShowReconnected] = useState(false);
+  const [wasOffline, setWasOffline] = useState(false);
+
+  useEffect(() => {
+    if (!online) {
+      setWasOffline(true);
+    } else if (wasOffline) {
+      setShowReconnected(true);
+      const t = setTimeout(() => {
+        setShowReconnected(false);
+        setWasOffline(false);
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [online, wasOffline]);
+
+  if (online && !showReconnected) return null;
+
+  return (
+    <div
+      style={{
+        background: online ? "#1a3a1a" : "#3a2020",
+        border: `1px solid ${online ? "#4a4" : "#e55"}`,
+        borderRadius: "var(--radius)",
+        padding: "8px 16px",
+        margin: "0 0 8px 0",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 13,
+        color: online ? "#8f8" : "#faa",
+        transition: "all 0.3s ease",
+      }}
+    >
+      <span>
+        {online
+          ? "✓ Back online — changes will sync"
+          : "📡 You're offline — changes will sync when reconnected"}
+      </span>
     </div>
   );
 }
@@ -454,15 +614,24 @@ function AppInner() {
         personNames={personNames}
       />
       <div className="app-layout">
+        <OfflineBanner />
         <main
           className="main-content"
           style={{ flex: 1, padding: "2rem", maxWidth: 1100, overflow: "auto" }}
         >
           <div key={page} className="page-enter">
-            {pageEl}
+            <PageErrorBoundary resetKey={`${page}-${profile}`}>
+              <Suspense fallback={<LoadingSkeleton />}>{pageEl}</Suspense>
+            </PageErrorBoundary>
           </div>
         </main>
       </div>
+      <AIAdvisor
+        abhav={abhav}
+        aanya={aanya}
+        shared={shared}
+        profile={profile}
+      />
     </>
   );
 }

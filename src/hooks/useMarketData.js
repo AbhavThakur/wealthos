@@ -1,0 +1,60 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  fetchAllMFNavs,
+  fetchGoldPrice,
+  computeLivePortfolio,
+  computePortfolioGainLoss,
+} from "../utils/marketData";
+
+const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 min
+
+/**
+ * Hook that auto-fetches live market data for all investments.
+ *
+ * @param {Array} investments - combined investments array (all persons)
+ * @returns {{ navMap, goldPrice, portfolio, gainLoss, loading, lastSync, refresh }}
+ */
+export function useMarketData(investments) {
+  const [navMap, setNavMap] = useState(new Map());
+  const [goldPrice, setGoldPrice] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const timerRef = useRef(null);
+
+  const refresh = useCallback(async () => {
+    if (!investments?.length) return;
+    setLoading(true);
+    try {
+      const [navs, gold] = await Promise.all([
+        fetchAllMFNavs(investments),
+        fetchGoldPrice(),
+      ]);
+      setNavMap(navs);
+      if (gold) setGoldPrice(gold);
+      setLastSync(new Date());
+    } finally {
+      setLoading(false);
+    }
+  }, [investments]);
+
+  // Auto-fetch on mount and when investments change
+  useEffect(() => {
+    refresh();
+    timerRef.current = setInterval(refresh, REFRESH_INTERVAL);
+    return () => clearInterval(timerRef.current);
+  }, [refresh]);
+
+  // Computed values
+  const portfolio = computeLivePortfolio(investments, navMap);
+  const gainLoss = computePortfolioGainLoss(investments);
+
+  return {
+    navMap,
+    goldPrice,
+    portfolio,
+    gainLoss,
+    loading,
+    lastSync,
+    refresh,
+  };
+}

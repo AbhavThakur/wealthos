@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
-import { createPortal } from "react-dom";
 import {
   AreaChart,
   Area,
@@ -34,13 +33,26 @@ import {
   Edit3,
   Check,
   X,
-  Info,
   Download,
   Pause,
   Play,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
+import { fetchAllMFNavs } from "../utils/marketData";
+import {
+  INVESTMENT_APPS,
+  BANK_LIST,
+  ordinalSuffix,
+  isFD,
+  hasSIPFreq,
+  hasDeductionDate,
+  hasInvestmentApp,
+  DEDUCTION_DAYS,
+  WEEKDAYS,
+  computeInvRow,
+  getInvested,
+} from "./investmentHelpers";
 
 // ─── mfapi.in helpers ────────────────────────────────────────────────────────
 async function mfSearch(query) {
@@ -70,178 +82,10 @@ async function mfLatestNAV(schemeCode) {
   }
 }
 
-// Reusable info modal — uses portal so CSS transforms on parents don't clip the overlay
-function InfoModal({ title, children }) {
-  const [open, setOpen] = useState(false);
-  const overlay = open
-    ? createPortal(
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.72)",
-            zIndex: 99999,
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            padding: "max(24px, 5vh) 24px 24px",
-            overflowY: "auto",
-          }}
-          onClick={() => setOpen(false)}
-        >
-          <div
-            style={{
-              background: "#1a1a24",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: "24px 28px",
-              maxWidth: 440,
-              width: "100%",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.7)",
-              color: "#eeeae4",
-              maxHeight: "85dvh",
-              overflowY: "auto",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 15, color: "#eeeae4" }}>
-                {title}
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                style={{
-                  background: "rgba(255,255,255,0.07)",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "#aaa",
-                  padding: "4px 6px",
-                  borderRadius: 6,
-                  lineHeight: 1,
-                  display: "flex",
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: "#b0aab8",
-                lineHeight: 1.8,
-              }}
-            >
-              {children}
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-  return (
-    <>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          lineHeight: 1,
-          color: "#888",
-          display: "inline-flex",
-          alignItems: "center",
-          verticalAlign: "middle",
-          marginLeft: 5,
-        }}
-        title={`About ${title}`}
-        aria-label={`Info about ${title}`}
-      >
-        <Info size={13} />
-      </button>
-      {overlay}
-    </>
-  );
-}
+import { InfoModal } from "../components/InfoModal";
+export { InfoModal } from "../components/InfoModal";
 
-const INVESTMENT_APPS = [
-  "Zerodha / Kite",
-  "Groww",
-  "Jio Finance",
-  "myCams",
-  "smallcase",
-  "Coin",
-];
-
-const BANK_LIST = [
-  // Big private banks
-  "HDFC Bank",
-  "ICICI Bank",
-  "Axis Bank",
-  "Kotak Mahindra Bank",
-  "Yes Bank",
-  "IDFC First Bank",
-  "IndusInd Bank",
-  "Federal Bank",
-  "South Indian Bank",
-  "RBL Bank",
-  "Bandhan Bank",
-  // Public sector banks
-  "State Bank of India",
-  "Bank of Baroda",
-  "Punjab National Bank",
-  "Canara Bank",
-  "Union Bank of India",
-  "Bank of India",
-  "Central Bank of India",
-  "Indian Bank",
-  "UCO Bank",
-  "Bank of Maharashtra",
-  "Indian Overseas Bank",
-  // Small finance banks
-  "AU Small Finance Bank",
-  "Equitas Small Finance Bank",
-  "Jana Small Finance Bank",
-  "Ujjivan Small Finance Bank",
-  "ESAF Small Finance Bank",
-  // NBFCs
-  "Bajaj Finance",
-  "Tata Capital",
-];
-
-function ordinalSuffix(n) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-
-// Field visibility helpers by investment type
-const isFD = (t) => t === "FD";
-// Weekly/Yearly SIP: market instruments + ULIP
-const hasSIPFreq = (t) => ["Mutual Fund", "Stocks", "Gold", "ULIP"].includes(t);
-// Deduction date: auto-debit SIPs and NPS/ULIP (not FD, not one-time, not weekly)
-const hasDeductionDate = (t, freq) =>
-  freq !== "onetime" &&
-  freq !== "weekly" &&
-  ["Mutual Fund", "Stocks", "Gold", "NPS", "ULIP"].includes(t);
-// Investment app (Zerodha, Groww etc.): market instruments only
-const hasInvestmentApp = (t) => ["Mutual Fund", "Stocks", "Gold"].includes(t);
-
-// Precomputed arrays used in multiple form dropdowns
-const DEDUCTION_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
-const SIPCard = memo(function SIPCard({
+export const SIPCard = memo(function SIPCard({
   inv,
   onUpdate,
   onDelete,
@@ -345,11 +189,9 @@ const SIPCard = memo(function SIPCard({
       : null;
 
   // Actual performance
-  const totalInvested = isFDInv
-    ? inv.amount || 0
-    : isOneTimeInv
-      ? inv.amount || 0 // cost basis = purchase price
-      : Number(inv.totalInvested) || 0;
+  const totalInvested = getInvested(inv);
+  const isAutoInvested =
+    !isFDInv && !isOneTimeInv && !(Number(inv.totalInvested) > 0);
   const actualGain = totalInvested > 0 ? currentVal - totalInvested : null;
   const actualReturnPct =
     totalInvested > 0
@@ -457,7 +299,7 @@ const SIPCard = memo(function SIPCard({
         ? sipCorpus(effMonthly, inv.returnPct || 0, elapsedYrs)
         : inv.existingCorpus || 0;
     const actualBase = inv.existingCorpus || 0;
-    const totalInv = Number(inv.totalInvested) || 0;
+    const totalInv = getInvested(inv);
     const pts = [
       {
         year: "Now",
@@ -498,7 +340,7 @@ const SIPCard = memo(function SIPCard({
     !isFDInv && !isOneTimeInv
       ? Array.from({ length: projYears }, (_, i) => {
           const y = i + 1;
-          const totalInv0 = Number(inv.totalInvested) || 0;
+          const totalInv0 = getInvested(inv);
           const totalInvY = Math.round(totalInv0 + effMonthly * 12 * y);
           const corpusY = Math.round(
             totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, y),
@@ -518,6 +360,7 @@ const SIPCard = memo(function SIPCard({
       returnPct: Number(form.returnPct),
       existingCorpus: isFD(form.type) ? 0 : Number(form.existingCorpus),
       deductionDate: form.deductionDate ? Number(form.deductionDate) : "",
+      units: form.units ? Number(form.units) : 0,
     });
     setEditing(false);
   }, [form, onUpdate]);
@@ -600,9 +443,20 @@ const SIPCard = memo(function SIPCard({
                 ? [
                     {
                       key: "totalInvested",
-                      label: "Total invested so far (₹)",
+                      label: "Total invested override (₹)",
                       type: "number",
-                      placeholder: "Your actual principal / cost basis",
+                      placeholder: "Auto-calculated if empty",
+                    },
+                  ]
+                : []),
+              ...(form.type === "Mutual Fund"
+                ? [
+                    {
+                      key: "units",
+                      label: "Units held",
+                      type: "number",
+                      step: 0.001,
+                      placeholder: "From your app — enables auto valuation",
                     },
                   ]
                 : []),
@@ -921,9 +775,39 @@ const SIPCard = memo(function SIPCard({
                   const result = await mfLatestNAV(form.schemeCode);
                   setNavLoading(false);
                   if (result) {
-                    setForm((f) => ({ ...f, existingCorpus: result.nav }));
+                    setForm((f) => {
+                      const updated = {
+                        ...f,
+                        latestNav: result.nav,
+                        navDate: result.date,
+                      };
+                      const units =
+                        Number(f.units) > 0
+                          ? f.units
+                          : Number(f.existingCorpus) > 0 &&
+                              Number(f.latestNav) > 0
+                            ? Math.round(
+                                (f.existingCorpus / f.latestNav) * 10000,
+                              ) / 10000
+                            : 0;
+                      if (units > 0) {
+                        updated.units = units;
+                        updated.existingCorpus =
+                          Math.round(units * result.nav * 100) / 100;
+                      }
+                      return updated;
+                    });
+                    const derivedUnits =
+                      Number(form.units) > 0
+                        ? form.units
+                        : Number(form.existingCorpus) > 0 &&
+                            Number(form.latestNav) > 0
+                          ? Math.round(
+                              (form.existingCorpus / form.latestNav) * 10000,
+                            ) / 10000
+                          : 0;
                     setNavMsg(
-                      `\u2713 NAV \u20b9${result.nav} as of ${result.date}`,
+                      `\u2713 NAV \u20b9${result.nav} as of ${result.date}${derivedUnits > 0 ? ` \u2192 Value \u20b9${Math.round(derivedUnits * result.nav)}` : ""}`,
                     );
                   } else {
                     setNavMsg("Not found — check scheme code");
@@ -1099,6 +983,18 @@ const SIPCard = memo(function SIPCard({
                       }}
                     >
                       Matures {inv.endDate}
+                    </span>
+                  )}
+                  {inv.latestNav && inv.navDate && (
+                    <span
+                      className="tag"
+                      style={{
+                        background: "rgba(76,175,130,0.1)",
+                        color: "var(--green)",
+                      }}
+                    >
+                      NAV ₹{inv.latestNav} · {inv.navDate}
+                      {Number(inv.units) > 0 && ` · ${inv.units} units`}
                     </span>
                   )}
                 </div>
@@ -1419,10 +1315,24 @@ const SIPCard = memo(function SIPCard({
                 }}
               >
                 Actual performance
+                {isAutoInvested && (
+                  <span
+                    style={{
+                      textTransform: "none",
+                      letterSpacing: 0,
+                      fontWeight: 400,
+                      marginLeft: 6,
+                      opacity: 0.6,
+                    }}
+                  >
+                    (invested is estimated — enter exact from app for accuracy)
+                  </span>
+                )}
               </span>
               <span style={{ color: "var(--text-secondary)" }}>
                 Invested:{" "}
                 <strong style={{ color: "var(--text-primary, #fff)" }}>
+                  {isAutoInvested && "~"}
                   {fmtCr(totalInvested)}
                 </strong>
               </span>
@@ -2528,7 +2438,7 @@ function computeHealthData(rows) {
 }
 
 // ─── Portfolio overview charts + health panel ────────────────────────────────
-function PortfolioCharts({ rows, isHousehold }) {
+export function PortfolioCharts({ rows, isHousehold }) {
   const { personNames } = useData();
   const [tab, setTab] = useState("snapshot"); // "snapshot" | "health"
 
@@ -3146,7 +3056,7 @@ function PortfolioCharts({ rows, isHousehold }) {
 }
 
 // ─── Export menu ────────────────────────────────────────────────────────────
-function ExportMenu({ rows, rawData, totals, title, filename }) {
+export function ExportMenu({ rows, rawData, totals, title, filename }) {
   const { personNames } = useData();
   const [open, setOpen] = useState(false);
 
@@ -3359,53 +3269,6 @@ function ExportMenu({ rows, rawData, totals, title, filename }) {
   );
 }
 
-// Shared row-computation helper (used in both single-person and household views)
-function computeInvRow(x) {
-  const elapsedYrs =
-    (isFD(x.type) || x.frequency === "onetime") && x.startDate
-      ? Math.max(
-          0,
-          (new Date() - new Date(x.startDate)) / (365.25 * 24 * 3600 * 1000),
-        )
-      : 0;
-  const cur = isFD(x.type)
-    ? lumpCorpus(x.amount || 0, x.returnPct || 0, elapsedYrs)
-    : x.frequency === "onetime"
-      ? x.existingCorpus > 0
-        ? x.existingCorpus
-        : lumpCorpus(x.amount || 0, x.returnPct || 0, elapsedYrs)
-      : x.existingCorpus || 0;
-  const invested = isFD(x.type)
-    ? x.amount || 0
-    : x.frequency === "onetime"
-      ? x.amount || 0
-      : Number(x.totalInvested) || 0;
-  const monthly =
-    !isFD(x.type) && x.frequency !== "onetime"
-      ? freqToMonthly(x.amount, x.frequency)
-      : 0;
-  const yr20 = isFD(x.type)
-    ? null
-    : x.frequency === "onetime"
-      ? lumpCorpus(cur, x.returnPct || 0, 20)
-      : totalCorpus(
-          x.existingCorpus || 0,
-          freqToMonthly(x.amount, x.frequency),
-          x.returnPct || 0,
-          20,
-        );
-  return {
-    name: x.name,
-    type: x.type,
-    frequency: x.frequency,
-    capCategory: x.capCategory || "",
-    cur,
-    invested,
-    monthly,
-    yr20,
-  };
-}
-
 export default function Investments({
   data,
   personName,
@@ -3450,6 +3313,7 @@ export default function Investments({
     deductionDate: "",
     deductionDay: "",
     totalInvested: "",
+    units: "",
     capCategory: "",
     schemeCode: "",
   });
@@ -3458,6 +3322,8 @@ export default function Investments({
   const [showMfDropdown, setShowMfDropdown] = useState(false);
   const [navFetching, setNavFetching] = useState(false);
   const [navFetchMsg, setNavFetchMsg] = useState("");
+  const [batchSyncing, setBatchSyncing] = useState(false);
+  const [batchSyncResult, setBatchSyncResult] = useState(null);
   useEffect(() => {
     if (
       newInv.type !== "Mutual Fund" ||
@@ -3476,6 +3342,57 @@ export default function Investments({
     return () => clearTimeout(timer);
   }, [newInv.name, newInv.type]);
 
+  // Auto-sync MF NAVs on page load (once per session, silently in background)
+  useEffect(() => {
+    const hasMFs = investments.some(
+      (x) => x.type === "Mutual Fund" && x.schemeCode,
+    );
+    if (!hasMFs) return;
+    // Only auto-sync once per session
+    const key = "wos_nav_auto_synced";
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+
+    let cancelled = false;
+    (async () => {
+      setBatchSyncing(true);
+      const navs = await fetchAllMFNavs(investments);
+      if (cancelled || !navs.size) {
+        setBatchSyncing(false);
+        return;
+      }
+      let updated = 0;
+      const newList = investments.map((inv) => {
+        if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
+        const nd = navs.get(inv.schemeCode);
+        if (!nd) return inv;
+        updated++;
+        const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
+        // Auto-derive units from existing corpus if units not set
+        const units =
+          Number(inv.units) > 0
+            ? inv.units
+            : Number(inv.existingCorpus) > 0 && Number(inv.latestNav) > 0
+              ? Math.round((inv.existingCorpus / inv.latestNav) * 10000) / 10000
+              : 0;
+        if (units > 0) {
+          patch.units = units;
+          patch.existingCorpus = Math.round(units * nd.nav * 100) / 100;
+        }
+        return patch;
+      });
+      if (updated > 0) updatePerson("investments", newList);
+      setBatchSyncResult(
+        `Auto-synced ${updated} NAV${updated !== 1 ? "s" : ""}`,
+      );
+      setBatchSyncing(false);
+      setTimeout(() => setBatchSyncResult(null), 4000);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const add = () => {
     if (!newInv.name || !newInv.amount) return;
     const updated = [
@@ -3488,6 +3405,7 @@ export default function Investments({
         existingCorpus: Number(newInv.existingCorpus),
         deductionDate: newInv.deductionDate ? Number(newInv.deductionDate) : "",
         totalInvested: newInv.totalInvested ? Number(newInv.totalInvested) : 0,
+        units: newInv.units ? Number(newInv.units) : 0,
       },
     ];
     updatePerson("investments", updated);
@@ -3505,6 +3423,7 @@ export default function Investments({
       deductionDate: "",
       deductionDay: "",
       totalInvested: "",
+      units: "",
       capCategory: "",
       schemeCode: "",
     });
@@ -3611,7 +3530,7 @@ export default function Investments({
               : lumpCorpus(x.amount || 0, x.returnPct || 0, _yrs)),
         };
       }
-      const ti = Number(x.totalInvested) || 0;
+      const ti = getInvested(x);
       if (ti > 0)
         return {
           totalCostBasis: acc.totalCostBasis + ti,
@@ -3649,11 +3568,75 @@ export default function Investments({
           color: "var(--text-secondary)",
           fontSize: 13,
           marginBottom: "1.25rem",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
         }}
       >
-        Current value = what you enter from your app. Projections compound
-        forward from today.
+        <span>
+          Invested auto-updates from SIP start date. Current value auto-syncs
+          from live MF NAVs.
+        </span>
+        {investments.some((x) => x.type === "Mutual Fund" && x.schemeCode) && (
+          <button
+            className="btn-ghost"
+            disabled={batchSyncing}
+            onClick={async () => {
+              setBatchSyncing(true);
+              setBatchSyncResult(null);
+              const navs = await fetchAllMFNavs(investments);
+              let updated = 0;
+              const newList = investments.map((inv) => {
+                if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
+                const nd = navs.get(inv.schemeCode);
+                if (!nd) return inv;
+                updated++;
+                const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
+                const units =
+                  Number(inv.units) > 0
+                    ? inv.units
+                    : Number(inv.existingCorpus) > 0 &&
+                        Number(inv.latestNav) > 0
+                      ? Math.round(
+                          (inv.existingCorpus / inv.latestNav) * 10000,
+                        ) / 10000
+                      : 0;
+                if (units > 0) {
+                  patch.units = units;
+                  patch.existingCorpus = Math.round(units * nd.nav * 100) / 100;
+                }
+                return patch;
+              });
+              if (updated > 0) updatePerson("investments", newList);
+              setBatchSyncResult(
+                `${updated} NAV${updated !== 1 ? "s" : ""} synced`,
+              );
+              setBatchSyncing(false);
+              setTimeout(() => setBatchSyncResult(null), 4000);
+            }}
+            style={{
+              whiteSpace: "nowrap",
+              opacity: batchSyncing ? 0.5 : 1,
+              fontSize: 12,
+              padding: "4px 10px",
+            }}
+          >
+            {batchSyncing ? "Syncing…" : "⟳ Sync All MF NAVs"}
+          </button>
+        )}
       </div>
+      {batchSyncResult && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--green)",
+            marginBottom: 12,
+            marginTop: -8,
+          }}
+        >
+          ✓ {batchSyncResult}
+        </div>
+      )}
 
       <div className="grid-4 section-gap">
         <div className="metric-card">
@@ -4714,11 +4697,11 @@ export default function Investments({
                     marginBottom: 4,
                   }}
                 >
-                  Total invested so far (\u20b9)
+                  Total invested override (\u20b9)
                 </label>
                 <input
                   type="number"
-                  placeholder="Your actual principal / cost basis"
+                  placeholder="Auto-calculated if empty"
                   value={newInv.totalInvested}
                   onChange={(e) =>
                     setNewInv({ ...newInv, totalInvested: e.target.value })
@@ -4735,6 +4718,29 @@ export default function Investments({
                     = {fmt(Number(newInv.totalInvested))}
                   </div>
                 )}
+              </div>
+            )}
+            {newInv.type === "Mutual Fund" && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  Units held
+                </label>
+                <input
+                  type="number"
+                  step="0.001"
+                  placeholder="From your app — enables auto valuation"
+                  value={newInv.units}
+                  onChange={(e) =>
+                    setNewInv({ ...newInv, units: e.target.value })
+                  }
+                />
               </div>
             )}
           </div>
@@ -4908,1436 +4914,5 @@ export default function Investments({
   );
 }
 
-export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
-  const { personNames } = useData();
-  const [filterPerson, setFilterPerson] = useState("All");
-  const [filterApp, setFilterApp] = useState("All");
-  const [filterBank, setFilterBank] = useState("All");
-  const [filterType, setFilterType] = useState("All");
-  const [showAdd, setShowAdd] = useState(false);
-  const [addFor, setAddFor] = useState("abhav");
-  const emptyNew = {
-    name: "",
-    amount: "",
-    returnPct: 12,
-    existingCorpus: 0,
-    type: "Mutual Fund",
-    frequency: "monthly",
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: "",
-    maturityDate: "",
-    appName: "",
-    bankName: "",
-    deductionDate: "",
-    deductionDay: "",
-    totalInvested: "",
-    capCategory: "",
-  };
-  const [newInv, setNewInv] = useState(emptyNew);
-
-  const abhavInvs = (abhav?.investments || []).map((x) => ({
-    ...x,
-    _owner: "abhav",
-  }));
-  const aanyaInvs = (aanya?.investments || []).map((x) => ({
-    ...x,
-    _owner: "aanya",
-  }));
-  const allInvestments = [...abhavInvs, ...aanyaInvs];
-  const allApps = [
-    ...new Set(allInvestments.map((x) => x.appName).filter(Boolean)),
-  ];
-  const allBanks = [
-    ...new Set(allInvestments.map((x) => x.bankName).filter(Boolean)),
-  ];
-
-  let filtered =
-    filterPerson === "All"
-      ? allInvestments
-      : filterPerson === "abhav"
-        ? abhavInvs
-        : aanyaInvs;
-  if (filterApp !== "All")
-    filtered = filtered.filter((x) => x.appName === filterApp);
-  if (filterBank !== "All")
-    filtered = filtered.filter((x) => x.bankName === filterBank);
-  if (filterType !== "All")
-    filtered = filtered.filter((x) => x.type === filterType);
-
-  const calcM = (list) => {
-    const monthly = list.reduce(
-      (s, x) => (isFD(x.type) ? s : s + freqToMonthly(x.amount, x.frequency)),
-      0,
-    );
-    const current = list.reduce((s, x) => {
-      if (isFD(x.type)) {
-        const yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
-        return s + lumpCorpus(x.amount || 0, x.returnPct || 0, yrs);
-      }
-      if (x.frequency === "onetime") {
-        const _yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
-        return (
-          s +
-          (x.existingCorpus > 0
-            ? x.existingCorpus
-            : lumpCorpus(x.amount || 0, x.returnPct || 0, _yrs))
-        );
-      }
-      return s + (x.existingCorpus || 0);
-    }, 0);
-    const yr20 = list.reduce((s, x) => {
-      if (isFD(x.type)) {
-        const tenureYrs =
-          x.startDate && x.endDate
-            ? Math.max(
-                0,
-                (new Date(x.endDate) - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 5;
-        return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
-      }
-      if (x.frequency === "onetime") {
-        return (
-          s +
-          lumpCorpus(
-            x.existingCorpus > 0 ? x.existingCorpus : x.amount || 0,
-            x.returnPct,
-            20,
-          )
-        );
-      }
-      return (
-        s +
-        totalCorpus(
-          x.existingCorpus || 0,
-          freqToMonthly(x.amount, x.frequency),
-          x.returnPct,
-          20,
-        )
-      );
-    }, 0);
-    const { cost, currentForGain } = list.reduce(
-      (acc, x) => {
-        if (isFD(x.type)) {
-          const yrs = x.startDate
-            ? Math.max(
-                0,
-                (new Date() - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 0;
-          return {
-            cost: acc.cost + (x.amount || 0),
-            currentForGain:
-              acc.currentForGain +
-              lumpCorpus(x.amount || 0, x.returnPct || 0, yrs),
-          };
-        }
-        if (x.frequency === "onetime") {
-          const _yrs = x.startDate
-            ? Math.max(
-                0,
-                (new Date() - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 0;
-          return {
-            cost: acc.cost + (x.amount || 0),
-            currentForGain:
-              acc.currentForGain +
-              (x.existingCorpus > 0
-                ? x.existingCorpus
-                : lumpCorpus(x.amount || 0, x.returnPct || 0, _yrs)),
-          };
-        }
-        const ti = Number(x.totalInvested) || 0;
-        if (ti > 0)
-          return {
-            cost: acc.cost + ti,
-            currentForGain: acc.currentForGain + (x.existingCorpus || 0),
-          };
-        return acc;
-      },
-      { cost: 0, currentForGain: 0 },
-    );
-    return {
-      monthly,
-      current,
-      yr20,
-      cost,
-      gain: cost > 0 ? currentForGain - cost : null,
-      gainPct: cost > 0 ? ((currentForGain - cost) / cost) * 100 : null,
-    };
-  };
-  const m = calcM(filtered);
-  const mA = calcM(abhavInvs);
-  const mAn = calcM(aanyaInvs);
-
-  const add = () => {
-    if (!newInv.name || !newInv.amount) return;
-    const ownerData = addFor === "abhav" ? abhav : aanya;
-    const existing = ownerData?.investments || [];
-    updatePerson(addFor, "investments", [
-      ...existing,
-      {
-        ...newInv,
-        id: nextId(existing),
-        amount: Number(newInv.amount),
-        returnPct: Number(newInv.returnPct),
-        existingCorpus: Number(newInv.existingCorpus),
-        deductionDate: newInv.deductionDate ? Number(newInv.deductionDate) : "",
-        totalInvested: newInv.totalInvested ? Number(newInv.totalInvested) : 0,
-      },
-    ]);
-    setNewInv(emptyNew);
-    setShowAdd(false);
-  };
-
-  const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
-  const pLabel = (o) => personNames?.[o] || o;
-
-  // Per-investment rows used in info modals (household)
-  const hhInvRows = filtered.map((x) => ({
-    ...computeInvRow(x),
-    owner: x._owner,
-  }));
-
-  return (
-    <div>
-      <div
-        style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          marginBottom: "0.5rem",
-        }}
-      >
-        <span style={{ color: "var(--gold)" }}>Household</span> Investments
-      </div>
-      <div
-        style={{
-          color: "var(--text-secondary)",
-          fontSize: 13,
-          marginBottom: "1.25rem",
-        }}
-      >
-        Combined view across both profiles.
-      </div>
-
-      {/* Summary metrics */}
-      <div className="grid-4 section-gap">
-        <div className="metric-card">
-          <div className="metric-label">
-            Monthly contribution
-            <InfoModal title="Monthly contribution">
-              <div style={{ marginBottom: 10 }}>
-                <strong style={{ color: "#eeeae4" }}>
-                  Total: {fmt(m.monthly)} / month
-                </strong>
-                <span style={{ color: "#666", fontSize: 12 }}>
-                  {" "}
-                  (Abhav {fmt(mA.monthly)} + Aanya {fmt(mAn.monthly)})
-                </span>
-              </div>
-              {hhInvRows.filter((r) => r.monthly > 0).length === 0 ? (
-                <div style={{ color: "#888" }}>No active SIPs yet.</div>
-              ) : (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      fontSize: 11,
-                      color: "#666",
-                      paddingBottom: 4,
-                      borderBottom: "1px solid rgba(255,255,255,0.08)",
-                      marginBottom: 2,
-                      gap: 8,
-                    }}
-                  >
-                    <span style={{ flex: 1 }}>Investment</span>
-                    <span style={{ width: 50 }}>Who</span>
-                    <span style={{ width: 80, textAlign: "right" }}>
-                      Monthly
-                    </span>
-                  </div>
-                  {hhInvRows
-                    .filter((r) => r.monthly > 0)
-                    .map((r, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          padding: "3px 0",
-                          borderBottom: "1px solid rgba(255,255,255,0.04)",
-                          fontSize: 12,
-                        }}
-                      >
-                        <span style={{ color: "#b0aab8", flex: 1 }}>
-                          {r.name}
-                        </span>
-                        <span
-                          style={{
-                            width: 50,
-                            color:
-                              r.owner === "abhav"
-                                ? "var(--abhav)"
-                                : "var(--aanya)",
-                            fontSize: 11,
-                          }}
-                        >
-                          {pLabel(r.owner)}
-                        </span>
-                        <span
-                          style={{
-                            width: 80,
-                            textAlign: "right",
-                            color: "#eeeae4",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {fmt(r.monthly)}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </InfoModal>
-          </div>
-          <div className="metric-value" style={{ color: "var(--gold)" }}>
-            {fmt(m.monthly)}
-          </div>
-          <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>
-              Abhav {fmt(mA.monthly)}
-            </span>
-            {" · "}
-            <span style={{ color: "var(--aanya)" }}>
-              Aanya {fmt(mAn.monthly)}
-            </span>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            Current portfolio value
-            <InfoModal title="Current portfolio value">
-              <div style={{ marginBottom: 10 }}>
-                <strong style={{ color: "#eeeae4" }}>
-                  Total: {fmtCr(m.current)}
-                </strong>
-                <span style={{ color: "#666", fontSize: 12 }}>
-                  {" "}
-                  (Abhav {fmtCr(mA.current)} + Aanya {fmtCr(mAn.current)})
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    fontSize: 11,
-                    color: "#666",
-                    paddingBottom: 4,
-                    borderBottom: "1px solid rgba(255,255,255,0.08)",
-                    marginBottom: 2,
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ flex: 1 }}>Investment</span>
-                  <span style={{ width: 50 }}>Who</span>
-                  <span style={{ width: 80, textAlign: "right" }}>Value</span>
-                </div>
-                {hhInvRows.map((r, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      padding: "3px 0",
-                      borderBottom: "1px solid rgba(255,255,255,0.04)",
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ color: "#b0aab8", flex: 1 }}>{r.name}</span>
-                    <span
-                      style={{
-                        width: 50,
-                        color:
-                          r.owner === "abhav" ? "var(--abhav)" : "var(--aanya)",
-                        fontSize: 11,
-                      }}
-                    >
-                      {pLabel(r.owner)}
-                    </span>
-                    <span
-                      style={{
-                        width: 80,
-                        textAlign: "right",
-                        color: r.cur > 0 ? "#eeeae4" : "#555",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {r.cur > 0 ? fmtCr(r.cur) : "Not set"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </InfoModal>
-          </div>
-          <div className="metric-value gold-text">
-            {fmt(Math.round(m.current))}
-          </div>
-          <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>
-              {fmt(Math.round(mA.current))}
-            </span>
-            {" · "}
-            <span style={{ color: "var(--aanya)" }}>
-              {fmt(Math.round(mAn.current))}
-            </span>
-          </div>
-          {m.cost > 0 && (
-            <div
-              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}
-            >
-              Invested: {fmt(m.cost)}
-            </div>
-          )}
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            20-year projection
-            <InfoModal title="20-year projection">
-              <div style={{ marginBottom: 10 }}>
-                <strong style={{ color: "#eeeae4" }}>
-                  Total in 20 years: {fmtCr(m.yr20)}
-                </strong>
-                <span style={{ color: "#666", fontSize: 12 }}>
-                  {" "}
-                  from {fmtCr(m.current)} today
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    fontSize: 11,
-                    color: "#666",
-                    paddingBottom: 4,
-                    borderBottom: "1px solid rgba(255,255,255,0.08)",
-                    marginBottom: 2,
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ flex: 1 }}>Investment</span>
-                  <span style={{ width: 50 }}>Who</span>
-                  <span style={{ width: 80, textAlign: "right" }}>
-                    20yr value
-                  </span>
-                </div>
-                {hhInvRows
-                  .filter((r) => r.yr20 !== null)
-                  .map((r, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        padding: "3px 0",
-                        borderBottom: "1px solid rgba(255,255,255,0.04)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <span style={{ color: "#b0aab8", flex: 1 }}>
-                        {r.name}
-                      </span>
-                      <span
-                        style={{
-                          width: 50,
-                          color:
-                            r.owner === "abhav"
-                              ? "var(--abhav)"
-                              : "var(--aanya)",
-                          fontSize: 11,
-                        }}
-                      >
-                        {pLabel(r.owner)}
-                      </span>
-                      <span
-                        style={{
-                          width: 80,
-                          textAlign: "right",
-                          color: "#4ade80",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {fmtCr(r.yr20)}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-              <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-                Assumes same SIP rate &amp; expected returns are sustained.
-              </div>
-            </InfoModal>
-          </div>
-          <div className="metric-value green-text">{fmtCr(m.yr20)}</div>
-          <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>{fmtCr(mA.yr20)}</span>
-            {" · "}
-            <span style={{ color: "var(--aanya)" }}>{fmtCr(mAn.yr20)}</span>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            Overall P&amp;L
-            <InfoModal title="Overall P&L (Profit & Loss)">
-              <div
-                style={{
-                  background: "rgba(255,255,255,0.05)",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  marginBottom: 14,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "4px 0",
-                  }}
-                >
-                  <span style={{ color: "#888" }}>Current value</span>
-                  <span style={{ color: "#eeeae4", fontWeight: 600 }}>
-                    {fmt(m.gain !== null ? m.gain + m.current : m.current)}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "4px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.1)",
-                    marginBottom: 6,
-                  }}
-                >
-                  <span style={{ color: "#888" }}>Total invested</span>
-                  <span style={{ color: "#eeeae4", fontWeight: 600 }}>
-                    − {m.gain !== null ? fmt(m.current - m.gain) : "—"}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "4px 0",
-                  }}
-                >
-                  <span style={{ color: "#888" }}>Gain / Loss</span>
-                  <span
-                    style={{
-                      color:
-                        m.gain === null
-                          ? "#666"
-                          : m.gain >= 0
-                            ? "#4ade80"
-                            : "#f87171",
-                      fontWeight: 700,
-                      fontSize: 15,
-                    }}
-                  >
-                    {m.gain === null
-                      ? "—"
-                      : `${m.gain >= 0 ? "+" : "−"}${fmt(m.gain)}`}
-                    {m.gainPct !== null && (
-                      <span
-                        style={{ fontSize: 12, marginLeft: 6, fontWeight: 400 }}
-                      >
-                        ({m.gainPct >= 0 ? "+" : ""}
-                        {m.gainPct.toFixed(1)}%)
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    fontSize: 11,
-                    color: "#666",
-                    paddingBottom: 4,
-                    borderBottom: "1px solid rgba(255,255,255,0.08)",
-                    marginBottom: 2,
-                    gap: 8,
-                  }}
-                >
-                  <span style={{ flex: 1 }}>Investment</span>
-                  <span style={{ width: 40 }}>Who</span>
-                  <span style={{ width: 65, textAlign: "right" }}>
-                    Invested
-                  </span>
-                  <span style={{ width: 65, textAlign: "right" }}>Current</span>
-                  <span style={{ width: 55, textAlign: "right" }}>P&amp;L</span>
-                </div>
-                {hhInvRows.map((r, i) => {
-                  const gain = r.invested > 0 ? r.cur - r.invested : null;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        padding: "3px 0",
-                        borderBottom: "1px solid rgba(255,255,255,0.04)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <span style={{ color: "#b0aab8", flex: 1 }}>
-                        {r.name}
-                      </span>
-                      <span
-                        style={{
-                          width: 40,
-                          color:
-                            r.owner === "abhav"
-                              ? "var(--abhav)"
-                              : "var(--aanya)",
-                          fontSize: 11,
-                        }}
-                      >
-                        {(pLabel(r.owner) || "?")[0]}
-                      </span>
-                      <span
-                        style={{ width: 65, textAlign: "right", color: "#888" }}
-                      >
-                        {r.invested > 0 ? (
-                          fmtCr(r.invested)
-                        ) : (
-                          <span style={{ color: "#555" }}>—</span>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          width: 65,
-                          textAlign: "right",
-                          color: "#eeeae4",
-                        }}
-                      >
-                        {r.cur > 0 ? (
-                          fmtCr(r.cur)
-                        ) : (
-                          <span style={{ color: "#555" }}>—</span>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          width: 55,
-                          textAlign: "right",
-                          color:
-                            gain === null
-                              ? "#555"
-                              : gain >= 0
-                                ? "#4ade80"
-                                : "#f87171",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {gain === null
-                          ? "—"
-                          : `${gain >= 0 ? "+" : "−"}${fmtCr(gain)}`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-                SIPs without "Total invested" filled in show — and are excluded
-                from the total.
-              </div>
-            </InfoModal>
-          </div>
-          <div
-            className="metric-value"
-            style={{
-              fontSize: 18,
-              color:
-                m.gain === null
-                  ? "var(--text-muted)"
-                  : m.gain >= 0
-                    ? "var(--green)"
-                    : "var(--red)",
-            }}
-          >
-            {m.gain === null
-              ? "—"
-              : `${m.gain >= 0 ? "+" : "−"}${fmtCr(m.gain)}`}
-          </div>
-          <div className="metric-sub">
-            {m.gainPct !== null ? (
-              <>
-                {m.gainPct >= 0 ? "+" : ""}
-                {m.gainPct.toFixed(1)}% return
-                {mA.gainPct !== null && mAn.gainPct !== null && (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <span style={{ color: "var(--abhav)" }}>
-                      {mA.gainPct >= 0 ? "+" : ""}
-                      {mA.gainPct.toFixed(1)}%
-                    </span>
-                    {" / "}
-                    <span style={{ color: "var(--aanya)" }}>
-                      {mAn.gainPct >= 0 ? "+" : ""}
-                      {mAn.gainPct.toFixed(1)}%
-                    </span>
-                  </>
-                )}
-              </>
-            ) : (
-              'Add "total invested" to SIPs'
-            )}
-          </div>
-        </div>
-      </div>
-
-      <PortfolioCharts rows={hhInvRows} isHousehold={true} />
-
-      {/* Filter row */}
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          flexWrap: "wrap",
-          alignItems: "center",
-          marginBottom: "1rem",
-        }}
-      >
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Person:
-          </span>
-          {[
-            { id: "All", label: "All", color: "var(--gold)" },
-            {
-              id: "abhav",
-              label: personNames?.abhav || "Person 1",
-              color: "var(--abhav)",
-            },
-            {
-              id: "aanya",
-              label: personNames?.aanya || "Person 2",
-              color: "var(--aanya)",
-            },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setFilterPerson(p.id)}
-              style={{
-                padding: "4px 12px",
-                fontSize: 12,
-                borderRadius: 99,
-                cursor: "pointer",
-                border:
-                  filterPerson === p.id
-                    ? `1px solid ${p.color}`
-                    : "1px solid var(--border)",
-                background:
-                  filterPerson === p.id ? `${p.color}22` : "transparent",
-                color:
-                  filterPerson === p.id ? p.color : "var(--text-secondary)",
-                fontWeight: filterPerson === p.id ? 500 : 400,
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {allApps.length > 0 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              App:
-            </span>
-            {["All", ...allApps].map((app) => (
-              <button
-                key={app}
-                onClick={() => setFilterApp(app)}
-                style={{
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  borderRadius: 99,
-                  cursor: "pointer",
-                  border:
-                    filterApp === app
-                      ? "1px solid var(--gold)"
-                      : "1px solid var(--border)",
-                  background:
-                    filterApp === app ? "var(--gold-dim)" : "transparent",
-                  color:
-                    filterApp === app ? "var(--gold)" : "var(--text-secondary)",
-                  fontWeight: filterApp === app ? 500 : 400,
-                }}
-              >
-                {app}
-              </button>
-            ))}
-          </div>
-        )}
-        {allBanks.length > 0 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Bank:
-            </span>
-            {["All", ...allBanks].map((bank) => (
-              <button
-                key={bank}
-                onClick={() => setFilterBank(bank)}
-                style={{
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  borderRadius: 99,
-                  cursor: "pointer",
-                  border:
-                    filterBank === bank
-                      ? "1px solid var(--blue)"
-                      : "1px solid var(--border)",
-                  background:
-                    filterBank === bank
-                      ? "var(--blue-dim, rgba(91,156,246,.12))"
-                      : "transparent",
-                  color:
-                    filterBank === bank
-                      ? "var(--blue)"
-                      : "var(--text-secondary)",
-                  fontWeight: filterBank === bank ? 500 : 400,
-                }}
-              >
-                {bank}
-              </button>
-            ))}
-          </div>
-        )}
-        {(() => {
-          const types = ["All", ...new Set(allInvestments.map((x) => x.type))];
-          if (types.length <= 2) return null;
-          return (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Type:
-              </span>
-              {types.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFilterType(t)}
-                  style={{
-                    padding: "4px 12px",
-                    fontSize: 12,
-                    borderRadius: 99,
-                    cursor: "pointer",
-                    border:
-                      filterType === t
-                        ? "1px solid var(--gold)"
-                        : "1px solid var(--border)",
-                    background:
-                      filterType === t ? "var(--gold-dim)" : "transparent",
-                    color:
-                      filterType === t
-                        ? "var(--gold)"
-                        : "var(--text-secondary)",
-                    fontWeight: filterType === t ? 500 : 400,
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
-      </div>
-
-      {filtered.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginBottom: "0.75rem",
-          }}
-        >
-          <ExportMenu
-            rows={hhInvRows}
-            rawData={filtered}
-            totals={{
-              monthly: m.monthly,
-              current: m.current,
-              yr20: m.yr20,
-              gain: m.gain,
-              gainPct: m.gainPct,
-            }}
-            title="Household Investments"
-            filename="household-investments"
-          />
-        </div>
-      )}
-
-      {/* Cards */}
-      {filtered.map((inv) => {
-        const owner = inv._owner;
-        const ownerData = owner === "abhav" ? abhav : aanya;
-        const { _owner, ...cleanInv } = inv;
-        return (
-          <div key={`${owner}-${inv.id}`} style={{ position: "relative" }}>
-            <div
-              style={{
-                position: "absolute",
-                top: 10,
-                right: 10,
-                zIndex: 1,
-                fontSize: 11,
-                fontWeight: 600,
-                padding: "2px 10px",
-                borderRadius: 99,
-                background: `${pColor(owner)}1a`,
-                color: pColor(owner),
-                border: `1px solid ${pColor(owner)}44`,
-                pointerEvents: "none",
-              }}
-            >
-              {pLabel(owner)}
-            </div>
-            <SIPCard
-              inv={cleanInv}
-              personColor={pColor(owner)}
-              onUpdate={(updated) => {
-                const list = ownerData?.investments || [];
-                updatePerson(
-                  owner,
-                  "investments",
-                  list.map((x) => (x.id === updated.id ? updated : x)),
-                );
-              }}
-              onDelete={() => {
-                const list = ownerData?.investments || [];
-                updatePerson(
-                  owner,
-                  "investments",
-                  list.filter((x) => x.id !== inv.id),
-                );
-              }}
-            />
-          </div>
-        );
-      })}
-
-      {/* Add */}
-      {showAdd ? (
-        <div className="card section-gap">
-          <div className="card-title">Add Investment</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[
-              {
-                id: "abhav",
-                label: personNames?.abhav || "Person 1",
-                color: "var(--abhav)",
-              },
-              {
-                id: "aanya",
-                label: personNames?.aanya || "Person 2",
-                color: "var(--aanya)",
-              },
-            ].map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setAddFor(p.id)}
-                style={{
-                  padding: "6px 18px",
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: 13,
-                  cursor: "pointer",
-                  border:
-                    addFor === p.id
-                      ? `1px solid ${p.color}`
-                      : "1px solid var(--border)",
-                  background: addFor === p.id ? `${p.color}22` : "transparent",
-                  color: addFor === p.id ? p.color : "var(--text-secondary)",
-                  fontWeight: addFor === p.id ? 600 : 400,
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <div className="grid-2" style={{ marginBottom: 12 }}>
-            {[
-              { key: "name", label: "Investment name", type: "text" },
-              ...(!isFD(newInv.type)
-                ? [
-                    {
-                      key: "existingCorpus",
-                      label:
-                        newInv.frequency === "onetime"
-                          ? "Current market value (₹)"
-                          : "Current corpus (₹)",
-                      type: "number",
-                      placeholder:
-                        newInv.frequency === "onetime"
-                          ? "From your app (optional)"
-                          : "",
-                    },
-                  ]
-                : []),
-              {
-                key: "amount",
-                label: isFD(newInv.type)
-                  ? "Principal (₹)"
-                  : newInv.frequency === "onetime"
-                    ? "Purchase amount (₹)"
-                    : newInv.frequency === "weekly"
-                      ? "Weekly SIP (₹)"
-                      : newInv.frequency === "yearly"
-                        ? "Yearly SIP (₹)"
-                        : "Monthly SIP (₹)",
-                type: "number",
-              },
-              {
-                key: "returnPct",
-                label: isFD(newInv.type)
-                  ? "Interest rate (% p.a.)"
-                  : "Expected return (%)",
-                type: "number",
-                step: 0.1,
-              },
-              {
-                key: "bankName",
-                label: isFD(newInv.type)
-                  ? "Bank / institution"
-                  : "Bank account",
-                type: "text",
-                placeholder: "e.g. HDFC, SBI, Axis",
-              },
-              ...(!isFD(newInv.type) && newInv.frequency !== "onetime"
-                ? [
-                    {
-                      key: "totalInvested",
-                      label: "Total invested so far (₹)",
-                      type: "number",
-                      placeholder: "Actual principal / cost basis",
-                    },
-                  ]
-                : []),
-            ].map((f) => (
-              <div key={f.key}>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  {f.label}
-                </label>
-                <input
-                  type={f.type}
-                  step={f.step}
-                  value={newInv[f.key] ?? ""}
-                  placeholder={f.placeholder || ""}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, [f.key]: e.target.value })
-                  }
-                  {...(f.key === "bankName" ? { list: "bank-list-hh" } : {})}
-                />
-                {f.key === "bankName" && (
-                  <datalist id="bank-list-hh">
-                    {BANK_LIST.map((b) => (
-                      <option key={b} value={b} />
-                    ))}
-                  </datalist>
-                )}
-                {["amount", "existingCorpus", "totalInvested"].includes(
-                  f.key,
-                ) &&
-                  Number(newInv[f.key]) > 0 && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        marginTop: 3,
-                      }}
-                    >
-                      = {fmt(Number(newInv[f.key]))}
-                    </div>
-                  )}
-              </div>
-            ))}
-            <div>
-              <label
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  display: "block",
-                  marginBottom: 4,
-                }}
-              >
-                Type
-              </label>
-              <select
-                value={newInv.type}
-                onChange={(e) => {
-                  const t = e.target.value;
-                  setNewInv({
-                    ...newInv,
-                    type: t,
-                    frequency:
-                      t === "PPF" || t === "ULIP"
-                        ? "yearly"
-                        : t === "FD"
-                          ? "onetime"
-                          : newInv.frequency === "yearly" ||
-                              newInv.frequency === "onetime"
-                            ? "monthly"
-                            : newInv.frequency,
-                  });
-                }}
-              >
-                {INVESTMENT_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            {hasSIPFreq(newInv.type) && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Frequency
-                </label>
-                <select
-                  value={newInv.frequency}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, frequency: e.target.value })
-                  }
-                >
-                  <option value="monthly">Monthly SIP</option>
-                  <option value="weekly">Weekly SIP</option>
-                  <option value="yearly">Yearly SIP</option>
-                  <option value="onetime">One-time</option>
-                </select>
-              </div>
-            )}
-            {(newInv.type === "Mutual Fund" || newInv.type === "Stocks") && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Fund category
-                </label>
-                <select
-                  value={newInv.capCategory || ""}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, capCategory: e.target.value })
-                  }
-                >
-                  {MF_CAP_CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div>
-              <label
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  display: "block",
-                  marginBottom: 4,
-                }}
-              >
-                {isFD(newInv.type)
-                  ? "FD start date"
-                  : newInv.frequency === "onetime"
-                    ? "Purchase date"
-                    : "SIP start date"}
-              </label>
-              <input
-                type="date"
-                value={newInv.startDate}
-                onChange={(e) =>
-                  setNewInv({ ...newInv, startDate: e.target.value })
-                }
-              />
-            </div>
-            {isFD(newInv.type) && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Maturity date
-                </label>
-                <input
-                  type="date"
-                  value={newInv.endDate}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, endDate: e.target.value })
-                  }
-                />
-              </div>
-            )}
-            {newInv.type === "PPF" && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  PPF maturity date
-                </label>
-                <input
-                  type="date"
-                  value={newInv.maturityDate || ""}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, maturityDate: e.target.value })
-                  }
-                />
-              </div>
-            )}
-            {hasInvestmentApp(newInv.type) && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Investment app
-                </label>
-                <select
-                  value={newInv.appName}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, appName: e.target.value })
-                  }
-                >
-                  <option value="">Not set</option>
-                  {INVESTMENT_APPS.map((a) => (
-                    <option key={a}>{a}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {hasDeductionDate(newInv.type, newInv.frequency) && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  SIP deduction date
-                </label>
-                <select
-                  value={newInv.deductionDate}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, deductionDate: e.target.value })
-                  }
-                >
-                  <option value="">Not set</option>
-                  {DEDUCTION_DAYS.map((d) => (
-                    <option key={d} value={d}>
-                      {ordinalSuffix(d)} of month
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {["Mutual Fund", "Stocks", "Gold", "NPS"].includes(newInv.type) &&
-              newInv.frequency === "weekly" && (
-                <div>
-                  <label
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-muted)",
-                      display: "block",
-                      marginBottom: 4,
-                    }}
-                  >
-                    SIP day of week
-                  </label>
-                  <select
-                    value={newInv.deductionDay || ""}
-                    onChange={(e) =>
-                      setNewInv({ ...newInv, deductionDay: e.target.value })
-                    }
-                  >
-                    <option value="">Not set</option>
-                    {WEEKDAYS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-          </div>
-          {newInv.amount && (
-            <div
-              style={{
-                background: "var(--bg-card2)",
-                borderRadius: "var(--radius-sm)",
-                padding: "10px 14px",
-                marginBottom: 12,
-                fontSize: 13,
-                display: "flex",
-                gap: "1.5rem",
-              }}
-            >
-              {isFD(newInv.type) ? (
-                <>
-                  <span>
-                    Principal:{" "}
-                    <strong style={{ color: pColor(addFor) }}>
-                      {fmt(Number(newInv.amount))}
-                    </strong>
-                  </span>
-                  {newInv.endDate && newInv.startDate && (
-                    <span>
-                      Maturity:{" "}
-                      <strong style={{ color: "var(--green)" }}>
-                        {fmtCr(
-                          lumpCorpus(
-                            Number(newInv.amount),
-                            Number(newInv.returnPct),
-                            Math.max(
-                              0,
-                              (new Date(newInv.endDate) -
-                                new Date(newInv.startDate)) /
-                                (365.25 * 24 * 3600 * 1000),
-                            ),
-                          ),
-                        )}
-                      </strong>
-                    </span>
-                  )}
-                </>
-              ) : newInv.frequency === "onetime" ? (
-                <>
-                  <span>
-                    Purchase:{" "}
-                    <strong style={{ color: pColor(addFor) }}>
-                      {fmt(Number(newInv.amount))}
-                    </strong>
-                  </span>
-                  <span>
-                    20yr value:{" "}
-                    <strong style={{ color: "var(--green)" }}>
-                      {fmtCr(
-                        lumpCorpus(
-                          Number(newInv.amount),
-                          Number(newInv.returnPct),
-                          20,
-                        ),
-                      )}
-                    </strong>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    Monthly equiv:{" "}
-                    <strong style={{ color: pColor(addFor) }}>
-                      {fmt(freqToMonthly(newInv.amount, newInv.frequency))}
-                    </strong>
-                  </span>
-                  <span>
-                    20yr corpus:{" "}
-                    <strong style={{ color: "var(--green)" }}>
-                      {fmtCr(
-                        totalCorpus(
-                          Number(newInv.existingCorpus),
-                          freqToMonthly(
-                            Number(newInv.amount),
-                            newInv.frequency,
-                          ),
-                          Number(newInv.returnPct),
-                          20,
-                        ),
-                      )}
-                    </strong>
-                  </span>
-                </>
-              )}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              className="btn-primary"
-              onClick={add}
-              style={{ background: pColor(addFor) }}
-            >
-              Add to {pLabel(addFor)}
-            </button>
-            <button
-              className="btn-ghost"
-              onClick={() => {
-                setNewInv(emptyNew);
-                setShowAdd(false);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          className="btn-ghost"
-          style={{
-            width: "100%",
-            padding: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-          }}
-          onClick={() => setShowAdd(true)}
-        >
-          <Plus size={14} /> Add Investment
-        </button>
-      )}
-    </div>
-  );
-}
+// Re-export HouseholdInvestments (extracted to HouseholdInvestments.jsx)
+export { HouseholdInvestments } from "./HouseholdInvestments";
