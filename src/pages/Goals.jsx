@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fmt, nextId, monthsUntil } from "../utils/finance";
 import { Plus, Edit3, Trash2, Check, X } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm } from "../hooks/useConfirm";
 
 const EMOJIS = [
   "🏠",
@@ -20,7 +20,7 @@ const EMOJIS = [
   "💻",
 ];
 
-function GoalCard({ goal, onUpdate, onDelete, isShared }) {
+function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(goal);
   const { confirm, dialog } = useConfirm();
@@ -95,7 +95,7 @@ function GoalCard({ goal, onUpdate, onDelete, isShared }) {
                       marginBottom: 4,
                     }}
                   >
-                    Abhav saved (₹)
+                    {personNames?.abhav || "Person 1"} saved (₹)
                   </label>
                   <input
                     type="number"
@@ -114,7 +114,7 @@ function GoalCard({ goal, onUpdate, onDelete, isShared }) {
                       marginBottom: 4,
                     }}
                   >
-                    Aanya saved (₹)
+                    {personNames?.aanya || "Person 2"} saved (₹)
                   </label>
                   <input
                     type="number"
@@ -246,11 +246,11 @@ function GoalCard({ goal, onUpdate, onDelete, isShared }) {
                     <div
                       style={{ fontSize: 12, color: "var(--text-secondary)" }}
                     >
-                      Abhav:{" "}
+                      {personNames?.abhav || "Person 1"}:{" "}
                       <span style={{ color: "var(--abhav)" }}>
                         {fmt(goal.abhavSaved || 0)}
                       </span>{" "}
-                      · Aanya:{" "}
+                      · {personNames?.aanya || "Person 2"}:{" "}
                       <span style={{ color: "var(--aanya)" }}>
                         {fmt(goal.aanyaSaved || 0)}
                       </span>
@@ -345,6 +345,7 @@ export default function Goals({
   updatePerson,
   updateShared,
   isHousehold,
+  personNames,
 }) {
   const personalGoals = data?.goals || [];
   const sharedGoals = sharedData?.goals || [];
@@ -504,6 +505,7 @@ export default function Goals({
             key={g.id}
             goal={g}
             isShared={true}
+            personNames={personNames}
             onUpdate={(u) =>
               updateShared(
                 "goals",
@@ -525,6 +527,7 @@ export default function Goals({
             onAdd={() => addGoal("shared")}
             onCancel={() => setShowAdd(null)}
             isShared={true}
+            personNames={personNames}
           />
         )}
       </div>
@@ -532,7 +535,14 @@ export default function Goals({
   );
 }
 
-function AddGoalForm({ form, setForm, onAdd, onCancel, isShared }) {
+function AddGoalForm({
+  form,
+  setForm,
+  onAdd,
+  onCancel,
+  isShared,
+  personNames,
+}) {
   const COLORS = [
     "#4caf82",
     "#5b9cf6",
@@ -606,7 +616,7 @@ function AddGoalForm({ form, setForm, onAdd, onCancel, isShared }) {
                   marginBottom: 4,
                 }}
               >
-                Abhav saved (₹)
+                {personNames?.abhav || "Person 1"} saved (₹)
               </label>
               <input
                 type="number"
@@ -625,7 +635,7 @@ function AddGoalForm({ form, setForm, onAdd, onCancel, isShared }) {
                   marginBottom: 4,
                 }}
               >
-                Aanya saved (₹)
+                {personNames?.aanya || "Person 2"} saved (₹)
               </label>
               <input
                 type="number"

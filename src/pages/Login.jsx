@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { IndianRupee, Eye, EyeOff, Mail } from "lucide-react";
 
 export default function Login() {
-  const { login, loginWithGoogle, resetPassword } = useAuth();
+  const { login, loginWithGoogle, loginAsDemo, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -91,7 +91,7 @@ export default function Login() {
             WealthOS
           </div>
           <div style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-            Abhav & Aanya's finance hub
+            Your household finance hub
           </div>
         </div>
 
@@ -313,6 +313,28 @@ export default function Login() {
             Continue with Google
           </button>
         </form>
+
+        {/* Demo button */}
+        <button
+          onClick={loginAsDemo}
+          style={{
+            width: "100%",
+            padding: "10px",
+            fontSize: 13,
+            marginTop: "0.75rem",
+            background: "transparent",
+            border: "1px dashed var(--gold-border)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--gold)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          👀 Try Demo — explore with sample data
+        </button>
 
         <div
           style={{

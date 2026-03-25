@@ -37,13 +37,11 @@ const NAV = [
 const PROFILES = [
   {
     id: "abhav",
-    label: "Abhav",
     color: "var(--abhav)",
     dim: "var(--abhav-dim)",
   },
   {
     id: "aanya",
-    label: "Aanya",
     color: "var(--aanya)",
     dim: "var(--aanya-dim)",
   },
@@ -63,7 +61,12 @@ function SidebarContent({
   logout,
   onClose,
   badges,
+  personNames,
 }) {
+  const profiles = PROFILES.map((p) => ({
+    ...p,
+    label: p.label || personNames?.[p.id] || p.id,
+  }));
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div
@@ -116,7 +119,7 @@ function SidebarContent({
         >
           Viewing
         </div>
-        {PROFILES.map((p) => (
+        {profiles.map((p) => (
           <button
             key={p.id}
             onClick={() => {
@@ -253,6 +256,7 @@ export default function Sidebar({
   profile,
   setProfile,
   badges,
+  personNames,
 }) {
   const { logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -380,7 +384,9 @@ export default function Sidebar({
           }}
           onClick={() => setMobileOpen(true)}
         >
-          {profile === "household" ? "H" : profile === "abhav" ? "A" : "A"}
+          {profile === "household"
+            ? "H"
+            : (personNames?.[profile] || profile)[0].toUpperCase()}
         </div>
       </div>
 
@@ -405,6 +411,7 @@ export default function Sidebar({
               logout={logout}
               onClose={() => setMobileOpen(false)}
               badges={badges}
+              personNames={personNames}
             />
           </div>
         </div>
@@ -419,6 +426,7 @@ export default function Sidebar({
           setProfile={setProfile}
           logout={logout}
           badges={badges}
+          personNames={personNames}
         />
       </aside>
     </>

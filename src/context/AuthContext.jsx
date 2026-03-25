@@ -21,6 +21,14 @@ const isMobile =
     navigator.userAgent,
   );
 
+// Lightweight fake user object for guest demo mode
+const DEMO_USER = {
+  uid: "__demo__",
+  email: "demo@wealthos.app",
+  displayName: "Demo User",
+  isDemo: true,
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = loading
 
@@ -47,12 +55,26 @@ export function AuthProvider({ children }) {
     }
     return signInWithPopup(auth, googleProvider);
   };
+  const loginAsDemo = () => setUser(DEMO_USER);
   const resetPassword = (email) => sendPasswordResetEmail(auth, email);
-  const logout = () => signOut(auth);
+  const logout = () => {
+    if (user?.isDemo) {
+      setUser(null);
+      return;
+    }
+    return signOut(auth);
+  };
 
   return (
     <AuthContext.Provider
-      value={{ user, login, loginWithGoogle, resetPassword, logout }}
+      value={{
+        user,
+        login,
+        loginWithGoogle,
+        loginAsDemo,
+        resetPassword,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

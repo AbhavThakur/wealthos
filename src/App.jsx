@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { DataProvider, useData } from "./context/DataContext";
+import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
@@ -25,6 +25,8 @@ import {
 } from "./pages/MorePages";
 import { exportAllData } from "./utils/exportData";
 import Onboarding from "./pages/Onboarding";
+import PinLockScreen from "./components/PinLockScreen";
+import useIdleTimer from "./hooks/useIdleTimer";
 
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -118,160 +120,17 @@ function LoadingSkeleton() {
   );
 }
 
-// Confirm dialog for destructive actions
-export function ConfirmDialog({
-  open,
-  title,
-  message,
-  onConfirm,
-  onCancel,
-  danger,
-}) {
-  if (!open) return null;
-  return (
-    <div
-      className="confirm-overlay"
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>
-          {title}
-        </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: "var(--text-secondary)",
-            marginBottom: "1.25rem",
-            lineHeight: 1.6,
-          }}
-        >
-          {message}
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn-ghost" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className={danger ? "btn-primary" : "btn-primary"}
-            onClick={onConfirm}
-            style={danger ? { background: "var(--red)", color: "#fff" } : {}}
-          >
-            {danger ? "Delete" : "Confirm"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Hook for confirm dialogs
-export function useConfirm() {
-  const [state, setState] = useState({
-    open: false,
-    title: "",
-    message: "",
-    danger: false,
-    resolve: null,
-  });
-  const confirm = useCallback((title, message, danger = true) => {
-    return new Promise((resolve) => {
-      setState({ open: true, title, message, danger, resolve });
-    });
-  }, []);
-  const dialog = state.open ? (
-    <ConfirmDialog
-      open
-      title={state.title}
-      message={state.message}
-      danger={state.danger}
-      onConfirm={() => {
-        state.resolve(true);
-        setState((s) => ({ ...s, open: false }));
-      }}
-      onCancel={() => {
-        state.resolve(false);
-        setState((s) => ({ ...s, open: false }));
-      }}
-    />
-  ) : null;
-  return { confirm, dialog };
-}
-
-// Hook for soft-delete with undo toast
-export function useUndoToast() {
-  const [toast, setToast] = useState(null);
-  const timerRef = { current: null };
-
-  const showUndo = useCallback((label, onUndo) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setToast({ label, onUndo });
-    timerRef.current = setTimeout(() => setToast(null), 5000);
-  }, []);
-
-  const toastEl = toast ? (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 24,
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-sm)",
-        padding: "10px 16px",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-        zIndex: 9999,
-        fontSize: 13,
-        color: "var(--text-primary)",
-      }}
-    >
-      <span>{toast.label}</span>
-      <button
-        style={{
-          background: "var(--gold-dim)",
-          color: "var(--gold)",
-          border: "1px solid var(--gold-border)",
-          borderRadius: 4,
-          padding: "4px 10px",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-        onClick={() => {
-          toast.onUndo();
-          setToast(null);
-        }}
-      >
-        Undo
-      </button>
-      <button
-        style={{
-          background: "none",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 16,
-        }}
-        onClick={() => setToast(null)}
-      >
-        ×
-      </button>
-    </div>
-  ) : null;
-
-  return { showUndo, toastEl };
-}
-
 function App() {
   const { user } = useAuth();
   if (user === undefined) return <LoadingScreen />;
   if (!user) return <Login />;
+  if (user.isDemo) {
+    return (
+      <DemoDataProvider>
+        <AppInner />
+      </DemoDataProvider>
+    );
+  }
   return (
     <DataProvider>
       <AppInner />
@@ -286,6 +145,7 @@ function AppInner() {
     shared,
     loading,
     needsOnboarding,
+    personNames,
     updatePerson,
     updateShared,
     takeSnapshot,
@@ -295,10 +155,38 @@ function AppInner() {
     createManualBackup,
     seedDevFromProd,
     pushDevToProd,
+    isDemo,
   } = useData();
   const { logout } = useAuth();
   const [page, setPage] = useState("dashboard");
   const [profile, setProfile] = useState("household");
+
+  // ── PIN Lock (disabled in demo mode) ──────────────────────────────────
+  const pinEnabled = !isDemo && shared?.pinEnabled !== false;
+  const hasPin = pinEnabled && !!shared?.pin;
+  const [pinUnlocked, setPinUnlocked] = useState(() => {
+    if (!pinEnabled || !shared?.pin) return "open";
+    return sessionStorage.getItem("wealthos_unlocked") || null;
+  });
+  useIdleTimer(
+    () => {
+      setPinUnlocked(null);
+      sessionStorage.removeItem("wealthos_unlocked");
+      sessionStorage.removeItem("wealthos_unlock_ts");
+    },
+    5 * 60 * 1000,
+    !!pinUnlocked && hasPin,
+  );
+  // Sync: if pin removed or feature disabled, auto-unlock; if pin loaded, lock unless session exists
+  if (!hasPin && pinUnlocked !== "open") {
+    setPinUnlocked("open");
+  } else if (
+    hasPin &&
+    pinUnlocked === "open" &&
+    !sessionStorage.getItem("wealthos_unlocked")
+  ) {
+    setPinUnlocked(null);
+  }
 
   useEffect(() => {
     document.title = `${PAGE_TITLES[page] || "WealthOS"} — WealthOS`;
@@ -311,7 +199,11 @@ function AppInner() {
 
   const isHousehold = profile === "household";
   const personName =
-    profile === "abhav" ? "Abhav" : profile === "aanya" ? "Aanya" : "Household";
+    profile === "abhav"
+      ? personNames.abhav
+      : profile === "aanya"
+        ? personNames.aanya
+        : "Household";
   const personColor =
     profile === "abhav"
       ? "var(--abhav)"
@@ -329,14 +221,14 @@ function AppInner() {
       <div className="grid-2" style={{ gap: "1.5rem" }}>
         <Component
           data={abhav}
-          personName="Abhav"
+          personName={personNames.abhav}
           personColor="var(--abhav)"
           updatePerson={(k, v) => updatePerson("abhav", k, v)}
           {...extraProps}
         />
         <Component
           data={aanya}
-          personName="Aanya"
+          personName={personNames.aanya}
           personColor="var(--aanya)"
           updatePerson={(k, v) => updatePerson("aanya", k, v)}
           {...extraProps}
@@ -355,7 +247,14 @@ function AppInner() {
   const pageEl = (() => {
     switch (page) {
       case "dashboard":
-        return <Dashboard abhav={abhav} aanya={aanya} shared={shared} />;
+        return (
+          <Dashboard
+            abhav={abhav}
+            aanya={aanya}
+            shared={shared}
+            personNames={personNames}
+          />
+        );
       case "budget":
         return isHousehold ? (
           <HouseholdBudget abhav={abhav} aanya={aanya} shared={shared} />
@@ -382,6 +281,7 @@ function AppInner() {
             updatePerson={upd}
             updateShared={updateShared}
             isHousehold={isHousehold}
+            personNames={personNames}
           />
         );
       case "networth":
@@ -394,6 +294,7 @@ function AppInner() {
             updateShared={updateShared}
             takeSnapshot={takeSnapshot}
             profile={profile}
+            personNames={personNames}
           />
         );
       case "debts":
@@ -453,7 +354,7 @@ function AppInner() {
             createManualBackup={createManualBackup}
             seedDevFromProd={seedDevFromProd}
             pushDevToProd={pushDevToProd}
-            onExport={() => exportAllData(abhav, aanya, shared)}
+            onExport={() => exportAllData(abhav, aanya, shared, personNames)}
           />
         );
       default:
@@ -500,14 +401,53 @@ function AppInner() {
     if (urgentGoals.length) badges.goals = urgentGoals.length;
   }
 
+  if (hasPin && !pinUnlocked) {
+    return (
+      <PinLockScreen pin={shared.pin} onUnlock={(v) => setPinUnlocked(v)} />
+    );
+  }
+
   return (
     <>
+      {isDemo && (
+        <div
+          style={{
+            background:
+              "linear-gradient(90deg, var(--gold-dim), rgba(201,168,76,0.15))",
+            borderBottom: "1px solid var(--gold-border)",
+            padding: "8px 16px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--gold)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1000,
+          }}
+        >
+          <strong>Demo Mode</strong> — exploring with sample data.{" "}
+          <button
+            onClick={logout}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--gold)",
+              textDecoration: "underline",
+              cursor: "pointer",
+              fontSize: 13,
+              padding: 0,
+            }}
+          >
+            Sign in with your account →
+          </button>
+        </div>
+      )}
       <Sidebar
         page={page}
         setPage={setPage}
         profile={profile}
         setProfile={setProfile}
         badges={badges}
+        personNames={personNames}
       />
       <div className="app-layout">
         <main

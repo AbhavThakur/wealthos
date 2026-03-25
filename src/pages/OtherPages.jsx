@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { hashPin } from "../utils/hashPin";
 
 function useSessionState(key, initial) {
   const [val, setVal] = useState(() => {
@@ -31,8 +32,10 @@ import {
   lumpCorpus,
 } from "../utils/finance";
 import { Plus, Trash2, Search, RefreshCw, Bell, BellOff } from "lucide-react";
-import { useConfirm, useUndoToast } from "../App";
-import { autoRecurringRules } from "../context/DataContext";
+import { useConfirm } from "../hooks/useConfirm";
+import { useUndoToast } from "../hooks/useUndoToast";
+import { autoRecurringRules } from "../utils/autoRecurringRules";
+import { useData } from "../context/DataContext";
 
 export function Debts({ data, personName, personColor, updatePerson }) {
   const debts = data?.debts || [];
@@ -965,7 +968,9 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
     (t.lta || 0) +
     (t.communicationAllowance || 0);
 
-  const grossAnnual = grossMonthly * 12;
+  // Annual incentives (Sep ₹71,542 + Mar ₹1,69,039.69 = ₹2,40,581.69)
+  const annualIncentives = t.annualIncentives || 0;
+  const grossAnnual = grossMonthly * 12 + annualIncentives;
 
   // New Regime detailed breakdown (this year FY 2025-26)
   const newStdDed = 75000;
@@ -1530,37 +1535,94 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
         )}
       </div>
 
-      {/* Gross Salary Breakdown from Payslip */}
+      {/* Gross Salary Breakdown — FY 2025-26 */}
       {grossMonthly > 0 && (
         <div className="card section-gap">
-          <div className="card-title">📋 Salary Breakdown (from payslip)</div>
+          <div className="card-title">📋 Salary Breakdown — FY 2025-26</div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr auto",
+              gridTemplateColumns: "1fr auto auto",
               gap: "6px 16px",
               fontSize: 13,
             }}
           >
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                fontSize: 11,
+              }}
+            >
+              Component
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                fontSize: 11,
+                textAlign: "right",
+              }}
+            >
+              Monthly
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: "var(--text-muted)",
+                fontSize: 11,
+                textAlign: "right",
+              }}
+            >
+              Annual
+            </span>
             {[
-              ["Basic", t.basicSalary],
-              ["HRA", t.hra],
-              ["Special Allowance", t.specialAllowance],
-              ["LTA", t.lta],
-              ["Communication", t.communicationAllowance],
+              ["Basic Salary", t.basicSalary, (t.basicSalary || 0) * 12],
+              ["HRA", t.hra, (t.hra || 0) * 12],
+              [
+                "Special Allowance",
+                t.specialAllowance,
+                (t.specialAllowance || 0) * 12,
+              ],
+              ["LTA", t.lta, (t.lta || 0) * 12],
+              [
+                "Communication",
+                t.communicationAllowance,
+                (t.communicationAllowance || 0) * 12,
+              ],
             ]
               .filter(([, v]) => v > 0)
-              .map(([label, val]) => [
+              .map(([label, monthly, annual]) => [
                 <span
                   key={label + "l"}
                   style={{ color: "var(--text-secondary)" }}
                 >
                   {label}
                 </span>,
-                <span key={label + "v"} style={{ textAlign: "right" }}>
-                  {fmt(val)}/mo
+                <span key={label + "m"} style={{ textAlign: "right" }}>
+                  {fmt(monthly)}
+                </span>,
+                <span key={label + "a"} style={{ textAlign: "right" }}>
+                  {fmt(annual)}
                 </span>,
               ])}
+            {annualIncentives > 0 && [
+              <span key="inc-l" style={{ color: "var(--gold)" }}>
+                Incentives (Sep + Mar)
+              </span>,
+              <span
+                key="inc-m"
+                style={{ textAlign: "right", color: "var(--text-muted)" }}
+              >
+                —
+              </span>,
+              <span
+                key="inc-a"
+                style={{ textAlign: "right", color: "var(--gold)" }}
+              >
+                {fmt(annualIncentives)}
+              </span>,
+            ]}
             <div
               style={{
                 gridColumn: "1/-1",
@@ -1568,28 +1630,26 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
                 margin: "4px 0",
               }}
             />
-            <span style={{ fontWeight: 600 }}>Gross monthly</span>
+            <span style={{ fontWeight: 600 }}>Gross Salary</span>
             <span style={{ textAlign: "right", fontWeight: 600 }}>
               {fmt(grossMonthly)}
             </span>
-            <span style={{ fontWeight: 600 }}>Gross annual</span>
             <span
               style={{
                 textAlign: "right",
-                fontWeight: 600,
+                fontWeight: 700,
                 color: "var(--gold)",
               }}
             >
-              {fmt(grossMonthly * 12)}
+              {fmt(grossAnnual)}
             </span>
           </div>
-          {annualIncome > 0 && annualIncome !== grossMonthly * 12 && (
+          {annualIncentives > 0 && (
             <div
               style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}
             >
-              ⚠ Your Budget income ({fmt(annualIncome)}/yr) differs from payslip
-              gross ({fmt(grossMonthly * 12)}/yr). Tax is calculated on Budget
-              income (take-home × 12).
+              💡 Incentives: ₹71,542 (Sep) + ₹1,69,040 (Mar) = ₹2,40,582 added
+              to annual gross for tax calculation.
             </div>
           )}
         </div>
@@ -1848,6 +1908,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
 }
 
 export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   const abhavTx = (abhav?.transactions || []).map((x) => ({
     ...x,
     _owner: "abhav",
@@ -1872,7 +1933,7 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
   const { confirm, dialog } = useConfirm();
 
   const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
-  const pLabel = (o) => (o === "abhav" ? "Abhav" : "Aanya");
+  const pLabel = (o) => personNames?.[o] || o;
 
   const source =
     filterPerson === "all"
@@ -1981,8 +2042,16 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
           </div>
           {[
             { id: "all", label: "All", color: "var(--gold)" },
-            { id: "abhav", label: "Abhav", color: "var(--abhav)" },
-            { id: "aanya", label: "Aanya", color: "var(--aanya)" },
+            {
+              id: "abhav",
+              label: personNames?.abhav || "Person 1",
+              color: "var(--abhav)",
+            },
+            {
+              id: "aanya",
+              label: personNames?.aanya || "Person 2",
+              color: "var(--aanya)",
+            },
           ].map(({ id, label, color }) => (
             <button
               key={id}
@@ -2052,8 +2121,16 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
               </label>
               <div style={{ display: "flex", gap: 8 }}>
                 {[
-                  { id: "abhav", label: "Abhav", color: "var(--abhav)" },
-                  { id: "aanya", label: "Aanya", color: "var(--aanya)" },
+                  {
+                    id: "abhav",
+                    label: personNames?.abhav || "Person 1",
+                    color: "var(--abhav)",
+                  },
+                  {
+                    id: "aanya",
+                    label: personNames?.aanya || "Person 2",
+                    color: "var(--aanya)",
+                  },
                 ].map(({ id, label, color }) => (
                   <button
                     key={id}
@@ -2283,6 +2360,7 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
 }
 
 export function HouseholdDebts({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   const abhavDebts = (abhav?.debts || []).map((d) => ({
     ...d,
     _owner: "abhav",
@@ -2304,7 +2382,7 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   const { confirm, dialog } = useConfirm();
 
   const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
-  const pLabel = (o) => (o === "abhav" ? "Abhav" : "Aanya");
+  const pLabel = (o) => personNames?.[o] || o;
 
   const totalEMI = allDebts.reduce((s, d) => s + d.emi, 0);
   const totalOut = allDebts.reduce((s, d) => s + d.outstanding, 0);
@@ -2462,8 +2540,16 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
             </label>
             <div style={{ display: "flex", gap: 8 }}>
               {[
-                { id: "abhav", label: "Abhav", color: "var(--abhav)" },
-                { id: "aanya", label: "Aanya", color: "var(--aanya)" },
+                {
+                  id: "abhav",
+                  label: personNames?.abhav || "Person 1",
+                  color: "var(--abhav)",
+                },
+                {
+                  id: "aanya",
+                  label: personNames?.aanya || "Person 2",
+                  color: "var(--aanya)",
+                },
               ].map(({ id, label, color }) => (
                 <button
                   key={id}
@@ -2617,6 +2703,295 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   );
 }
 
+function PinSetup({ sharedData, updateShared }) {
+  const pin = sharedData?.pin || ""; // single hashed PIN for household
+  const pinEnabled = sharedData?.pinEnabled !== false;
+  const hasPin = !!pin;
+  const [editing, setEditing] = useState(false);
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [pinMsg, setPinMsg] = useState("");
+
+  const handleSetPin = async () => {
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+      setPinMsg("PIN must be exactly 4 digits");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinMsg("PINs don't match");
+      return;
+    }
+    const hashed = await hashPin(newPin);
+    updateShared("pin", hashed);
+    setEditing(false);
+    setNewPin("");
+    setConfirmPin("");
+    setShowPin(false);
+    setPinMsg("✓ Household PIN set");
+    setTimeout(() => setPinMsg(""), 3000);
+  };
+
+  const handleRemovePin = () => {
+    updateShared("pin", "");
+    setPinMsg("PIN removed");
+    setTimeout(() => setPinMsg(""), 3000);
+  };
+
+  const inputType = showPin ? "text" : "password";
+
+  return (
+    <div className="card section-gap">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          🔒 PIN Lock
+        </div>
+        {hasPin && (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            <span
+              style={{
+                color: pinEnabled ? "var(--green)" : "var(--text-muted)",
+              }}
+            >
+              {pinEnabled ? "Enabled" : "Disabled"}
+            </span>
+            <div
+              onClick={() => updateShared("pinEnabled", !pinEnabled)}
+              style={{
+                width: 36,
+                height: 20,
+                borderRadius: 10,
+                background: pinEnabled ? "var(--green)" : "var(--bg-card2)",
+                border:
+                  "1px solid " +
+                  (pinEnabled ? "var(--green)" : "var(--border)"),
+                position: "relative",
+                transition: "all 0.2s",
+              }}
+              role="switch"
+              aria-checked={pinEnabled}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === " " || e.key === "Enter") {
+                  e.preventDefault();
+                  updateShared("pinEnabled", !pinEnabled);
+                }
+              }}
+            >
+              <div
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  position: "absolute",
+                  top: 1,
+                  left: pinEnabled ? 17 : 1,
+                  transition: "left 0.2s",
+                }}
+              />
+            </div>
+          </label>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--text-secondary)",
+          marginBottom: 12,
+          lineHeight: 1.6,
+        }}
+      >
+        Set a single 4-digit PIN for the household. Anyone opening the app
+        enters this PIN to access your data.
+      </div>
+
+      {/* Current status */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 12px",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--bg-card2)",
+          marginBottom: 8,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "var(--gold)",
+            }}
+          />
+          <span style={{ fontSize: 14, fontWeight: 500 }}>Household PIN</span>
+          {hasPin ? (
+            <span className="tag tag-green" style={{ fontSize: 10 }}>
+              PIN set
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              No PIN
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            className="btn-ghost"
+            style={{ fontSize: 12, padding: "4px 10px" }}
+            onClick={() => {
+              setEditing(!editing);
+              setNewPin("");
+              setConfirmPin("");
+              setShowPin(false);
+              setPinMsg("");
+            }}
+          >
+            {hasPin ? "Change" : "Set PIN"}
+          </button>
+          {hasPin && (
+            <button
+              className="btn-ghost"
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                color: "var(--red)",
+              }}
+              onClick={handleRemovePin}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Edit form */}
+      {editing && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--bg-card2)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10 }}>
+            {hasPin ? "Change" : "Set"} Household PIN
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              type={inputType}
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="New PIN"
+              value={newPin}
+              onChange={(e) =>
+                setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              style={{
+                width: 90,
+                textAlign: "center",
+                fontFamily: "var(--font-mono)",
+              }}
+              autoComplete="off"
+            />
+            <input
+              type={inputType}
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="Confirm"
+              value={confirmPin}
+              onChange={(e) =>
+                setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              style={{
+                width: 90,
+                textAlign: "center",
+                fontFamily: "var(--font-mono)",
+              }}
+              autoComplete="off"
+            />
+            <button
+              className="btn-ghost"
+              style={{ fontSize: 14, padding: "4px 8px", lineHeight: 1 }}
+              onClick={() => setShowPin(!showPin)}
+              title={showPin ? "Hide PIN" : "Show PIN"}
+              type="button"
+            >
+              {showPin ? "🙈" : "👁️"}
+            </button>
+            <button
+              className="btn-primary"
+              style={{ fontSize: 12, padding: "6px 14px" }}
+              onClick={handleSetPin}
+            >
+              Save
+            </button>
+            <button
+              className="btn-ghost"
+              style={{ fontSize: 12, padding: "6px 10px" }}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pinMsg && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: pinMsg.startsWith("✓") ? "var(--green)" : "var(--red)",
+          }}
+        >
+          {pinMsg}
+        </div>
+      )}
+
+      {hasPin && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: "var(--text-muted)",
+            lineHeight: 1.6,
+          }}
+        >
+          🛡️ App will lock on open and after 5 min of inactivity. PIN is hashed
+          — never stored in plain text.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Settings({
   sharedData,
   updateShared,
@@ -2629,6 +3004,7 @@ export function Settings({
   pushDevToProd,
   onExport,
 }) {
+  const { personNames } = useData();
   const profile = sharedData?.profile || {};
   const [p, setP] = useState(profile);
   const [saved, setSaved] = useState(false);
@@ -2672,6 +3048,40 @@ export function Settings({
       <div className="card section-gap">
         <div className="card-title">Household profile</div>
         <div className="grid-2" style={{ marginBottom: 12 }}>
+          <div>
+            <label
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Person 1 name
+            </label>
+            <input
+              value={p.person1Name || ""}
+              onChange={(e) => setP({ ...p, person1Name: e.target.value })}
+              placeholder="Person 1"
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Person 2 name
+            </label>
+            <input
+              value={p.person2Name || ""}
+              onChange={(e) => setP({ ...p, person2Name: e.target.value })}
+              placeholder="Person 2"
+            />
+          </div>
           <div>
             <label
               style={{
@@ -2728,6 +3138,9 @@ export function Settings({
           {saved ? "✓ Saved!" : "Save"}
         </button>
       </div>
+      {/* PIN Lock Setup */}
+      <PinSetup sharedData={sharedData} updateShared={updateShared} />
+
       <div className="card section-gap">
         <div className="card-title">About WealthOS</div>
         <div
@@ -2737,7 +3150,7 @@ export function Settings({
             lineHeight: 1.8,
           }}
         >
-          <div>Personal finance tracker for Abhav & Aanya.</div>
+          <div>Personal household finance tracker.</div>
           <div>Data synced securely via Firebase Firestore.</div>
           <div
             style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}
@@ -2750,7 +3163,7 @@ export function Settings({
       {/* Apply Payslip Data */}
       {updatePerson && (
         <div className="card section-gap">
-          <div className="card-title">📋 Apply Salary Slip — Dec 2025</div>
+          <div className="card-title">📋 Apply Salary Data — FY 2025-26</div>
           <p
             style={{
               fontSize: 13,
@@ -2759,21 +3172,26 @@ export function Settings({
               marginBottom: 12,
             }}
           >
-            One-click apply Abhav's salary slip data (BBY Services, Dec 2025).
-            Sets income to ₹1,84,601 take-home and fills Tax Planner fields.
+            One-click apply Abhav's full FY 2025-26 salary data (BBY Services).
+            Sets income to ₹1,84,601/mo take-home and fills Tax Planner with all
+            components including incentives.
           </p>
           <div
             style={{
               fontSize: 12,
               color: "var(--text-muted)",
               marginBottom: 12,
+              lineHeight: 1.7,
             }}
           >
-            <div>Basic: ₹96,545 · HRA: ₹38,618 · LTA: ₹8,042</div>
-            <div>PF: ₹11,585 · Prof Tax: ₹200 · Income Tax: ₹33,341</div>
+            <div>Basic: ₹96,545 · HRA: ₹38,618 · Special: ₹84,572</div>
+            <div>LTA: ₹8,042 · Communication: ₹2,000</div>
+            <div>Incentives: ₹2,40,582 (Sep ₹71,542 + Mar ₹1,69,040)</div>
             <div>
-              Gross: ₹2,29,777 · Deductions: ₹45,176 ·{" "}
-              <strong style={{ color: "var(--green)" }}>Net: ₹1,84,601</strong>
+              Annual Gross:{" "}
+              <strong style={{ color: "var(--gold)" }}>₹29,97,906</strong>
+              {" · "}Monthly Net:{" "}
+              <strong style={{ color: "var(--green)" }}>₹1,84,601</strong>
             </div>
           </div>
           <button
@@ -2793,10 +3211,9 @@ export function Settings({
                 lta: 8042,
                 specialAllowance: 84572,
                 communicationAllowance: 2000,
+                annualIncentives: 240582,
               });
-              setBackupMsg(
-                "✓ Abhav's income & tax planner updated from salary slip",
-              );
+              setBackupMsg("✓ Abhav's FY 2025-26 salary & tax data applied");
               setTimeout(() => setBackupMsg(""), 4000);
             }}
           >
@@ -3095,9 +3512,9 @@ export function Settings({
                       : "Unknown time";
                     const docLabel =
                       b.docId === "abhav"
-                        ? "Abhav"
+                        ? personNames?.abhav || "Person 1"
                         : b.docId === "aanya"
-                          ? "Aanya"
+                          ? personNames?.aanya || "Person 2"
                           : "Shared";
                     const d = b.data || {};
                     const preview =
@@ -4544,6 +4961,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
 }
 
 export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   const [tab, setTab] = useState("schedule");
   const [search, setSearch] = useState("");
   const [filterPerson, setFilterPerson] = useState("all");
@@ -4624,7 +5042,7 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
   );
 
   const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
-  const pLabel = (o) => (o === "abhav" ? "Abhav" : "Aanya");
+  const pLabel = (o) => personNames?.[o] || o;
 
   const personBadge = (owner) => (
     <span
@@ -5124,8 +5542,8 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               </div>
               {[
                 { id: "all", label: "All" },
-                { id: "abhav", label: "Abhav" },
-                { id: "aanya", label: "Aanya" },
+                { id: "abhav", label: personNames?.abhav || "Person 1" },
+                { id: "aanya", label: personNames?.aanya || "Person 2" },
               ].map(({ id, label }) => (
                 <button
                   key={id}
@@ -5206,12 +5624,12 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
                     {[
                       {
                         id: "abhav",
-                        label: "Abhav",
+                        label: personNames?.abhav || "Person 1",
                         color: "var(--abhav)",
                       },
                       {
                         id: "aanya",
-                        label: "Aanya",
+                        label: personNames?.aanya || "Person 2",
                         color: "var(--aanya)",
                       },
                     ].map(({ id, label, color }) => (
@@ -5510,14 +5928,14 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               owner: "abhav",
               pData: abhav,
               color: "var(--abhav)",
-              label: "Abhav",
+              label: personNames?.abhav || "Person 1",
               manualRules: abhavManualRules,
             },
             {
               owner: "aanya",
               pData: aanya,
               color: "var(--aanya)",
-              label: "Aanya",
+              label: personNames?.aanya || "Person 2",
               manualRules: aanyaManualRules,
             },
           ].map(({ owner, pData, color, label, manualRules: rules }) => (

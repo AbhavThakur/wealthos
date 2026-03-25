@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
 } from "react";
+import { autoRecurringRules } from "../utils/autoRecurringRules";
 import {
   doc,
   onSnapshot,
@@ -50,7 +51,13 @@ const EMPTY_PERSON = {
 const EMPTY_SHARED = {
   goals: [],
   trips: [],
-  profile: { householdName: "", city: "", savingsTarget: 25 },
+  profile: {
+    householdName: "",
+    city: "",
+    savingsTarget: 25,
+    person1Name: "",
+    person2Name: "",
+  },
   netWorthHistory: [],
 };
 
@@ -83,86 +90,6 @@ function migrateExpenseTypes(data) {
 
 // Builds virtual recurring rules from incomes, expenses, and SIP investments.
 // These are derived at runtime — no need to store them in Firestore.
-function autoRecurringRules(data) {
-  const rules = [];
-  let id = -1; // negative IDs to avoid clashing with manual rules
-
-  // Income rules
-  for (const inc of data.incomes || []) {
-    rules.push({
-      id: id--,
-      desc: inc.name,
-      amount: inc.amount,
-      type: "income",
-      category: "Salary",
-      dayOfMonth: 1,
-      active: true,
-      auto: true,
-      sourceType: "income",
-    });
-  }
-
-  // Expense rules
-  for (const exp of data.expenses || []) {
-    // Skip trip expenses (they're one-time grouped events, not recurring)
-    if (exp.expenseType === "trip") continue;
-    const recurrence =
-      exp.recurrence || (exp.expenseType === "onetime" ? "once" : "monthly");
-    // "once" = one-off with no recurring transaction
-    // entries-based expenses: still generate a monthly placeholder unless recurrence=once/yearly/quarterly
-    rules.push({
-      id: id--,
-      desc: exp.name,
-      amount: -Math.abs(exp.amount),
-      type: "expense",
-      category: exp.category || "Others",
-      dayOfMonth: exp.date ? parseInt(exp.date.slice(8, 10), 10) : 1,
-      active: true,
-      auto: true,
-      sourceType: "expense",
-      recurrence,
-      recurrenceMonth: exp.recurrenceMonth ?? null, // 0-based month index (0=Jan) for yearly
-      recurrenceMonths: exp.recurrenceMonths ?? null, // array of 0-based months for quarterly
-    });
-  }
-
-  // SIP investment rules (skip FD, lump-sum, one-time, and paused)
-  for (const inv of data.investments || []) {
-    if (inv.type === "FD" || inv.frequency === "onetime" || inv.paused)
-      continue;
-    // yearly SIPs only fire once a year — still show in recurring list but
-    // the transaction generation handles them differently below
-    rules.push({
-      id: id--,
-      desc: inv.name,
-      amount: -Math.abs(inv.amount),
-      type: "investment",
-      category: "Investment",
-      dayOfMonth: inv.deductionDate || 15,
-      frequency: inv.frequency || "monthly",
-      active: true,
-      auto: true,
-      sourceType: "investment",
-    });
-  }
-
-  // Debt EMI rules
-  for (const debt of data.debts || []) {
-    rules.push({
-      id: id--,
-      desc: debt.name + " EMI",
-      amount: -Math.abs(debt.emi),
-      type: "expense",
-      category: "EMI",
-      dayOfMonth: 5,
-      active: true,
-      auto: true,
-      sourceType: "debt",
-    });
-  }
-
-  return rules;
-}
 
 function applyRecurring(data) {
   const transactions = data.transactions || [];
@@ -663,6 +590,12 @@ export function DataProvider({ children }) {
     return results;
   }, [user]);
 
+  // Configurable person display names (fallback to "Person 1"/"Person 2")
+  const personNames = {
+    abhav: shared?.profile?.person1Name || "Person 1",
+    aanya: shared?.profile?.person2Name || "Person 2",
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -671,6 +604,7 @@ export function DataProvider({ children }) {
         shared,
         loading,
         needsOnboarding,
+        personNames,
         updatePerson,
         batchUpdatePerson,
         updateShared,
@@ -689,4 +623,55 @@ export function DataProvider({ children }) {
 }
 
 export const useData = () => useContext(DataContext);
-export { autoRecurringRules };
+
+// ── Demo mode provider (read-only, no Firebase) ─────────────────────────
+export function DemoDataProvider({ children }) {
+  const [abhav, setAbhav] = useState(null);
+  const [aanya, setAanya] = useState(null);
+  const [shared, setShared] = useState(null);
+
+  useEffect(() => {
+    // Lazy-load demo data to keep main bundle lean
+    import("../data/demoData.js").then((mod) => {
+      setAbhav({ ...mod.DEMO_PERSON1 });
+      setAanya({ ...mod.DEMO_PERSON2 });
+      setShared({ ...mod.DEMO_SHARED });
+    });
+  }, []);
+
+  const loading = !abhav || !aanya || !shared;
+
+  const personNames = {
+    abhav: shared?.profile?.person1Name || "Rahul",
+    aanya: shared?.profile?.person2Name || "Priya",
+  };
+
+  const noop = () => {};
+  const noopAsync = async () => {};
+
+  return (
+    <DataContext.Provider
+      value={{
+        abhav,
+        aanya,
+        shared,
+        loading,
+        needsOnboarding: false,
+        personNames,
+        updatePerson: noop,
+        batchUpdatePerson: noop,
+        updateShared: noop,
+        takeSnapshot: noop,
+        resetData: noopAsync,
+        listBackups: async () => [],
+        restoreBackup: noopAsync,
+        createManualBackup: noopAsync,
+        seedDevFromProd: noopAsync,
+        pushDevToProd: noopAsync,
+        isDemo: true,
+      }}
+    >
+      {children}
+    </DataContext.Provider>
+  );
+}

@@ -1166,10 +1166,10 @@ function latestRaise(personData, name, color) {
   return best;
 }
 
-function RaiseNudge({ abhav, aanya }) {
+function RaiseNudge({ abhav, aanya, personNames }) {
   const candidates = [
-    latestRaise(abhav, "Abhav", "var(--abhav)"),
-    latestRaise(aanya, "Aanya", "var(--aanya)"),
+    latestRaise(abhav, personNames?.abhav || "Person 1", "var(--abhav)"),
+    latestRaise(aanya, personNames?.aanya || "Person 2", "var(--aanya)"),
   ].filter(Boolean);
 
   if (candidates.length === 0) return null;
@@ -1305,7 +1305,7 @@ function RaiseNudge({ abhav, aanya }) {
   );
 }
 
-export default function Dashboard({ abhav, aanya, shared }) {
+export default function Dashboard({ abhav, aanya, shared, personNames }) {
   // ── Month picker ────────────────────────────────────────────────────────
   const todayYm = (() => {
     const d = new Date();
@@ -1833,18 +1833,18 @@ export default function Dashboard({ abhav, aanya, shared }) {
 
     persons: (
       <>
-        <RaiseNudge abhav={abhav} aanya={aanya} />
+        <RaiseNudge abhav={abhav} aanya={aanya} personNames={personNames} />
         <div className="grid-2 section-gap">
           {[
             {
-              name: "Abhav",
+              name: personNames?.abhav || "Person 1",
               stats: a,
               score: aScore,
               color: "var(--abhav)",
               dim: "var(--abhav-dim)",
             },
             {
-              name: "Aanya",
+              name: personNames?.aanya || "Person 2",
               stats: b,
               score: bScore,
               color: "var(--aanya)",
@@ -1968,7 +1968,9 @@ export default function Dashboard({ abhav, aanya, shared }) {
                         : "var(--aanya)",
                   }}
                 >
-                  {a.savingsRate >= b.savingsRate ? "Abhav" : "Aanya"}
+                  {a.savingsRate >= b.savingsRate
+                    ? personNames?.abhav || "Person 1"
+                    : personNames?.aanya || "Person 2"}
                 </span>{" "}
                 is saving more this month!
               </div>
@@ -1979,11 +1981,11 @@ export default function Dashboard({ abhav, aanya, shared }) {
                   marginTop: 2,
                 }}
               >
-                Abhav:{" "}
+                {personNames?.abhav || "Person 1"}:{" "}
                 <strong style={{ color: "var(--abhav)" }}>
                   {a.savingsRate}%
                 </strong>{" "}
-                &nbsp;·&nbsp; Aanya:{" "}
+                &nbsp;·&nbsp; {personNames?.aanya || "Person 2"}:{" "}
                 <strong style={{ color: "var(--aanya)" }}>
                   {b.savingsRate}%
                 </strong>{" "}
@@ -2002,7 +2004,10 @@ export default function Dashboard({ abhav, aanya, shared }) {
       <div className="grid-2 section-gap">
         {/* Comparison bars */}
         <div className="card">
-          <div className="card-title">Abhav vs Aanya</div>
+          <div className="card-title">
+            {personNames?.abhav || "Person 1"} vs{" "}
+            {personNames?.aanya || "Person 2"}
+          </div>
           <div
             style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 12 }}
           >
@@ -2016,7 +2021,7 @@ export default function Dashboard({ abhav, aanya, shared }) {
                   display: "inline-block",
                 }}
               />
-              Abhav
+              {personNames?.abhav || "Person 1"}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span
@@ -2028,7 +2033,7 @@ export default function Dashboard({ abhav, aanya, shared }) {
                   display: "inline-block",
                 }}
               />
-              Aanya
+              {personNames?.aanya || "Person 2"}
             </span>
           </div>
           <ResponsiveContainer width="100%" height={180}>
@@ -2056,13 +2061,13 @@ export default function Dashboard({ abhav, aanya, shared }) {
                 dataKey="abhav"
                 fill="#5b9cf6"
                 radius={[4, 4, 0, 0]}
-                name="Abhav"
+                name={personNames?.abhav || "Person 1"}
               />
               <Bar
                 dataKey="aanya"
                 fill="#d46eb3"
                 radius={[4, 4, 0, 0]}
-                name="Aanya"
+                name={personNames?.aanya || "Person 2"}
               />
             </BarChart>
           </ResponsiveContainer>

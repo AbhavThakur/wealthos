@@ -23,15 +23,17 @@ function downloadCsv(filename, header, rows) {
   URL.revokeObjectURL(url);
 }
 
-export function exportAllData(abhav, aanya, shared) {
+export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const date = new Date().toISOString().slice(0, 10);
+  const p1 = personNames.abhav || "Person 1";
+  const p2 = personNames.aanya || "Person 2";
 
   // Incomes
   const incH = ["Person", "Name", "Amount", "Type"];
   const incR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const i of d?.incomes || [])
       incR.push([name, i.name, i.amount, i.type || ""]);
@@ -42,8 +44,8 @@ export function exportAllData(abhav, aanya, shared) {
   const expH = ["Person", "Name", "Amount", "Category", "Type", "SubCategory"];
   const expR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const e of d?.expenses || [])
       expR.push([
@@ -70,8 +72,8 @@ export function exportAllData(abhav, aanya, shared) {
   ];
   const invR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const i of d?.investments || [])
       invR.push([
@@ -91,8 +93,8 @@ export function exportAllData(abhav, aanya, shared) {
   const txH = ["Person", "Date", "Description", "Amount", "Type", "Category"];
   const txR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const t of d?.transactions || [])
       txR.push([name, t.date, t.desc, t.amount, t.type, t.category || ""]);
@@ -103,8 +105,8 @@ export function exportAllData(abhav, aanya, shared) {
   const dbtH = ["Person", "Name", "Outstanding", "Rate%", "Tenure(months)"];
   const dbtR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const db of d?.debts || [])
       dbtR.push([name, db.name, db.outstanding, db.rate, db.tenure]);
@@ -124,8 +126,8 @@ export function exportAllData(abhav, aanya, shared) {
   ];
   const insR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const i of d?.insurances || [])
       insR.push([
@@ -145,8 +147,8 @@ export function exportAllData(abhav, aanya, shared) {
   const subH = ["Person", "Name", "Category", "Amount", "Frequency", "Active"];
   const subR = [];
   for (const [name, d] of [
-    ["Abhav", abhav],
-    ["Aanya", aanya],
+    [p1, abhav],
+    [p2, aanya],
   ]) {
     for (const s of d?.subscriptions || [])
       subR.push([name, s.name, s.category, s.amount, s.frequency, s.active]);

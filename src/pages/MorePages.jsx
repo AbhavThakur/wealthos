@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { fmt, fmtCr, nextId } from "../utils/finance";
 import { Plus, Trash2, Shield } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm } from "../hooks/useConfirm";
+import { useData } from "../context/DataContext";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INSURANCE TRACKER
@@ -300,17 +301,18 @@ export function Insurance({ data, personName, personColor, updatePerson }) {
 }
 
 export function HouseholdInsurance({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   return (
     <div className="grid-2" style={{ gap: "1.5rem" }}>
       <Insurance
         data={abhav}
-        personName="Abhav"
+        personName={personNames?.abhav || "Person 1"}
         personColor="var(--abhav)"
         updatePerson={(k, v) => updatePerson("abhav", k, v)}
       />
       <Insurance
         data={aanya}
-        personName="Aanya"
+        personName={personNames?.aanya || "Person 2"}
         personColor="var(--aanya)"
         updatePerson={(k, v) => updatePerson("aanya", k, v)}
       />
@@ -626,17 +628,18 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
 }
 
 export function HouseholdSubscriptions({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   return (
     <div className="grid-2" style={{ gap: "1.5rem" }}>
       <Subscriptions
         data={abhav}
-        personName="Abhav"
+        personName={personNames?.abhav || "Person 1"}
         personColor="var(--abhav)"
         updatePerson={(k, v) => updatePerson("abhav", k, v)}
       />
       <Subscriptions
         data={aanya}
-        personName="Aanya"
+        personName={personNames?.aanya || "Person 2"}
         personColor="var(--aanya)"
         updatePerson={(k, v) => updatePerson("aanya", k, v)}
       />

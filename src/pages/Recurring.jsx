@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { fmt, nextId, EXPENSE_CATEGORIES } from "../utils/finance";
 import { Plus, Trash2, Bell, BellOff, RefreshCw, Link } from "lucide-react";
-import { useConfirm } from "../App";
-import { autoRecurringRules } from "../context/DataContext";
+import { useConfirm } from "../hooks/useConfirm";
+import { autoRecurringRules } from "../utils/autoRecurringRules";
 
 const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
 

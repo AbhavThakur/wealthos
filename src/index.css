@@ -692,6 +692,23 @@ input[type="number"] {
     transform: translateY(0);
   }
 }
+@keyframes pinShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+.pin-shake {
+  animation: pinShake 0.4s ease-out;
+}
 .onboarding-step {
   text-align: center;
 }

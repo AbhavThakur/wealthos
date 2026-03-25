@@ -28,7 +28,7 @@ import {
   Users,
   Info,
 } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm } from "../hooks/useConfirm";
 
 // Reusable info modal — portal-based overlay
 function InfoModal({ title, children }) {

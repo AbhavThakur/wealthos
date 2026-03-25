@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
 import { Camera, Plus, Trash2 } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm } from "../hooks/useConfirm";
 
 const MANUAL_ASSET_TYPES = [
   "cash",
@@ -113,7 +113,14 @@ function calcNetWorth(data) {
   };
 }
 
-function AssetsEditor({ person, data, color, updatePerson, confirm }) {
+function AssetsEditor({
+  person,
+  data,
+  color,
+  updatePerson,
+  confirm,
+  personNames,
+}) {
   const nw = calcNetWorth(data);
 
   const addAsset = () =>
@@ -168,7 +175,7 @@ function AssetsEditor({ person, data, color, updatePerson, confirm }) {
           }}
         />
         <div style={{ fontWeight: 500, fontSize: 14, color }}>
-          {person === "abhav" ? "Abhav" : "Aanya"}
+          {personNames?.[person] || person}
         </div>
         <div style={{ marginLeft: "auto", fontSize: 13 }}>
           Net worth: <strong style={{ color }}>{fmtCr(nw.net)}</strong>
@@ -640,6 +647,7 @@ export default function NetWorth({
   updatePerson,
   updateShared,
   takeSnapshot,
+  personNames,
 }) {
   const [activeTab, setActiveTab] = useState("timeline");
   const [snapshotDone, setSnapshotDone] = useState(false);
@@ -686,7 +694,7 @@ export default function NetWorth({
           onClick={handleSnapshot}
         >
           <Camera size={14} />{" "}
-          {snapshotDone ? "✓ Snapshot saved!" : "Take monthly snapshot"}
+          {snapshotDone ? "✓ Snapshot saved!" : "Take snapshot now"}
         </button>
       </div>
 
@@ -747,9 +755,9 @@ export default function NetWorth({
                   lineHeight: 1.6,
                 }}
               >
-                Click "Take monthly snapshot" at the end of each month.
+                Snapshots are taken automatically at the start of each month.
                 <br />
-                After 2+ snapshots, you'll see your net worth growing here.
+                After 2+ snapshots, you'll see your net worth trend here.
               </div>
               <button
                 className="btn-primary"
@@ -818,7 +826,10 @@ export default function NetWorth({
                 </div>
               </div>
               <div className="card section-gap">
-                <div className="card-title">Abhav vs Aanya net worth</div>
+                <div className="card-title">
+                  {personNames?.abhav || "Person 1"} vs{" "}
+                  {personNames?.aanya || "Person 2"} net worth
+                </div>
                 <div style={{ height: 200 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -843,13 +854,13 @@ export default function NetWorth({
                       />
                       <Bar
                         dataKey="abhav"
-                        name="Abhav"
+                        name={personNames?.abhav || "Person 1"}
                         fill="#5b9cf6"
                         radius={[4, 4, 0, 0]}
                       />
                       <Bar
                         dataKey="aanya"
-                        name="Aanya"
+                        name={personNames?.aanya || "Person 2"}
                         fill="#d46eb3"
                         radius={[4, 4, 0, 0]}
                       />
@@ -872,8 +883,12 @@ export default function NetWorth({
                   }}
                 >
                   <span style={{ flex: 1 }}>Month</span>
-                  <span style={{ flex: 1 }}>Abhav</span>
-                  <span style={{ flex: 1 }}>Aanya</span>
+                  <span style={{ flex: 1 }}>
+                    {personNames?.abhav || "Person 1"}
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    {personNames?.aanya || "Person 2"}
+                  </span>
                   <span style={{ flex: 1 }}>Household</span>
                   <span style={{ width: 30 }}></span>
                 </div>
@@ -936,6 +951,7 @@ export default function NetWorth({
               color="var(--abhav)"
               updatePerson={updatePerson}
               confirm={confirm}
+              personNames={personNames}
             />
           </div>
           <div className="card">
@@ -945,6 +961,7 @@ export default function NetWorth({
               color="var(--aanya)"
               updatePerson={updatePerson}
               confirm={confirm}
+              personNames={personNames}
             />
           </div>
         </div>

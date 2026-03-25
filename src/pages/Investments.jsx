@@ -39,7 +39,8 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { useConfirm } from "../App";
+import { useConfirm } from "../hooks/useConfirm";
+import { useData } from "../context/DataContext";
 
 // ─── mfapi.in helpers ────────────────────────────────────────────────────────
 async function mfSearch(query) {
@@ -2203,7 +2204,7 @@ const typeColor = (t) => TYPE_COLORS[t] || "#888888";
 
 // ─── Mutual Fund cap categories ──────────────────────────────────────────────
 // Each entry: { value (stored), label (shown), buckets (cap weights), isActive }
-export const MF_CAP_CATEGORIES = [
+const MF_CAP_CATEGORIES = [
   { value: "", label: "Not specified", buckets: null, isActive: null },
   {
     value: "large_index",
@@ -2528,6 +2529,7 @@ function computeHealthData(rows) {
 
 // ─── Portfolio overview charts + health panel ────────────────────────────────
 function PortfolioCharts({ rows, isHousehold }) {
+  const { personNames } = useData();
   const [tab, setTab] = useState("snapshot"); // "snapshot" | "health"
 
   // ── Snapshot data ──
@@ -2558,7 +2560,7 @@ function PortfolioCharts({ rows, isHousehold }) {
       isHousehold
         ? [
             {
-              name: "Abhav",
+              name: personNames?.abhav || "Person 1",
               value: Math.round(
                 rows
                   .filter((r) => r.owner === "abhav")
@@ -2567,7 +2569,7 @@ function PortfolioCharts({ rows, isHousehold }) {
               color: "var(--abhav)",
             },
             {
-              name: "Aanya",
+              name: personNames?.aanya || "Person 2",
               value: Math.round(
                 rows
                   .filter((r) => r.owner === "aanya")
@@ -2577,7 +2579,7 @@ function PortfolioCharts({ rows, isHousehold }) {
             },
           ].filter((d) => d.value > 0)
         : null,
-    [rows, isHousehold],
+    [rows, isHousehold, personNames],
   );
   const hasSplit = splitData && splitData.length === 2;
   const splitTotal = hasSplit ? splitData.reduce((s, d) => s + d.value, 0) : 0;
@@ -3145,6 +3147,7 @@ function PortfolioCharts({ rows, isHousehold }) {
 
 // ─── Export menu ────────────────────────────────────────────────────────────
 function ExportMenu({ rows, rawData, totals, title, filename }) {
+  const { personNames } = useData();
   const [open, setOpen] = useState(false);
 
   if (rows.length === 0) return null;
@@ -3185,7 +3188,7 @@ function ExportMenu({ rows, rawData, totals, title, filename }) {
     const dataRows = rows.map((r, i) => {
       const x = rawData[i];
       const cells = [
-        ...(isHH ? [r.owner === "abhav" ? "Abhav" : "Aanya"] : []),
+        ...(isHH ? [personNames?.[r.owner] || r.owner] : []),
         r.name,
         r.type,
         r.frequency,
@@ -3246,7 +3249,7 @@ function ExportMenu({ rows, rawData, totals, title, filename }) {
       const gainPct = gain !== null ? (gain / r.invested) * 100 : null;
       out.push(line);
       out.push(
-        `${i + 1}. ${r.name}${isHH ? `  [${r.owner === "abhav" ? "Abhav" : "Aanya"}]` : ""}`,
+        `${i + 1}. ${r.name}${isHH ? `  [${personNames?.[r.owner] || r.owner}]` : ""}`,
       );
       out.push(`   Type: ${r.type}  |  Frequency: ${r.frequency}`);
       if (r.monthly > 0) {
@@ -4906,6 +4909,7 @@ export default function Investments({
 }
 
 export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
+  const { personNames } = useData();
   const [filterPerson, setFilterPerson] = useState("All");
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
@@ -5103,7 +5107,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
   };
 
   const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
-  const pLabel = (o) => (o === "abhav" ? "Abhav" : "Aanya");
+  const pLabel = (o) => personNames?.[o] || o;
 
   // Per-investment rows used in info modals (household)
   const hhInvRows = filtered.map((x) => ({
@@ -5196,7 +5200,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                             fontSize: 11,
                           }}
                         >
-                          {r.owner === "abhav" ? "Abhav" : "Aanya"}
+                          {pLabel(r.owner)}
                         </span>
                         <span
                           style={{
@@ -5276,7 +5280,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                         fontSize: 11,
                       }}
                     >
-                      {r.owner === "abhav" ? "Abhav" : "Aanya"}
+                      {pLabel(r.owner)}
                     </span>
                     <span
                       style={{
@@ -5370,7 +5374,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                           fontSize: 11,
                         }}
                       >
-                        {r.owner === "abhav" ? "Abhav" : "Aanya"}
+                        {pLabel(r.owner)}
                       </span>
                       <span
                         style={{
@@ -5515,7 +5519,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                           fontSize: 11,
                         }}
                       >
-                        {r.owner === "abhav" ? "A" : "An"}
+                        {(pLabel(r.owner) || "?")[0]}
                       </span>
                       <span
                         style={{ width: 65, textAlign: "right", color: "#888" }}
@@ -5628,8 +5632,16 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           </span>
           {[
             { id: "All", label: "All", color: "var(--gold)" },
-            { id: "abhav", label: "Abhav", color: "var(--abhav)" },
-            { id: "aanya", label: "Aanya", color: "var(--aanya)" },
+            {
+              id: "abhav",
+              label: personNames?.abhav || "Person 1",
+              color: "var(--abhav)",
+            },
+            {
+              id: "aanya",
+              label: personNames?.aanya || "Person 2",
+              color: "var(--aanya)",
+            },
           ].map((p) => (
             <button
               key={p.id}
@@ -5835,8 +5847,16 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           <div className="card-title">Add Investment</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             {[
-              { id: "abhav", label: "Abhav", color: "var(--abhav)" },
-              { id: "aanya", label: "Aanya", color: "var(--aanya)" },
+              {
+                id: "abhav",
+                label: personNames?.abhav || "Person 1",
+                color: "var(--abhav)",
+              },
+              {
+                id: "aanya",
+                label: personNames?.aanya || "Person 2",
+                color: "var(--aanya)",
+              },
             ].map((p) => (
               <button
                 key={p.id}
