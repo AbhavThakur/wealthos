@@ -138,6 +138,8 @@ function App() {
   );
 }
 
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || "";
+
 function AppInner() {
   const {
     abhav,
@@ -157,7 +159,8 @@ function AppInner() {
     pushDevToProd,
     isDemo,
   } = useData();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const isAdmin = !!ADMIN_EMAIL && user?.email === ADMIN_EMAIL;
   const [page, setPage] = useState("dashboard");
   const [profile, setProfile] = useState("household");
 
@@ -346,15 +349,16 @@ function AppInner() {
           <Settings
             sharedData={shared}
             updateShared={updateShared}
-            updatePerson={updatePerson}
+            updatePerson={isAdmin ? updatePerson : null}
             logout={logout}
             resetData={resetData}
-            listBackups={listBackups}
-            restoreBackup={restoreBackup}
-            createManualBackup={createManualBackup}
-            seedDevFromProd={seedDevFromProd}
-            pushDevToProd={pushDevToProd}
+            listBackups={isAdmin ? listBackups : null}
+            restoreBackup={isAdmin ? restoreBackup : null}
+            createManualBackup={isAdmin ? createManualBackup : null}
+            seedDevFromProd={isAdmin ? seedDevFromProd : null}
+            pushDevToProd={isAdmin ? pushDevToProd : null}
             onExport={() => exportAllData(abhav, aanya, shared, personNames)}
+            isAdmin={isAdmin}
           />
         );
       default:

@@ -3003,6 +3003,7 @@ export function Settings({
   seedDevFromProd,
   pushDevToProd,
   onExport,
+  isAdmin,
 }) {
   const { personNames } = useData();
   const profile = sharedData?.profile || {};
@@ -3041,9 +3042,28 @@ export function Settings({
           fontFamily: "var(--font-display)",
           fontSize: 22,
           marginBottom: "1.25rem",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
         }}
       >
         Settings
+        {isAdmin && (
+          <span
+            style={{
+              fontSize: 10,
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: "var(--gold-dim)",
+              color: "var(--gold)",
+              fontWeight: 600,
+              letterSpacing: ".05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Admin
+          </span>
+        )}
       </div>
       <div className="card section-gap">
         <div className="card-title">Household profile</div>
@@ -3617,67 +3637,69 @@ export function Settings({
         </div>
       )}
 
-      {/* Danger zone */}
-      <div
-        className="card section-gap"
-        style={{ border: "1px solid var(--red, #e05c5c)" }}
-      >
-        <div className="card-title" style={{ color: "var(--red, #e05c5c)" }}>
-          Danger Zone
-        </div>
-        <p
-          style={{
-            fontSize: 13,
-            color: "var(--text-secondary)",
-            lineHeight: 1.6,
-            marginBottom: 12,
-          }}
+      {/* Danger zone — admin only */}
+      {isAdmin && (
+        <div
+          className="card section-gap"
+          style={{ border: "1px solid var(--red, #e05c5c)" }}
         >
-          This will permanently delete <strong>all</strong> your data — incomes,
-          expenses, investments, goals, debts, transactions, and net worth
-          history. You'll be taken back to the onboarding flow.
-        </p>
-        {!showReset ? (
-          <button
-            onClick={() => setShowReset(true)}
+          <div className="card-title" style={{ color: "var(--red, #e05c5c)" }}>
+            Danger Zone
+          </div>
+          <p
             style={{
-              background: "transparent",
-              color: "var(--red, #e05c5c)",
-              border: "1px solid var(--red, #e05c5c)",
-              borderRadius: "var(--radius-sm)",
-              padding: "8px 20px",
               fontSize: 13,
-              cursor: "pointer",
+              color: "var(--text-secondary)",
+              lineHeight: 1.6,
+              marginBottom: 12,
             }}
           >
-            Reset All Data
-          </button>
-        ) : (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: "var(--red, #e05c5c)" }}>
-              Are you sure?
-            </span>
+            This will permanently delete <strong>all</strong> your data —
+            incomes, expenses, investments, goals, debts, transactions, and net
+            worth history. You'll be taken back to the onboarding flow.
+          </p>
+          {!showReset ? (
             <button
-              onClick={handleReset}
-              disabled={resetting}
+              onClick={() => setShowReset(true)}
               style={{
-                background: "var(--red, #e05c5c)",
-                color: "#fff",
-                border: "none",
+                background: "transparent",
+                color: "var(--red, #e05c5c)",
+                border: "1px solid var(--red, #e05c5c)",
                 borderRadius: "var(--radius-sm)",
                 padding: "8px 20px",
                 fontSize: 13,
                 cursor: "pointer",
               }}
             >
-              {resetting ? "Resetting…" : "Yes, delete everything"}
+              Reset All Data
             </button>
-            <button className="btn-ghost" onClick={() => setShowReset(false)}>
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "var(--red, #e05c5c)" }}>
+                Are you sure?
+              </span>
+              <button
+                onClick={handleReset}
+                disabled={resetting}
+                style={{
+                  background: "var(--red, #e05c5c)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "8px 20px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                {resetting ? "Resetting…" : "Yes, delete everything"}
+              </button>
+              <button className="btn-ghost" onClick={() => setShowReset(false)}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
