@@ -1,9 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   signInWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
+  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signOut,
   onAuthStateChanged,
@@ -11,15 +9,9 @@ import {
   browserSessionPersistence,
   setPersistence,
 } from "firebase/auth";
-import { auth, googleProvider } from "../firebase";
+import { auth } from "../firebase";
 
 const AuthContext = createContext(null);
-
-const isMobile =
-  typeof navigator !== "undefined" &&
-  /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent,
-  );
 
 // Lightweight fake user object for guest demo mode
 const DEMO_USER = {
@@ -33,8 +25,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = loading
 
   useEffect(() => {
-    // Handle redirect result from mobile Google login
-    getRedirectResult(auth).catch(() => {});
     return onAuthStateChanged(auth, (u) => setUser(u ?? null));
   }, []);
 
@@ -45,15 +35,9 @@ export function AuthProvider({ children }) {
     );
     return signInWithEmailAndPassword(auth, email, password);
   };
-  const loginWithGoogle = async (remember = true) => {
-    await setPersistence(
-      auth,
-      remember ? browserLocalPersistence : browserSessionPersistence,
-    );
-    if (isMobile) {
-      return signInWithRedirect(auth, googleProvider);
-    }
-    return signInWithPopup(auth, googleProvider);
+  const signup = async (email, password) => {
+    await setPersistence(auth, browserLocalPersistence);
+    return createUserWithEmailAndPassword(auth, email, password);
   };
   const loginAsDemo = () => setUser(DEMO_USER);
   const resetPassword = (email) => sendPasswordResetEmail(auth, email);
@@ -70,7 +54,7 @@ export function AuthProvider({ children }) {
       value={{
         user,
         login,
-        loginWithGoogle,
+        signup,
         loginAsDemo,
         resetPassword,
         logout,

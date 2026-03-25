@@ -1,52 +1,53 @@
-# WealthOS 💰 — Finance Hub
+# WealthOS
 
-A private, dual-profile personal finance tracker built with React + Firebase.
-Password-protected, cloud-synced, fully separate data per person with a combined household view.
-
----
+Open-source household finance tracker for two-person households (couples, families, roommates).  
+Built with React 19 + Firebase — self-hosted, private, and free.
 
 ## Features
 
-| Module | Abhav | Aanya | Household |
-|---|---|---|---|
-| Dashboard | ✓ | ✓ | Combined + side-by-side |
-| Budget | ✓ | ✓ | Both shown |
-| Investments | SIP auto-corpus | SIP auto-corpus | Combined projection |
-| Goals | Personal | Personal | Shared goals |
-| Debts & EMIs | ✓ | ✓ | Both shown |
-| Transactions | ✓ | ✓ | Both shown |
-| Tax Planner | Old vs New regime | Old vs New regime | Side by side |
+| Module            | Person 1             | Person 2             | Household             |
+| ----------------- | -------------------- | -------------------- | --------------------- |
+| **Dashboard**     | Overview + charts    | Overview + charts    | Combined side-by-side |
+| **Budget**        | Monthly budget       | Monthly budget       | Both shown            |
+| **Investments**   | SIP auto-corpus      | SIP auto-corpus      | Combined projection   |
+| **Goals**         | Personal goals       | Personal goals       | Shared goals          |
+| **Net Worth**     | Assets & liabilities | Assets & liabilities | Combined snapshot     |
+| **Debts & EMIs**  | Loan tracker         | Loan tracker         | Both shown            |
+| **Cash Flow**     | Forecast             | Forecast             | Household forecast    |
+| **Transactions**  | Ledger               | Ledger               | Both shown            |
+| **Tax Planner**   | Old vs New regime    | Old vs New regime    | Side-by-side          |
+| **Insurance**     | Policies             | Policies             | Both shown            |
+| **Subscriptions** | Tracker              | Tracker              | Both shown            |
+| **Recurring**     | Auto-rules + alerts  | Auto-rules + alerts  | Both shown            |
+
+**Also includes:** Guided onboarding wizard, PIN lock, guest demo mode with sample data, password reset, dark theme.
 
 ### SIP Auto-Compounding
-Enter your **existing corpus** + **monthly/weekly SIP amount** + **start date** → the app automatically calculates today's value, 10-year projection, 20-year corpus, and LTCG tax impact. Monthly corpus updates itself every month.
+
+Enter your existing corpus + monthly SIP amount + start date → the app calculates today's projected value, 10-year projection, 20-year corpus, and LTCG tax impact. Corpus auto-updates monthly.
 
 ---
 
-## Setup (one-time, ~10 minutes)
+## Quick Start
 
-### Step 1 — Firebase project
+### 1. Create a Firebase project
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com)
-2. Click **Add project** → name it `wealthos` → Continue
-3. Disable Google Analytics (not needed) → **Create project**
+2. **Add project** → name it anything → disable Google Analytics → **Create project**
 
-### Step 2 — Enable Authentication
+### 2. Enable Email/Password auth
 
-1. In Firebase Console → **Authentication** → **Get started**
-2. Click **Email/Password** → Enable it → Save
-3. Go to **Users** tab → **Add user**
-4. Enter your shared email + password (e.g. `abhav.aanya@gmail.com` + strong password)
-5. **Save this password somewhere safe** — this is your login
+1. Firebase Console → **Authentication** → **Get started**
+2. **Email/Password** → Enable → Save
 
-### Step 3 — Enable Firestore
+### 3. Create Firestore database
 
 1. Firebase Console → **Firestore Database** → **Create database**
-2. Choose **Start in production mode** → Next
-3. Select region: `asia-south1 (Mumbai)` → Enable
+2. **Start in production mode** → select your region → **Enable**
 
-### Step 4 — Firestore Security Rules
+### 4. Set Firestore security rules
 
-In Firestore → **Rules** tab, paste this and click **Publish**:
+In Firestore → **Rules** tab, paste and **Publish**:
 
 ```
 rules_version = '2';
@@ -59,67 +60,63 @@ service cloud.firestore {
 }
 ```
 
-### Step 5 — Get your config
+(This file is also included as `firestore.rules` in the repo.)
 
-1. Firebase Console → ⚙️ Project Settings → **Your apps** → click **</>** (Web)
-2. Register app name: `wealthos` → **Register app**
-3. Copy the `firebaseConfig` object shown
+### 5. Get your Firebase config
 
-### Step 6 — Add config to app
+1. Firebase Console → ⚙️ **Project Settings** → **Your apps** → click **</>** (Web)
+2. Register app name → **Register app**
+3. Copy the config values shown
 
-Open `src/firebase.js` and replace the placeholder values:
+### 6. Configure the app
 
-```js
-const firebaseConfig = {
-  apiKey: "AIza...",           // paste your values here
-  authDomain: "wealthos-xxx.firebaseapp.com",
-  projectId: "wealthos-xxx",
-  storageBucket: "wealthos-xxx.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123:web:abc"
-}
+```bash
+cp .env.example .env.local
 ```
 
----
+Fill in your Firebase values in `.env.local`:
 
-## Run locally
+```
+VITE_FIREBASE_API_KEY=AIza...
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123:web:abc
+```
+
+### 7. Run
 
 ```bash
 npm install
 npm run dev
-# Open http://localhost:5173
-# Login with the email+password you created in Firebase
 ```
+
+Open http://localhost:5173 — create an account using the **Sign up** button.
 
 ---
 
-## Deploy free on Vercel (recommended)
+## Deploy (free)
 
-```bash
-# Install Vercel CLI
-npm install -g vercel
+### Vercel (recommended)
 
-# Deploy (run from project folder)
-vercel
+Push to GitHub and connect at [vercel.com](https://vercel.com).  
+Add the `VITE_FIREBASE_*` environment variables in Vercel project settings.  
+Auto-deploys on every push.
 
-# Follow the prompts — done in 60 seconds
-# You'll get a URL like https://wealthos-xyz.vercel.app
-```
+### Other options
 
-Or push to GitHub and connect at [vercel.com](https://vercel.com) — auto-deploys on every push.
-
-**Other free options:**
 - **Netlify**: `npm run build` → drag `dist/` to netlify.com/drop
 - **Cloudflare Pages**: connect GitHub repo, build command `npm run build`, output `dist`
 
 ---
 
-## Customise default data
+## Tech Stack
 
-Open `src/context/DataContext.jsx` and edit the `DEFAULTS` object at the top.
-Change Abhav's salary, Aanya's investments, shared goals etc. — this only affects first load (before any data is saved).
+React 19 · Vite 8 · Firebase Auth · Firestore · Recharts · Lucide React · date-fns
 
 ---
 
-## Tech stack
-React 18 · Vite · Firebase Auth · Firestore · Recharts · Lucide React
+## License
+
+MIT
