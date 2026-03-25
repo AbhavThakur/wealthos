@@ -238,20 +238,19 @@ function LoadingSkeleton() {
 function OfflineBanner() {
   const online = useOnlineStatus();
   const [showReconnected, setShowReconnected] = useState(false);
-  const [wasOffline, setWasOffline] = useState(false);
 
   useEffect(() => {
-    if (!online) {
-      setWasOffline(true);
-    } else if (wasOffline) {
+    let timer;
+    const onOnline = () => {
       setShowReconnected(true);
-      const t = setTimeout(() => {
-        setShowReconnected(false);
-        setWasOffline(false);
-      }, 3000);
-      return () => clearTimeout(t);
-    }
-  }, [online, wasOffline]);
+      timer = setTimeout(() => setShowReconnected(false), 3000);
+    };
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      clearTimeout(timer);
+    };
+  }, []);
 
   if (online && !showReconnected) return null;
 
