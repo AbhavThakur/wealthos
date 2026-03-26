@@ -2987,6 +2987,7 @@ export function Settings({
   const [restoreMsg, setRestoreMsg] = useState("");
   const [backupMsg, setBackupMsg] = useState("");
   const [backingUp, setBackingUp] = useState(false);
+  const [showBackupConfirm, setShowBackupConfirm] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [showPushConfirm, setShowPushConfirm] = useState(false);
@@ -3254,7 +3255,9 @@ export function Settings({
             }}
           >
             Automatic backups are created before every save. You can also create
-            a manual backup or restore any previous state.
+            a manual backup or restore any previous state. Only the latest 3
+            manual backups are kept per document — older ones are automatically
+            deleted.
           </p>
           {backupMsg && (
             <div
@@ -3280,26 +3283,99 @@ export function Settings({
             }}
           >
             {createManualBackup && (
-              <button
-                className="btn-primary"
-                onClick={async () => {
-                  setBackingUp(true);
-                  try {
-                    const docs = await createManualBackup(
-                      "manual backup — " +
-                        new Date().toLocaleDateString("en-IN"),
-                    );
-                    setBackupMsg(`✓ Backed up: ${docs.join(", ")}`);
-                    setTimeout(() => setBackupMsg(""), 4000);
-                  } catch (err) {
-                    setBackupMsg(`Error: ${err.message}`);
-                  }
-                  setBackingUp(false);
-                }}
-                disabled={backingUp}
-              >
-                {backingUp ? "Saving…" : "💾 Backup Now"}
-              </button>
+              <>
+                <button
+                  className="btn-primary"
+                  onClick={() => setShowBackupConfirm(true)}
+                  disabled={backingUp}
+                >
+                  {backingUp ? "Saving…" : "💾 Backup Now"}
+                </button>
+                {showBackupConfirm && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      background: "rgba(0,0,0,0.6)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 9999,
+                    }}
+                    onClick={() => setShowBackupConfirm(false)}
+                  >
+                    <div
+                      style={{
+                        background: "var(--card-bg, #1a1a2e)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-lg)",
+                        padding: "1.5rem",
+                        maxWidth: 400,
+                        width: "90%",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h4 style={{ margin: "0 0 8px", fontSize: 15 }}>
+                        Create Manual Backup?
+                      </h4>
+                      <p
+                        style={{
+                          fontSize: 13,
+                          color: "var(--text-secondary)",
+                          lineHeight: 1.6,
+                          margin: "0 0 16px",
+                        }}
+                      >
+                        This will snapshot all your data (abhav, aanya, shared).
+                        <br />
+                        <br />
+                        <strong style={{ color: "var(--gold)" }}>
+                          Only the latest 3 manual backups are kept.
+                        </strong>{" "}
+                        Older manual backups will be automatically deleted to
+                        save space. Automatic backups (created on every save)
+                        are unaffected.
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          className="btn-ghost"
+                          onClick={() => setShowBackupConfirm(false)}
+                          style={{ fontSize: 13 }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="btn-primary"
+                          disabled={backingUp}
+                          onClick={async () => {
+                            setShowBackupConfirm(false);
+                            setBackingUp(true);
+                            try {
+                              const docs = await createManualBackup(
+                                "manual backup — " +
+                                  new Date().toLocaleDateString("en-IN"),
+                              );
+                              setBackupMsg(`✓ Backed up: ${docs.join(", ")}`);
+                              setTimeout(() => setBackupMsg(""), 4000);
+                            } catch (err) {
+                              setBackupMsg(`Error: ${err.message}`);
+                            }
+                            setBackingUp(false);
+                          }}
+                        >
+                          Yes, Backup Now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             {seedDevFromProd && (
               <button

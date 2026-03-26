@@ -67,6 +67,54 @@ const DEFAULTS = {
   shared: { ...EMPTY_SHARED },
 };
 
+// ── Firestore document ID mapping ─────────────────────────────────────────
+// Internal code uses "abhav"/"aanya" as state keys (kept to avoid 100+ file changes).
+// Firestore uses generic "person1"/"person2" so every household looks the same.
+const DOC_P1 = "person1";
+const DOC_P2 = "person2";
+const toDocId = (id) =>
+  id === "abhav" ? DOC_P1 : id === "aanya" ? DOC_P2 : id;
+const fromDocId = (id) =>
+  id === DOC_P1 ? "abhav" : id === DOC_P2 ? "aanya" : id;
+
+// One-time migration: copy legacy "abhav"/"aanya" docs → "person1"/"person2".
+// After a verified copy, the old doc is deleted to save Firestore storage.
+async function migrateDocNames(uid, subcol) {
+  const pairs = [
+    { old: "abhav", new: DOC_P1 },
+    { old: "aanya", new: DOC_P2 },
+  ];
+  for (const { old: oldId, new: newId } of pairs) {
+    const newRef = doc(db, COL_HOUSEHOLDS, uid, subcol, newId);
+    const newSnap = await getDoc(newRef);
+    if (newSnap.exists()) {
+      // Already migrated — clean up leftover old doc if it still exists
+      const oldRef = doc(db, COL_HOUSEHOLDS, uid, subcol, oldId);
+      const oldSnap = await getDoc(oldRef);
+      if (oldSnap.exists()) {
+        await deleteDoc(oldRef);
+        console.log(`[Migration] Cleaned up leftover "${oldId}" in ${subcol}`);
+      }
+      continue;
+    }
+    const oldRef = doc(db, COL_HOUSEHOLDS, uid, subcol, oldId);
+    const oldSnap = await getDoc(oldRef);
+    if (oldSnap.exists()) {
+      await setDoc(newRef, oldSnap.data());
+      // Verify the copy before deleting
+      const verifySnap = await getDoc(newRef);
+      if (verifySnap.exists()) {
+        await deleteDoc(oldRef);
+        console.log(`[Migration] Moved "${oldId}" → "${newId}" in ${subcol}`);
+      } else {
+        console.warn(
+          `[Migration] Copy verification failed for "${newId}", keeping "${oldId}"`,
+        );
+      }
+    }
+  }
+}
+
 // ── One-time migration: backfill expenseType on legacy expenses ─────────────
 // Runs on load. Tags old expenses that have no expenseType field.
 // - recurrence "once" → expenseType "onetime"
@@ -169,34 +217,59 @@ export function DataProvider({ children }) {
 
     const watch = (docId, setter, defaultData) => {
       const ref = doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, docId);
-      getDoc(ref).then((snap) => {
-        if (!snap.exists()) setDoc(ref, defaultData);
-      });
       const unsub = onSnapshot(ref, (snap) => {
-        let data = snap.exists() ? snap.data() : defaultData;
+        // On a new device the local cache is empty. If this snapshot is from
+        // cache and the doc appears missing, do NOT write defaults — wait for
+        // the server round-trip to confirm the doc truly doesn't exist.
+        if (!snap.exists() && snap.metadata.fromCache) return;
+
+        if (!snap.exists()) {
+          // Genuinely new user — doc doesn't exist on server. Create it once.
+          setDoc(ref, defaultData);
+          return; // onSnapshot will fire again with the created data
+        }
+
+        let data = snap.data();
+        let needsWrite = false;
+
         // Migrate legacy expenses without expenseType
         const migrated = migrateExpenseTypes(data);
         if (migrated !== data) {
           data = migrated;
-          setDoc(ref, data);
+          needsWrite = true;
         }
         // Auto-derive recurring transactions from incomes/expenses/investments/debts
         const updated = applyRecurring(data);
         if (updated.length !== (data.transactions || []).length) {
-          const newData = { ...data, transactions: updated };
-          setter(newData);
-          setDoc(ref, newData);
-          return;
+          data = { ...data, transactions: updated };
+          needsWrite = true;
         }
+
         setter(data);
+        // Single batched write instead of multiple setDoc calls
+        if (needsWrite) {
+          setDoc(ref, data).catch((err) =>
+            console.warn(`[watch] Failed to write ${docId}:`, err),
+          );
+        }
       });
       unsubs.push(unsub);
     };
 
-    watch("abhav", setAbhav, DEFAULTS.abhav);
-    watch("aanya", setAanya, DEFAULTS.aanya);
-    watch("shared", setShared, DEFAULTS.shared);
-    return () => unsubs.forEach((u) => u());
+    // Migrate old "abhav"/"aanya" doc names → "person1"/"person2", then watch
+    let cancelled = false;
+    migrateDocNames(uid, SUBCOL_DATA)
+      .catch((err) => console.warn("[Migration] Failed:", err))
+      .finally(() => {
+        if (cancelled) return;
+        watch(DOC_P1, setAbhav, DEFAULTS.abhav);
+        watch(DOC_P2, setAanya, DEFAULTS.aanya);
+        watch("shared", setShared, DEFAULTS.shared);
+      });
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
   }, [user]);
 
   // ── Max backups to keep per document ────────────────────────────────────
@@ -207,7 +280,13 @@ export function DataProvider({ children }) {
   const backupBeforeSave = useCallback(
     async (docId) => {
       if (!user) return;
-      const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+      const ref = doc(
+        db,
+        COL_HOUSEHOLDS,
+        user.uid,
+        SUBCOL_DATA,
+        toDocId(docId),
+      );
       const snap = await getDoc(ref);
       if (!snap.exists()) return;
       const current = snap.data();
@@ -245,6 +324,19 @@ export function DataProvider({ children }) {
       const current =
         docId === "abhav" ? abhav : docId === "aanya" ? aanya : shared;
       if (!current) return true; // first write, allow
+      // Reject if newData is missing most expected keys (spread of null)
+      const expectedKeys =
+        docId === "shared"
+          ? ["trips", "goals", "profile", "netWorthHistory"]
+          : ["incomes", "expenses", "investments", "debts", "transactions"];
+      const presentKeys = expectedKeys.filter((k) => k in newData);
+      if (presentKeys.length < 2) {
+        console.error(
+          `[DataGuard] BLOCKED write to "${docId}": ` +
+            `only ${presentKeys.length}/${expectedKeys.length} expected keys present. Likely a null-spread bug.`,
+        );
+        return false;
+      }
       // Check key arrays — if current has data but new is empty, block
       const keys =
         docId === "shared"
@@ -290,7 +382,10 @@ export function DataProvider({ children }) {
           console.warn("[Backup] Failed:", err),
         );
       }
-      await setDoc(doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId), data);
+      await setDoc(
+        doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, toDocId(docId)),
+        data,
+      );
     },
     [user, isWriteSafe, backupBeforeSave],
   );
@@ -298,6 +393,12 @@ export function DataProvider({ children }) {
   const updatePerson = useCallback(
     (person, key, value) => {
       const current = person === "abhav" ? abhav : aanya;
+      if (!current) {
+        console.error(
+          `[DataGuard] updatePerson("${person}") skipped — data not loaded yet.`,
+        );
+        return;
+      }
       let updated = { ...current, [key]: value };
 
       // When any data source that feeds recurring rules changes,
@@ -322,6 +423,12 @@ export function DataProvider({ children }) {
   const batchUpdatePerson = useCallback(
     (person, fields) => {
       const current = person === "abhav" ? abhav : aanya;
+      if (!current) {
+        console.error(
+          `[DataGuard] batchUpdatePerson("${person}") skipped — data not loaded yet.`,
+        );
+        return;
+      }
       let updated = { ...current, ...fields };
       const sourceKeys = ["incomes", "expenses", "investments", "debts"];
       if (sourceKeys.some((k) => k in fields)) {
@@ -342,6 +449,12 @@ export function DataProvider({ children }) {
 
   const updateShared = useCallback(
     (key, value) => {
+      if (!shared) {
+        console.error(
+          `[DataGuard] updateShared("${key}") skipped — data not loaded yet.`,
+        );
+        return;
+      }
       const updated = { ...shared, [key]: value };
       setShared(updated);
       save("shared", updated);
@@ -356,8 +469,8 @@ export function DataProvider({ children }) {
     const emptyAanya = { ...EMPTY_PERSON };
     const emptyShared = { ...EMPTY_SHARED };
     await Promise.all([
-      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "abhav"), emptyAbhav),
-      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "aanya"), emptyAanya),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P1), emptyAbhav),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P2), emptyAanya),
       setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "shared"), emptyShared),
     ]);
   }, [user]);
@@ -500,32 +613,48 @@ export function DataProvider({ children }) {
       const backupRef = doc(db, COL_HOUSEHOLDS, user.uid, "backups", backupId);
       const snap = await getDoc(backupRef);
       if (!snap.exists()) throw new Error("Backup not found");
-      const { docId, data } = snap.data();
+      const { docId: rawDocId, data } = snap.data();
+      // Handle both legacy ("abhav"/"aanya") and new ("person1"/"person2") backup IDs
+      const internalId = fromDocId(rawDocId);
       // Backup current state BEFORE restoring (so restore is itself reversible)
-      await backupBeforeSave(docId);
+      await backupBeforeSave(internalId);
       // Write the backed-up data directly to the doc
-      const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+      const ref = doc(
+        db,
+        COL_HOUSEHOLDS,
+        user.uid,
+        SUBCOL_DATA,
+        toDocId(internalId),
+      );
       await setDoc(ref, data);
       // Update local state
-      if (docId === "abhav") setAbhav(data);
-      else if (docId === "aanya") setAanya(data);
-      else if (docId === "shared") setShared(data);
+      if (internalId === "abhav") setAbhav(data);
+      else if (internalId === "aanya") setAanya(data);
+      else if (internalId === "shared") setShared(data);
     },
     [user, backupBeforeSave],
   );
 
   // Manual backup: save all 3 docs right now (not throttled)
+  // Keeps only the latest MAX_MANUAL_BACKUPS per document, deletes older ones.
+  const MAX_MANUAL_BACKUPS = 3;
   const createManualBackup = useCallback(
     async (note = "manual backup") => {
       if (!user) return;
       const DOCS = ["abhav", "aanya", "shared"];
       const results = [];
+      const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
       for (const docId of DOCS) {
-        const ref = doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, docId);
+        const ref = doc(
+          db,
+          COL_HOUSEHOLDS,
+          user.uid,
+          SUBCOL_DATA,
+          toDocId(docId),
+        );
         const snap = await getDoc(ref);
         if (!snap.exists()) continue;
         const data = snap.data();
-        const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
         await addDoc(backupsCol, {
           docId,
           data,
@@ -535,6 +664,20 @@ export function DataProvider({ children }) {
         });
         results.push(docId);
       }
+      // Prune: keep only latest MAX_MANUAL_BACKUPS manual backups per doc
+      const allBackups = await getDocs(
+        query(backupsCol, orderBy("createdAt", "desc")),
+      );
+      for (const docId of DOCS) {
+        const manual = allBackups.docs.filter((d) => {
+          const bd = d.data();
+          return bd.docId === docId && bd.note;
+        });
+        if (manual.length > MAX_MANUAL_BACKUPS) {
+          const toDelete = manual.slice(MAX_MANUAL_BACKUPS);
+          await Promise.all(toDelete.map((d) => deleteDoc(d.ref)));
+        }
+      }
       return results;
     },
     [user],
@@ -543,16 +686,19 @@ export function DataProvider({ children }) {
   // Copy production data into dev subcollection (both under "households")
   const seedDevFromProd = useCallback(async () => {
     if (!user) return;
+    // Ensure prod docs are migrated to new names before reading
+    await migrateDocNames(user.uid, "data").catch(() => {});
     const DOCS = ["abhav", "aanya", "shared"];
     const results = [];
     for (const docId of DOCS) {
+      const fsId = toDocId(docId);
       // Read from prod (always "data" subcollection)
-      const prodRef = doc(db, "households", user.uid, "data", docId);
+      const prodRef = doc(db, "households", user.uid, "data", fsId);
       const snap = await getDoc(prodRef);
       if (!snap.exists()) continue;
       const data = snap.data();
       // Write to dev ("dev_data" subcollection under same households collection)
-      const devRef = doc(db, "households", user.uid, "dev_data", docId);
+      const devRef = doc(db, "households", user.uid, "dev_data", fsId);
       await setDoc(devRef, data);
       results.push(docId);
     }
@@ -565,13 +711,14 @@ export function DataProvider({ children }) {
     const DOCS = ["abhav", "aanya", "shared"];
     const results = [];
     for (const docId of DOCS) {
+      const fsId = toDocId(docId);
       // Read from dev
-      const devRef = doc(db, "households", user.uid, "dev_data", docId);
+      const devRef = doc(db, "households", user.uid, "dev_data", fsId);
       const snap = await getDoc(devRef);
       if (!snap.exists()) continue;
       const data = snap.data();
       // Backup current prod before overwriting
-      const prodRef = doc(db, "households", user.uid, "data", docId);
+      const prodRef = doc(db, "households", user.uid, "data", fsId);
       const prodSnap = await getDoc(prodRef);
       if (prodSnap.exists()) {
         const backupsCol = collection(db, "households", user.uid, "backups");

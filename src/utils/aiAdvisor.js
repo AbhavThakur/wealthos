@@ -22,42 +22,52 @@ export async function askAdvisor(userMessage, financialContext) {
 
   const contextStr = JSON.stringify(financialContext, null, 2);
 
-  const res = await fetch(`${API_URL}?key=${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `My financial data:\n${contextStr}\n\nQuestion: ${userMessage}`,
-            },
-          ],
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const res = await fetch(`${API_URL}?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `My financial data:\n${contextStr}\n\nQuestion: ${userMessage}`,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 512,
+          temperature: 0.7,
         },
-      ],
-      generationConfig: {
-        maxOutputTokens: 512,
-        temperature: 0.7,
-      },
-    }),
-  });
+      }),
+    });
+    clearTimeout(timeout);
 
-  if (!res.ok) {
-    const err = await res.text();
-    if (res.status === 429)
-      return "Rate limited — wait a moment and try again.";
-    if (res.status === 403)
-      return "API key invalid or Gemini API not enabled. Check aistudio.google.com.";
-    throw new Error(err);
+    if (!res.ok) {
+      if (res.status === 429)
+        return "Rate limited — wait a moment and try again.";
+      if (res.status === 403)
+        return "API key invalid or Gemini API not enabled. Check aistudio.google.com.";
+      const errText = await res.text().then((t) => t.slice(0, 200));
+      return `API error (${res.status}): ${errText}`;
+    }
+
+    const data = await res.json();
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "Sorry, couldn't get a response. Try again."
+    );
+  } catch (err) {
+    if (err.name === "AbortError") return "⏱️ Request timed out. Try again.";
+    return "❌ " + (err.message || "Something went wrong. Try again.");
   }
-
-  const data = await res.json();
-  return (
-    data.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "Sorry, couldn't get a response. Try again."
-  );
 }
 
 /** Build a concise financial context object from app data */

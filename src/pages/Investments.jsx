@@ -3355,38 +3355,40 @@ export default function Investments({
 
     let cancelled = false;
     (async () => {
-      setBatchSyncing(true);
-      const navs = await fetchAllMFNavs(investments);
-      if (cancelled || !navs.size) {
+      try {
+        setBatchSyncing(true);
+        const navs = await fetchAllMFNavs(investments);
+        if (cancelled || !navs.size) return;
+        let updated = 0;
+        const newList = investments.map((inv) => {
+          if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
+          const nd = navs.get(inv.schemeCode);
+          if (!nd) return inv;
+          updated++;
+          const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
+          const units =
+            Number(inv.units) > 0
+              ? inv.units
+              : Number(inv.existingCorpus) > 0 && Number(inv.latestNav) > 0
+                ? Math.round((inv.existingCorpus / inv.latestNav) * 10000) /
+                  10000
+                : 0;
+          if (units > 0) {
+            patch.units = units;
+            patch.existingCorpus = Math.round(units * nd.nav * 100) / 100;
+          }
+          return patch;
+        });
+        if (updated > 0) updatePerson("investments", newList);
+        setBatchSyncResult(
+          `Auto-synced ${updated} NAV${updated !== 1 ? "s" : ""}`,
+        );
+        setTimeout(() => setBatchSyncResult(null), 4000);
+      } catch (err) {
+        console.error("[Auto-sync NAV]", err);
+      } finally {
         setBatchSyncing(false);
-        return;
       }
-      let updated = 0;
-      const newList = investments.map((inv) => {
-        if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
-        const nd = navs.get(inv.schemeCode);
-        if (!nd) return inv;
-        updated++;
-        const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
-        // Auto-derive units from existing corpus if units not set
-        const units =
-          Number(inv.units) > 0
-            ? inv.units
-            : Number(inv.existingCorpus) > 0 && Number(inv.latestNav) > 0
-              ? Math.round((inv.existingCorpus / inv.latestNav) * 10000) / 10000
-              : 0;
-        if (units > 0) {
-          patch.units = units;
-          patch.existingCorpus = Math.round(units * nd.nav * 100) / 100;
-        }
-        return patch;
-      });
-      if (updated > 0) updatePerson("investments", newList);
-      setBatchSyncResult(
-        `Auto-synced ${updated} NAV${updated !== 1 ? "s" : ""}`,
-      );
-      setBatchSyncing(false);
-      setTimeout(() => setBatchSyncResult(null), 4000);
     })();
     return () => {
       cancelled = true;
@@ -3584,35 +3586,42 @@ export default function Investments({
             onClick={async () => {
               setBatchSyncing(true);
               setBatchSyncResult(null);
-              const navs = await fetchAllMFNavs(investments);
-              let updated = 0;
-              const newList = investments.map((inv) => {
-                if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
-                const nd = navs.get(inv.schemeCode);
-                if (!nd) return inv;
-                updated++;
-                const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
-                const units =
-                  Number(inv.units) > 0
-                    ? inv.units
-                    : Number(inv.existingCorpus) > 0 &&
-                        Number(inv.latestNav) > 0
-                      ? Math.round(
-                          (inv.existingCorpus / inv.latestNav) * 10000,
-                        ) / 10000
-                      : 0;
-                if (units > 0) {
-                  patch.units = units;
-                  patch.existingCorpus = Math.round(units * nd.nav * 100) / 100;
-                }
-                return patch;
-              });
-              if (updated > 0) updatePerson("investments", newList);
-              setBatchSyncResult(
-                `${updated} NAV${updated !== 1 ? "s" : ""} synced`,
-              );
-              setBatchSyncing(false);
-              setTimeout(() => setBatchSyncResult(null), 4000);
+              try {
+                const navs = await fetchAllMFNavs(investments);
+                let updated = 0;
+                const newList = investments.map((inv) => {
+                  if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
+                  const nd = navs.get(inv.schemeCode);
+                  if (!nd) return inv;
+                  updated++;
+                  const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
+                  const units =
+                    Number(inv.units) > 0
+                      ? inv.units
+                      : Number(inv.existingCorpus) > 0 &&
+                          Number(inv.latestNav) > 0
+                        ? Math.round(
+                            (inv.existingCorpus / inv.latestNav) * 10000,
+                          ) / 10000
+                        : 0;
+                  if (units > 0) {
+                    patch.units = units;
+                    patch.existingCorpus =
+                      Math.round(units * nd.nav * 100) / 100;
+                  }
+                  return patch;
+                });
+                if (updated > 0) updatePerson("investments", newList);
+                setBatchSyncResult(
+                  `${updated} NAV${updated !== 1 ? "s" : ""} synced`,
+                );
+              } catch (err) {
+                setBatchSyncResult("❌ Sync failed — check your connection");
+                console.error("[NAV Sync]", err);
+              } finally {
+                setBatchSyncing(false);
+                setTimeout(() => setBatchSyncResult(null), 4000);
+              }
             }}
             style={{
               whiteSpace: "nowrap",

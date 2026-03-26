@@ -40,9 +40,14 @@ export async function fetchMFNav(schemeCode) {
   if (cached && Date.now() - cached.ts < NAV_TTL) return cached.data;
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(
       `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}/latest`,
+      { signal: controller.signal },
     );
+    clearTimeout(timeout);
+    if (!res.ok) return null;
     const json = await res.json();
     if (json.status === "SUCCESS" && json.data?.[0]) {
       const result = {
@@ -90,17 +95,24 @@ export async function fetchGoldPrice() {
   const cached = getCache("gold_inr");
   if (cached && Date.now() - cached.ts < GOLD_TTL) return cached.data;
 
-  try {
-    // metals-api.com alternative: GoldAPI.io free tier OR static calculation
-    // Using exchangerate.host (free) to get XAU→INR conversion
-    const res = await fetch(
-      "https://api.exchangerate.host/latest?base=XAU&symbols=INR",
-    );
-    if (res.ok) {
+  // Free CDN-backed currency API (no key required)
+  const urls = [
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.json",
+    "https://latest.currency-api.pages.dev/v1/currencies/xau.json",
+  ];
+
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
       const json = await res.json();
-      if (json.rates?.INR) {
+      const inrPerOz = json.xau?.inr;
+      if (inrPerOz && inrPerOz > 0) {
         // XAU is per troy ounce (31.1035 grams)
-        const pricePerGram = Math.round(json.rates.INR / 31.1035);
+        const pricePerGram = Math.round(inrPerOz / 31.1035);
         const result = {
           pricePerGram,
           date: json.date || new Date().toISOString().slice(0, 10),
@@ -108,11 +120,11 @@ export async function fetchGoldPrice() {
         setCache("gold_inr", result);
         return result;
       }
+    } catch {
+      // try next URL
     }
-    return null;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 // ── Portfolio Valuation ─────────────────────────────────────────────────────
