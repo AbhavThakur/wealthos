@@ -1,18 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
+import { Chart, DonutChart } from "../components/Chart";
 import {
   fmt,
   fmtCr,
@@ -1560,57 +1547,24 @@ export const SIPCard = memo(function SIPCard({
                 >
                   {historyChartData.length > 1 && (
                     <div style={{ height: 120, padding: "0.75rem 0.5rem 0" }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart
-                          data={historyChartData}
-                          margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-                        >
-                          <defs>
-                            <linearGradient
-                              id={`hist-grad-${inv.id}`}
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
-                            >
-                              <stop
-                                offset="5%"
-                                stopColor={personColor}
-                                stopOpacity={0.3}
-                              />
-                              <stop
-                                offset="95%"
-                                stopColor={personColor}
-                                stopOpacity={0}
-                              />
-                            </linearGradient>
-                          </defs>
-                          <XAxis
-                            dataKey="date"
-                            tick={{ fontSize: 9, fill: "#555" }}
-                            axisLine={false}
-                            tickLine={false}
-                          />
-                          <YAxis hide />
-                          <Tooltip
-                            formatter={(v) => [fmtCr(v), "Value"]}
-                            contentStyle={{
-                              background: "#13131a",
-                              border: "1px solid rgba(255,255,255,0.07)",
-                              borderRadius: 8,
-                              fontSize: 12,
-                            }}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="value"
-                            name="Value"
-                            stroke={personColor}
-                            strokeWidth={2}
-                            fill={`url(#hist-grad-${inv.id})`}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                      <Chart
+                        categories={historyChartData.map((d) => d.date)}
+                        series={[
+                          {
+                            name: "Value",
+                            type: "area",
+                            data: historyChartData.map((d) => d.value),
+                            color: personColor,
+                            areaOpacity: 0.3,
+                          },
+                        ]}
+                        tooltip={(params) =>
+                          params.length ? `${fmtCr(params[0].value)}` : ""
+                        }
+                        grid={{ right: 4, bottom: 20 }}
+                        labelSize={9}
+                        labelColor="#555"
+                      />
                     </div>
                   )}
                   <div style={{ maxHeight: 220, overflowY: "auto" }}>
@@ -1785,126 +1739,79 @@ export const SIPCard = memo(function SIPCard({
               {/* Projection chart */}
               {chartView === "projection" && (
                 <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={displayChartData}
-                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id={`grad-${inv.id}`}
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor={personColor}
-                            stopOpacity={0.25}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor={personColor}
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <XAxis
-                        dataKey="year"
-                        tick={{ fontSize: 10, fill: "#55535e" }}
-                        axisLine={false}
-                        tickLine={false}
-                        interval={3}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        formatter={fmtCr}
-                        contentStyle={{
-                          background: "#13131a",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="corpus"
-                        name={!isOneTimeInv ? "Your trajectory" : "Corpus"}
-                        stroke={personColor}
-                        strokeWidth={2}
-                        fill={`url(#grad-${inv.id})`}
-                      />
-                      {!isOneTimeInv && (
-                        <Area
-                          type="monotone"
-                          dataKey="expected"
-                          name="Ideal (no missed SIPs)"
-                          stroke="var(--gold)"
-                          strokeWidth={1.5}
-                          fill="none"
-                          strokeDasharray="5 3"
-                        />
-                      )}
-                      <Area
-                        type="monotone"
-                        dataKey="invested"
-                        name="Invested"
-                        stroke="#55535e"
-                        strokeWidth={1.5}
-                        fill="none"
-                        strokeDasharray="4 2"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <Chart
+                    categories={displayChartData.map((d) => d.year)}
+                    series={[
+                      {
+                        name: !isOneTimeInv ? "Your trajectory" : "Corpus",
+                        type: "area",
+                        data: displayChartData.map((d) => d.corpus),
+                        color: personColor,
+                      },
+                      ...(!isOneTimeInv
+                        ? [
+                            {
+                              name: "Ideal (no missed SIPs)",
+                              type: "line",
+                              data: displayChartData.map((d) => d.expected),
+                              color: "#c9a84c",
+                              dashed: true,
+                              lineWidth: 1.5,
+                            },
+                          ]
+                        : []),
+                      {
+                        name: "Invested",
+                        type: "line",
+                        data: displayChartData.map((d) => d.invested),
+                        color: "#55535e",
+                        dashed: true,
+                        lineWidth: 1.5,
+                      },
+                    ]}
+                    fmt={fmtCr}
+                    labelInterval={3}
+                    labelSize={10}
+                  />
                 </div>
               )}
 
               {/* Breakdown chart: stacked invested + gains per year */}
               {chartView === "breakdown" && (
                 <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={breakdownData}
-                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-                      barSize={Math.max(4, Math.floor(260 / projYears))}
-                    >
-                      <XAxis
-                        dataKey="year"
-                        tick={{ fontSize: 10, fill: "#55535e" }}
-                        axisLine={false}
-                        tickLine={false}
-                        interval={Math.floor(projYears / 7)}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        formatter={(v, name) => [
-                          fmtCr(v),
-                          name === "invested" ? "Your money" : "Growth",
-                        ]}
-                        contentStyle={{
-                          background: "#13131a",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Bar
-                        dataKey="invested"
-                        stackId="a"
-                        fill="#3a3a4a"
-                        name="invested"
-                        radius={[0, 0, 3, 3]}
-                      />
-                      <Bar
-                        dataKey="gains"
-                        stackId="a"
-                        fill={personColor}
-                        name="gains"
-                        radius={[3, 3, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <Chart
+                    categories={breakdownData.map((d) => d.year)}
+                    series={[
+                      {
+                        name: "invested",
+                        type: "bar",
+                        data: breakdownData.map((d) => d.invested),
+                        color: "#3a3a4a",
+                        stack: "a",
+                        barRadius: [0, 0, 3, 3],
+                        barMaxWidth: Math.max(4, Math.floor(260 / projYears)),
+                      },
+                      {
+                        name: "gains",
+                        type: "bar",
+                        data: breakdownData.map((d) => d.gains),
+                        color: personColor,
+                        stack: "a",
+                        barRadius: [3, 3, 0, 0],
+                        barMaxWidth: Math.max(4, Math.floor(260 / projYears)),
+                      },
+                    ]}
+                    tooltip={(params) =>
+                      params
+                        .map(
+                          (p) =>
+                            `${p.marker} ${p.seriesName === "invested" ? "Your money" : "Growth"}: ${fmtCr(p.value)}`,
+                        )
+                        .join("<br/>")
+                    }
+                    labelInterval={Math.floor(projYears / 7)}
+                    labelSize={10}
+                  />
                   <div
                     style={{
                       display: "flex",
@@ -1960,59 +1867,24 @@ export const SIPCard = memo(function SIPCard({
               {/* Actual chart: logged corpus history */}
               {chartView === "actual" && historyChartData.length >= 2 && (
                 <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={historyChartData}
-                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id={`actual-grad-${inv.id}`}
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor={personColor}
-                            stopOpacity={0.3}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor={personColor}
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 10, fill: "#55535e" }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        formatter={(v) => [fmtCr(v), "Actual value"]}
-                        contentStyle={{
-                          background: "#13131a",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="value"
-                        name="Actual value"
-                        stroke={personColor}
-                        strokeWidth={2}
-                        fill={`url(#actual-grad-${inv.id})`}
-                        dot={{ r: 3, fill: personColor }}
-                        activeDot={{ r: 5 }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <Chart
+                    categories={historyChartData.map((d) => d.date)}
+                    series={[
+                      {
+                        name: "Actual value",
+                        type: "area",
+                        data: historyChartData.map((d) => d.value),
+                        color: personColor,
+                        areaOpacity: 0.3,
+                        symbol: "circle",
+                      },
+                    ]}
+                    tooltip={(params) =>
+                      params.length ? `${fmtCr(params[0].value)}` : ""
+                    }
+                    grid={{ right: 4 }}
+                    labelSize={10}
+                  />
                   <div
                     style={{
                       fontSize: 11,
@@ -2030,67 +1902,28 @@ export const SIPCard = memo(function SIPCard({
           )}
           {isFDInv && (
             <div style={{ height: 180 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient
-                      id={`grad-${inv.id}`}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="5%"
-                        stopColor={personColor}
-                        stopOpacity={0.25}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor={personColor}
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="year"
-                    tick={{ fontSize: 10, fill: "#55535e" }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={3}
-                  />
-                  <YAxis hide />
-                  <Tooltip
-                    formatter={fmtCr}
-                    contentStyle={{
-                      background: "#13131a",
-                      border: "1px solid rgba(255,255,255,0.07)",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="corpus"
-                    name="Corpus"
-                    stroke={personColor}
-                    strokeWidth={2}
-                    fill={`url(#grad-${inv.id})`}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="invested"
-                    name="Invested"
-                    stroke="#55535e"
-                    strokeWidth={1.5}
-                    fill="none"
-                    strokeDasharray="4 2"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Chart
+                categories={chartData.map((d) => d.year)}
+                series={[
+                  {
+                    name: "Corpus",
+                    type: "area",
+                    data: chartData.map((d) => d.corpus),
+                    color: personColor,
+                  },
+                  {
+                    name: "Invested",
+                    type: "line",
+                    data: chartData.map((d) => d.invested),
+                    color: "#55535e",
+                    dashed: true,
+                    lineWidth: 1.5,
+                  },
+                ]}
+                fmt={fmtCr}
+                labelInterval={3}
+                labelSize={10}
+              />
             </div>
           )}
         </div>
@@ -2114,7 +1947,7 @@ const typeColor = (t) => TYPE_COLORS[t] || "#888888";
 
 // ─── Mutual Fund cap categories ──────────────────────────────────────────────
 // Each entry: { value (stored), label (shown), buckets (cap weights), isActive }
-const MF_CAP_CATEGORIES = [
+export const MF_CAP_CATEGORIES = [
   { value: "", label: "Not specified", buckets: null, isActive: null },
   {
     value: "large_index",
@@ -2588,42 +2421,20 @@ export function PortfolioCharts({ rows, isHousehold }) {
                 >
                   Allocation by type
                 </div>
-                <ResponsiveContainer width="100%" height={190}>
-                  <PieChart>
-                    <Pie
-                      data={allocationData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={52}
-                      outerRadius={78}
-                      dataKey="value"
-                      nameKey="name"
-                      paddingAngle={2}
-                    >
-                      {allocationData.map((entry, i) => (
-                        <Cell key={i} fill={typeColor(entry.name)} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(v) => [fmtCr(v), "Current value"]}
-                      contentStyle={{
-                        background: "#13131a",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(v) => (
-                        <span style={{ fontSize: 11, color: "#b0aab8" }}>
-                          {v}
-                        </span>
-                      )}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <DonutChart
+                  data={allocationData.map((d) => ({
+                    name: d.name,
+                    value: d.value,
+                    color: typeColor(d.name),
+                  }))}
+                  fmt={fmtCr}
+                  height={190}
+                  innerRadius="43%"
+                  outerRadius="65%"
+                  center={["50%", "42%"]}
+                  padAngle={2}
+                  legend
+                />
               </div>
             )}
             {plData.length > 0 && (
@@ -2637,48 +2448,28 @@ export function PortfolioCharts({ rows, isHousehold }) {
                 >
                   Gain / Loss per investment
                 </div>
-                <ResponsiveContainer
-                  width="100%"
+                <Chart
+                  categories={plData.map((d) => d.name)}
+                  series={[
+                    {
+                      type: "bar",
+                      data: plData.map((d) => ({
+                        value: d.gain,
+                        color: d.gain >= 0 ? "#4ade80" : "#f87171",
+                      })),
+                      color: "#888",
+                      barRadius: [0, 4, 4, 0],
+                    },
+                  ]}
+                  horizontal
                   height={Math.max(120, plData.length * 32)}
-                >
-                  <BarChart
-                    data={plData}
-                    layout="vertical"
-                    margin={{ left: 0, right: 16, top: 0, bottom: 0 }}
-                  >
-                    <XAxis type="number" hide />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      tick={{ fontSize: 10, fill: "#666" }}
-                      width={90}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v) => [
-                        `${v >= 0 ? "+" : "\u2212"}${fmtCr(Math.abs(v))}`,
-                        "P&L",
-                      ]}
-                      contentStyle={{
-                        background: "#13131a",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                      labelStyle={{ color: "#eeeae4" }}
-                      itemStyle={{ color: "#eeeae4" }}
-                    />
-                    <Bar dataKey="gain" radius={[0, 4, 4, 0]}>
-                      {plData.map((entry, i) => (
-                        <Cell
-                          key={i}
-                          fill={entry.gain >= 0 ? "#4ade80" : "#f87171"}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                  tooltip={(p) =>
+                    `${p.name}: ${p.value >= 0 ? "+" : "\u2212"}${fmtCr(Math.abs(p.value))}`
+                  }
+                  grid={{ top: 0, right: 16, bottom: 0, left: 90 }}
+                  labelSize={10}
+                  labelColor="#666"
+                />
               </div>
             )}
           </div>

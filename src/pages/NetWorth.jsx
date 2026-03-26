@@ -1,14 +1,5 @@
 import { useState } from "react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from "recharts";
+import { Chart } from "../components/Chart";
 import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
 import { Camera, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
@@ -772,57 +763,18 @@ export default function NetWorth({
               <div className="card section-gap">
                 <div className="card-title">Household net worth over time</div>
                 <div style={{ height: 220 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={chartData}
-                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id="netGrad"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="#c9a84c"
-                            stopOpacity={0.25}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="#c9a84c"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 11, fill: "#55535e" }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        formatter={fmtCr}
-                        contentStyle={{
-                          background: "#13131a",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="household"
-                        name="Household"
-                        stroke="#c9a84c"
-                        strokeWidth={2}
-                        fill="url(#netGrad)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <Chart
+                    categories={chartData.map((d) => d.label)}
+                    series={[
+                      {
+                        name: "Household",
+                        type: "area",
+                        data: chartData.map((d) => d.household),
+                        color: "#c9a84c",
+                      },
+                    ]}
+                    fmt={fmtCr}
+                  />
                 </div>
               </div>
               <div className="card section-gap">
@@ -831,41 +783,24 @@ export default function NetWorth({
                   {personNames?.aanya || "Person 2"} net worth
                 </div>
                 <div style={{ height: 200 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={chartData}
-                      margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-                    >
-                      <XAxis
-                        dataKey="label"
-                        tick={{ fontSize: 11, fill: "#55535e" }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis hide />
-                      <Tooltip
-                        formatter={fmtCr}
-                        contentStyle={{
-                          background: "#13131a",
-                          border: "1px solid rgba(255,255,255,0.07)",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Bar
-                        dataKey="abhav"
-                        name={personNames?.abhav || "Person 1"}
-                        fill="#5b9cf6"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="aanya"
-                        name={personNames?.aanya || "Person 2"}
-                        fill="#d46eb3"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <Chart
+                    categories={chartData.map((d) => d.label)}
+                    series={[
+                      {
+                        name: personNames?.abhav || "Person 1",
+                        type: "bar",
+                        data: chartData.map((d) => d.abhav),
+                        color: "#5b9cf6",
+                      },
+                      {
+                        name: personNames?.aanya || "Person 2",
+                        type: "bar",
+                        data: chartData.map((d) => d.aanya),
+                        color: "#d46eb3",
+                      },
+                    ]}
+                    fmt={fmtCr}
+                  />
                 </div>
               </div>
               <div className="card">

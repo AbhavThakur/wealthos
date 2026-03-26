@@ -1,20 +1,6 @@
 import { useState, useCallback } from "react";
 import { EmergencyFundCard } from "./MorePages";
-import {
-  PieChart,
-  Pie,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  BarChart,
-  Bar,
-  Legend,
-  ComposedChart,
-  Line,
-} from "recharts";
+import { Chart, DonutChart } from "../components/Chart";
 import {
   DndContext,
   closestCenter,
@@ -721,51 +707,34 @@ function MonthlyCashFlow({ abhav, aanya, shared, selectedMonth }) {
       {/* Chart */}
       {data.length > 1 && (
         <div style={{ height: 220, marginBottom: "1.25rem" }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={data}
-              margin={{ top: 4, right: 0, left: 0, bottom: 0 }}
-            >
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: "#55535e" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis hide />
-              <Tooltip
-                formatter={(v, name) => [fmt(v), name]}
-                contentStyle={{
-                  background: "#13131a",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-              />
-              <Bar
-                dataKey="income"
-                name="Income"
-                fill="#4caf82"
-                radius={[4, 4, 0, 0]}
-                opacity={0.7}
-              />
-              <Bar
-                dataKey="outflows"
-                name="Outflows"
-                fill="#e05c5c"
-                radius={[4, 4, 0, 0]}
-                opacity={0.7}
-              />
-              <Line
-                dataKey="net"
-                name="Net Cash"
-                type="monotone"
-                stroke="#c9a84c"
-                strokeWidth={2}
-                dot={{ r: 3, fill: "#c9a84c" }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <Chart
+            categories={data.map((d) => d.label)}
+            series={[
+              {
+                name: "Income",
+                type: "bar",
+                data: data.map((d) => d.income),
+                color: "#4caf82",
+                opacity: 0.7,
+              },
+              {
+                name: "Outflows",
+                type: "bar",
+                data: data.map((d) => d.outflows),
+                color: "#e05c5c",
+                opacity: 0.7,
+              },
+              {
+                name: "Net Cash",
+                type: "line",
+                data: data.map((d) => d.net),
+                color: "#c9a84c",
+                symbol: "circle",
+              },
+            ]}
+            fmt={fmt}
+            grid={{ top: 8 }}
+          />
         </div>
       )}
 
@@ -2765,60 +2734,43 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
               {personNames?.aanya || "Person 2"}
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart
-              data={compareData}
-              margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
-            >
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: "#55535e" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis hide />
-              <Tooltip
-                formatter={fmt}
-                contentStyle={{
-                  background: "#13131a",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-              />
-              <Bar
-                dataKey="abhav"
-                fill="#5b9cf6"
-                radius={[4, 4, 0, 0]}
-                name={personNames?.abhav || "Person 1"}
-              />
-              <Bar
-                dataKey="aanya"
-                fill="#d46eb3"
-                radius={[4, 4, 0, 0]}
-                name={personNames?.aanya || "Person 2"}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ height: 180 }}>
+            <Chart
+              categories={compareData.map((d) => d.label)}
+              series={[
+                {
+                  name: personNames?.abhav || "Person 1",
+                  type: "bar",
+                  data: compareData.map((d) => d.abhav),
+                  color: "#5b9cf6",
+                },
+                {
+                  name: personNames?.aanya || "Person 2",
+                  type: "bar",
+                  data: compareData.map((d) => d.aanya),
+                  color: "#d46eb3",
+                },
+              ]}
+              fmt={fmt}
+            />
+          </div>
         </div>
 
         {/* Spending pie */}
         <div className="card">
           <div className="card-title">Combined Spending</div>
           <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-            <ResponsiveContainer width={110} height={110}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={30}
-                  outerRadius={50}
-                  dataKey="value"
-                  strokeWidth={0}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            <DonutChart
+              data={pieData.map((d) => ({
+                name: d.name,
+                value: d.value,
+                color: d.fill,
+              }))}
+              fmt={fmt}
+              width={110}
+              height={110}
+              style={{ flexShrink: 0 }}
+            />
             <div
               style={{
                 flex: 1,
@@ -3195,50 +3147,22 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
           >
             Based on current income, expenses, SIPs & EMIs
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart
-              data={forecastData}
-              margin={{ top: 5, right: 5, left: 5, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="fcGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor={minBal < 0 ? "var(--red)" : "var(--green)"}
-                    stopOpacity={0.3}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor={minBal < 0 ? "var(--red)" : "var(--green)"}
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 11, fill: "#55535e" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis hide />
-              <Tooltip
-                contentStyle={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                formatter={(v) => fmt(v)}
-              />
-              <Area
-                type="monotone"
-                dataKey="balance"
-                stroke={minBal < 0 ? "var(--red)" : "var(--green)"}
-                fill="url(#fcGrad)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div style={{ height: 200 }}>
+            <Chart
+              categories={forecastData.map((d) => d.month)}
+              series={[
+                {
+                  name: "Balance",
+                  type: "area",
+                  data: forecastData.map((d) => d.balance),
+                  color: minBal < 0 ? "#ef5350" : "#4caf82",
+                  areaOpacity: 0.3,
+                },
+              ]}
+              fmt={fmt}
+              grid={{ top: 8, right: 8, left: 8 }}
+            />
+          </div>
           {minBal < 0 && (
             <div
               className="tip"

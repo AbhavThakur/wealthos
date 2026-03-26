@@ -20,6 +20,7 @@ import {
   getDocs,
   deleteDoc,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 import { db, IS_DEV } from "../firebase";
 import { lumpCorpus, freqToMonthly } from "../utils/finance";
@@ -136,6 +137,40 @@ function migrateExpenseTypes(data) {
   };
 }
 
+// ── Storage optimization: prune stale data before writing ────────────────
+// Keeps Firestore docs lean on the free 1GB tier.
+const MAX_HISTORY_MONTHS = 120; // cap netWorthHistory at 10 years
+
+function prunePersonData(data) {
+  let changed = false;
+  const now = new Date();
+  const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // 1. Prune dismissedAutoTxns — only current month keys matter
+  const dismissed = data.dismissedAutoTxns || [];
+  if (dismissed.length > 0) {
+    const pruned = dismissed.filter((k) => k.startsWith(curYm));
+    if (pruned.length !== dismissed.length) {
+      data = { ...data, dismissedAutoTxns: pruned };
+      changed = true;
+    }
+  }
+
+  // 2. Prune auto-generated transactions older than 6 months
+  const txns = data.transactions || [];
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+  const cutoffYm = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}`;
+  const prunedTxns = txns.filter(
+    (t) => !t.auto || !t.date || t.date.slice(0, 7) >= cutoffYm,
+  );
+  if (prunedTxns.length !== txns.length) {
+    data = { ...data, transactions: prunedTxns };
+    changed = true;
+  }
+
+  return { data, changed };
+}
+
 // Builds virtual recurring rules from incomes, expenses, and SIP investments.
 // These are derived at runtime — no need to store them in Firestore.
 
@@ -230,28 +265,26 @@ export function DataProvider({ children }) {
         }
 
         let data = snap.data();
-        let needsWrite = false;
 
         // Migrate legacy expenses without expenseType
         const migrated = migrateExpenseTypes(data);
         if (migrated !== data) {
           data = migrated;
-          needsWrite = true;
         }
+
+        // Prune stale data BEFORE applyRecurring so the sequence is stable
+        const pruned = prunePersonData(data);
+        if (pruned.changed) {
+          data = pruned.data;
+        }
+
         // Auto-derive recurring transactions from incomes/expenses/investments/debts
         const updated = applyRecurring(data);
         if (updated.length !== (data.transactions || []).length) {
           data = { ...data, transactions: updated };
-          needsWrite = true;
         }
 
         setter(data);
-        // Single batched write instead of multiple setDoc calls
-        if (needsWrite) {
-          setDoc(ref, data).catch((err) =>
-            console.warn(`[watch] Failed to write ${docId}:`, err),
-          );
-        }
       });
       unsubs.push(unsub);
     };
@@ -273,7 +306,7 @@ export function DataProvider({ children }) {
   }, [user]);
 
   // ── Max backups to keep per document ────────────────────────────────────
-  const MAX_BACKUPS = 50;
+  const MAX_BACKUPS = 10;
 
   // Save a backup snapshot of the current document before overwriting it.
   // Stored in households/{uid}/backups/{docId}_{timestamp}
@@ -305,12 +338,16 @@ export function DataProvider({ children }) {
       });
 
       // Prune old backups — keep only the latest MAX_BACKUPS per docId
-      const allBackups = await getDocs(
-        query(backupsCol, orderBy("createdAt", "desc")),
+      // Uses where() to only read this doc's backups (saves read quota)
+      const docBackups = await getDocs(
+        query(
+          backupsCol,
+          where("docId", "==", docId),
+          orderBy("createdAt", "desc"),
+        ),
       );
-      const forDoc = allBackups.docs.filter((d) => d.data().docId === docId);
-      if (forDoc.length > MAX_BACKUPS) {
-        const toDelete = forDoc.slice(MAX_BACKUPS);
+      if (docBackups.size > MAX_BACKUPS) {
+        const toDelete = docBackups.docs.slice(MAX_BACKUPS);
         await Promise.all(toDelete.map((d) => deleteDoc(d.ref)));
       }
     },
@@ -565,12 +602,11 @@ export function DataProvider({ children }) {
     const history = (shared?.netWorthHistory || []).filter(
       (s) => !(s.month === snap.month && s.year === snap.year),
     );
-    updateShared(
-      "netWorthHistory",
-      [...history, snap].sort(
-        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-      ),
-    );
+    // Cap history at MAX_HISTORY_MONTHS (keep most recent)
+    const merged = [...history, snap]
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(-MAX_HISTORY_MONTHS);
+    updateShared("netWorthHistory", merged);
   }, [abhav, aanya, shared, updateShared]);
 
   // ── Auto-snapshot once per month on app load ────────────────────────────
@@ -591,6 +627,52 @@ export function DataProvider({ children }) {
       autoSnappedRef.current = true;
     }
   }, [loading, abhav, aanya, shared, takeSnapshot]);
+
+  // ── One-time deferred persist: write pruned/migrated data back ──────────
+  // Runs once after initial load. Separated from watch() so the first render
+  // cycle completes without triggering onSnapshot re-fires that crash recharts.
+  const persistedRef = useRef(false);
+  useEffect(() => {
+    if (loading || persistedRef.current || !user) return;
+    if (!abhav || !aanya || !shared) return;
+    persistedRef.current = true;
+    const uid = user.uid;
+    const persist = async () => {
+      for (const [internalId, data] of [
+        ["abhav", abhav],
+        ["aanya", aanya],
+      ]) {
+        const ref = doc(
+          db,
+          COL_HOUSEHOLDS,
+          uid,
+          SUBCOL_DATA,
+          toDocId(internalId),
+        );
+        const snap = await getDoc(ref);
+        if (!snap.exists()) continue;
+        const stored = snap.data();
+        // Only write if the stored data differs (needs migration/pruning)
+        const storedTxLen = (stored.transactions || []).length;
+        const localTxLen = (data.transactions || []).length;
+        const storedDismLen = (stored.dismissedAutoTxns || []).length;
+        const localDismLen = (data.dismissedAutoTxns || []).length;
+        const needsMigrate = stored.expenses?.some((e) => !e.expenseType);
+        if (
+          storedTxLen !== localTxLen ||
+          storedDismLen !== localDismLen ||
+          needsMigrate
+        ) {
+          await setDoc(ref, data).catch((err) =>
+            console.warn(`[Persist] Failed for ${internalId}:`, err),
+          );
+        }
+      }
+    };
+    // Defer 2s so all charts are mounted and stable
+    const timer = setTimeout(persist, 2000);
+    return () => clearTimeout(timer);
+  }, [loading, user, abhav, aanya, shared]);
 
   // ── Backup listing & restore ────────────────────────────────────────────
   const listBackups = useCallback(

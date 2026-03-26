@@ -1,29 +1,22 @@
-import { useState, useMemo, useCallback } from "react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { useState } from "react";
 import {
   fmt,
   fmtCr,
   nextId,
   INVESTMENT_TYPES,
   totalCorpus,
-  ppfCorpus,
-  fdCorpus,
-  ltcgTax,
   lumpCorpus,
   freqToMonthly,
-  sipCorpus,
 } from "../utils/finance";
 import { Plus, Trash2, Edit3, Check, X, Download } from "lucide-react";
-import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
-import { SIPCard, PortfolioCharts, ExportMenu, InfoModal } from "./Investments";
+import {
+  SIPCard,
+  PortfolioCharts,
+  ExportMenu,
+  InfoModal,
+  MF_CAP_CATEGORIES,
+} from "./Investments";
 import {
   computeInvRow,
   getInvested,

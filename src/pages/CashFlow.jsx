@@ -2,10 +2,12 @@ import { useState } from "react";
 import { fmt, nextId, EXPENSE_CATEGORIES, lumpCorpus } from "../utils/finance";
 import { Plus, Trash2, Search, RefreshCw, Bell, BellOff } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
-import { useUndoToast } from "../hooks/useUndoToast";
 import { autoRecurringRules } from "../utils/autoRecurringRules";
 import { useData } from "../context/DataContext";
 import { useSessionState } from "../hooks/useSessionState";
+
+// All transaction categories (income + expense)
+const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
 
 // ─── Cash Flow (merged Transactions + Recurring) ───────────────────────────
 

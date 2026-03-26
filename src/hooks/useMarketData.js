@@ -20,13 +20,20 @@ export function useMarketData(investments) {
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const timerRef = useRef(null);
+  const investmentsRef = useRef(investments);
+
+  // Sync ref in effect to satisfy React 19
+  useEffect(() => {
+    investmentsRef.current = investments;
+  }, [investments]);
 
   const refresh = useCallback(async () => {
-    if (!investments?.length) return;
+    const inv = investmentsRef.current;
+    if (!inv?.length) return;
     setLoading(true);
     try {
       const [navs, gold] = await Promise.all([
-        fetchAllMFNavs(investments),
+        fetchAllMFNavs(inv),
         fetchGoldPrice(),
       ]);
       setNavMap(navs);
@@ -35,9 +42,9 @@ export function useMarketData(investments) {
     } finally {
       setLoading(false);
     }
-  }, [investments]);
+  }, []); // stable - uses ref
 
-  // Auto-fetch on mount and when investments change
+  // Auto-fetch on mount only; refresh on interval
   useEffect(() => {
     refresh();
     timerRef.current = setInterval(refresh, REFRESH_INTERVAL);
