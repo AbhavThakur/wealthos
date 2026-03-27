@@ -21,7 +21,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 // Admin emails — must match Feedback.jsx
-const ADMIN_EMAILS = ["abhavsaxena10@gmail.com"];
+const ADMIN_EMAILS = ["abhav.aanya@gmail.com"];
 
 const NAV = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },

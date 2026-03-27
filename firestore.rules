@@ -4,5 +4,25 @@ service cloud.firestore {
     match /households/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+    
+    // Feedback collection - users can create and read their own, admin can read/write all
+    match /feedback/{feedbackId} {
+      // Anyone authenticated can create feedback
+      allow create: if request.auth != null;
+      
+      // Users can read their own feedback, admin can read all
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         request.auth.token.email == "abhav.aanya@gmail.com");
+      
+      // Admin can update any, users can only update their own (for marking read)
+      allow update: if request.auth != null && 
+        (request.auth.token.email == "abhav.aanya@gmail.com" ||
+         resource.data.userId == request.auth.uid);
+      
+      // Only admin can delete feedback
+      allow delete: if request.auth != null && 
+        request.auth.token.email == "abhav.aanya@gmail.com";
+    }
   }
 }

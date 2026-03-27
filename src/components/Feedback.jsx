@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Reply,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
@@ -28,11 +29,13 @@ import {
   doc,
   serverTimestamp,
   arrayUnion,
+  deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 
 // ─── Admin emails (add yours here) ───────────────────────────────────────────
 const ADMIN_EMAILS = [
-  "abhavsaxena10@gmail.com",
+  "abhav.aanya@gmail.com",
   // Add more admin emails as needed
 ];
 
@@ -579,6 +582,16 @@ function FeedbackItem({ item, isAdmin, userId: _userId }) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Delete this feedback permanently?")) return;
+    try {
+      await deleteDoc(doc(db, "feedback", item.id));
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete. Please try again.");
+    }
+  };
+
   return (
     <div
       style={{
@@ -776,6 +789,29 @@ function FeedbackItem({ item, isAdmin, userId: _userId }) {
             </div>
           )}
 
+          {/* Delete button for resolved items (admin only) */}
+          {isAdmin && item.status === "resolved" && (
+            <button
+              onClick={handleDelete}
+              style={{
+                marginTop: 16,
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: "1px solid #e05c5c44",
+                background: "#e05c5c22",
+                color: "#e05c5c",
+                cursor: "pointer",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Trash2 size={14} />
+              Delete Feedback
+            </button>
+          )}
+
           {/* Reply input */}
           {item.status !== "resolved" && (
             <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
@@ -869,6 +905,31 @@ export function FeedbackAdmin() {
     resolved: feedbackList.filter((f) => f.status === "resolved").length,
   };
 
+  const handleDeleteAllResolved = async () => {
+    const resolvedItems = feedbackList.filter((f) => f.status === "resolved");
+    if (resolvedItems.length === 0) {
+      alert("No resolved feedback to delete.");
+      return;
+    }
+    if (
+      !confirm(
+        `Delete ${resolvedItems.length} resolved feedback item(s) permanently?`,
+      )
+    )
+      return;
+
+    try {
+      const batch = writeBatch(db);
+      resolvedItems.forEach((item) => {
+        batch.delete(doc(db, "feedback", item.id));
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      alert("Failed to delete. Please try again.");
+    }
+  };
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -913,6 +974,30 @@ export function FeedbackAdmin() {
             ({counts[f]})
           </button>
         ))}
+
+        {/* Delete all resolved button */}
+        {counts.resolved > 0 && (
+          <button
+            onClick={handleDeleteAllResolved}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid #e05c5c44",
+              background: "#e05c5c22",
+              color: "#e05c5c",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 500,
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Trash2 size={14} />
+            Delete All Resolved ({counts.resolved})
+          </button>
+        )}
       </div>
 
       {/* Stats */}
