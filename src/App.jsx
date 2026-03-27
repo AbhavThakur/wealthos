@@ -8,6 +8,7 @@ import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
 import useIdleTimer from "./hooks/useIdleTimer";
 import AIAdvisor from "./components/AIAdvisor";
+import { FeedbackButton, FeedbackAdmin } from "./components/Feedback";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 
 // ── Error boundary to catch runtime crashes ─────────────────────────────────
@@ -121,6 +122,7 @@ const PAGE_TITLES = {
   alerts: "Budget Alerts",
   tax: "Tax Planner",
   settings: "Settings",
+  feedback: "Feedback Admin",
 };
 
 function LoadingScreen() {
@@ -520,6 +522,8 @@ function AppInner() {
             isAdmin={isAdmin}
           />
         );
+      case "feedback":
+        return <FeedbackAdmin />;
       default:
         return null;
     }
@@ -631,6 +635,7 @@ function AppInner() {
         shared={shared}
         profile={profile}
       />
+      <FeedbackButton />
     </>
   );
 }

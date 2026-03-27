@@ -16,8 +16,12 @@ import {
   X,
   Shield,
   RefreshCw,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+
+// Admin emails — must match Feedback.jsx
+const ADMIN_EMAILS = ["abhavsaxena10@gmail.com"];
 
 const NAV = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -62,6 +66,7 @@ function SidebarContent({
   onClose,
   badges,
   personNames,
+  isAdmin,
 }) {
   const profiles = PROFILES.map((p) => ({
     ...p,
@@ -228,6 +233,59 @@ function SidebarContent({
             )}{" "}
           </button>
         ))}
+
+        {/* Admin-only: Feedback management */}
+        {isAdmin && (
+          <button
+            onClick={() => {
+              setPage("feedback");
+              onClose?.();
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: "var(--radius-sm)",
+              marginBottom: 2,
+              marginTop: 8,
+              background:
+                page === "feedback" ? "var(--gold-dim)" : "transparent",
+              color:
+                page === "feedback" ? "var(--gold)" : "var(--text-secondary)",
+              border:
+                page === "feedback"
+                  ? "1px solid var(--gold-border)"
+                  : "1px solid transparent",
+              fontWeight: page === "feedback" ? 500 : 400,
+              fontSize: 13,
+            }}
+          >
+            <MessageSquare size={14} />
+            Feedback Admin
+            {badges?.feedback > 0 && (
+              <span
+                style={{
+                  marginLeft: "auto",
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  background: "var(--red)",
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 5px",
+                }}
+              >
+                {badges.feedback}
+              </span>
+            )}
+          </button>
+        )}
       </nav>
 
       <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
@@ -258,7 +316,8 @@ export default function Sidebar({
   badges,
   personNames,
 }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
   const [mobileOpen, setMobileOpen] = useState(false);
   const drawerRef = useRef(null);
 
@@ -412,6 +471,7 @@ export default function Sidebar({
               onClose={() => setMobileOpen(false)}
               badges={badges}
               personNames={personNames}
+              isAdmin={isAdmin}
             />
           </div>
         </div>
@@ -427,6 +487,7 @@ export default function Sidebar({
           logout={logout}
           badges={badges}
           personNames={personNames}
+          isAdmin={isAdmin}
         />
       </aside>
     </>
