@@ -34,9 +34,11 @@ import {
   isFD,
   hasSIPFreq,
   hasDeductionDate,
+  hasDeductionMonth,
   hasInvestmentApp,
   DEDUCTION_DAYS,
   WEEKDAYS,
+  MONTHS,
   computeInvRow,
   getInvested,
 } from "./investmentHelpers";
@@ -686,6 +688,37 @@ export const SIPCard = memo(function SIPCard({
                   {DEDUCTION_DAYS.map((d) => (
                     <option key={d} value={d}>
                       {ordinalSuffix(d)} of month
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {hasDeductionMonth(form.frequency) && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  SIP deduction month
+                </label>
+                <select
+                  value={form.deductionMonth ?? ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      deductionMonth:
+                        e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                >
+                  <option value="">Not set (Jan)</option>
+                  {MONTHS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
                     </option>
                   ))}
                 </select>
@@ -4454,6 +4487,37 @@ export default function Investments({
                   {DEDUCTION_DAYS.map((d) => (
                     <option key={d} value={d}>
                       {ordinalSuffix(d)} of month
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {hasDeductionMonth(newInv.frequency) && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  SIP deduction month
+                </label>
+                <select
+                  value={newInv.deductionMonth ?? ""}
+                  onChange={(e) =>
+                    setNewInv({
+                      ...newInv,
+                      deductionMonth:
+                        e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                >
+                  <option value="">Not set (Jan)</option>
+                  {MONTHS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
                     </option>
                   ))}
                 </select>

@@ -42,7 +42,7 @@ export function autoRecurringRules(data) {
   for (const inv of data.investments || []) {
     if (inv.type === "FD" || inv.frequency === "onetime" || inv.paused)
       continue;
-    rules.push({
+    const rule = {
       id: id--,
       desc: inv.name,
       amount: -Math.abs(inv.amount),
@@ -54,7 +54,12 @@ export function autoRecurringRules(data) {
       active: true,
       auto: true,
       sourceType: "investment",
-    });
+    };
+    // For yearly investments, include the deduction month
+    if (inv.frequency === "yearly") {
+      rule.recurrenceMonth = inv.deductionMonth ?? 0;
+    }
+    rules.push(rule);
   }
 
   // Debt EMI rules
