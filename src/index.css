@@ -500,6 +500,7 @@ input[type="number"] {
   }
   .main-content {
     padding: 1rem !important;
+    padding-bottom: 160px !important;
     max-width: 100% !important;
   }
   .grid-3,
@@ -523,6 +524,7 @@ input[type="number"] {
 @media (max-width: 480px) {
   .main-content {
     padding: 0.75rem !important;
+    padding-bottom: 160px !important;
   }
   .card {
     padding: 0.875rem;

@@ -294,25 +294,23 @@ function FeedbackModal({ onClose, feedbackList, isAdmin, user, loading }) {
             padding: "0 20px",
           }}
         >
-          {!isAdmin && (
-            <button
-              onClick={() => setTab("new")}
-              style={{
-                padding: "12px 16px",
-                background: "none",
-                border: "none",
-                borderBottom:
-                  tab === "new"
-                    ? "2px solid var(--accent)"
-                    : "2px solid transparent",
-                color: tab === "new" ? "var(--accent)" : "var(--muted)",
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            >
-              New Feedback
-            </button>
-          )}
+          <button
+            onClick={() => setTab("new")}
+            style={{
+              padding: "12px 16px",
+              background: "none",
+              border: "none",
+              borderBottom:
+                tab === "new"
+                  ? "2px solid var(--accent)"
+                  : "2px solid transparent",
+              color: tab === "new" ? "var(--accent)" : "var(--muted)",
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            New Feedback
+          </button>
           <button
             onClick={() => setTab("history")}
             style={{
@@ -335,7 +333,7 @@ function FeedbackModal({ onClose, feedbackList, isAdmin, user, loading }) {
 
         {/* Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
-          {tab === "new" && !isAdmin && (
+          {tab === "new" && (
             <form onSubmit={handleSubmit}>
               {success ? (
                 <div
