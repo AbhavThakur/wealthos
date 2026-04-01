@@ -4059,7 +4059,11 @@ export default function Budget({
                             "expenses",
                             expenses.map((x) =>
                               x.id === exp.id
-                                ? { ...x, category: e.target.value }
+                                ? {
+                                    ...x,
+                                    category: e.target.value,
+                                    subCategory: "",
+                                  }
                                 : x,
                             ),
                           )
@@ -4070,6 +4074,27 @@ export default function Budget({
                           <option key={c}>{c}</option>
                         ))}
                       </select>
+                      {EXPENSE_SUBCATEGORIES[exp.category] && (
+                        <select
+                          value={exp.subCategory || ""}
+                          onChange={(e) =>
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id
+                                  ? { ...x, subCategory: e.target.value }
+                                  : x,
+                              ),
+                            )
+                          }
+                          style={{ flex: "0 1 130px", fontSize: 12 }}
+                        >
+                          <option value="">— sub —</option>
+                          {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
 
                     {/* Purchase log panel */}
