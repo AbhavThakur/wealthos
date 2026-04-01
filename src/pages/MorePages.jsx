@@ -329,6 +329,7 @@ const SUB_CATEGORIES = [
   "Cloud Storage",
   "Software",
   "Fitness",
+  "Food",
   "News/Magazines",
   "Gaming",
   "Learning",
@@ -340,6 +341,7 @@ const SUB_ICONS = {
   "Cloud Storage": "☁️",
   Software: "💻",
   Fitness: "🏋️",
+  Food: "🍔",
   "News/Magazines": "📰",
   Gaming: "🎮",
   Learning: "📚",
@@ -399,6 +401,7 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
 
   const activeSubs = subs.filter((s) => s.active);
   const monthlyTotal = activeSubs.reduce((s, sub) => {
+    if (sub.frequency === "onetime") return s;
     if (sub.frequency === "yearly") return s + sub.amount / 12;
     if (sub.frequency === "quarterly") return s + sub.amount / 3;
     if (sub.frequency === "weekly") return s + sub.amount * (52 / 12);
@@ -407,16 +410,18 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
   const yearlyTotal = monthlyTotal * 12;
 
   // Group by category
-  const byCat = activeSubs.reduce((acc, s) => {
-    acc[s.category] =
-      (acc[s.category] || 0) +
-      (s.frequency === "yearly"
-        ? s.amount / 12
-        : s.frequency === "quarterly"
-          ? s.amount / 3
-          : s.amount);
-    return acc;
-  }, {});
+  const byCat = activeSubs
+    .filter((s) => s.frequency !== "onetime")
+    .reduce((acc, s) => {
+      acc[s.category] =
+        (acc[s.category] || 0) +
+        (s.frequency === "yearly"
+          ? s.amount / 12
+          : s.frequency === "quarterly"
+            ? s.amount / 3
+            : s.amount);
+      return acc;
+    }, {});
 
   return (
     <div>
@@ -528,6 +533,7 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
                   <option value="monthly">Monthly</option>
                   <option value="quarterly">Quarterly</option>
                   <option value="yearly">Yearly</option>
+                  <option value="onetime">One-time</option>
                 </select>
               </div>
               <div>
@@ -560,11 +566,13 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
         )}
         {subs.map((sub) => {
           const moAmt =
-            sub.frequency === "yearly"
-              ? sub.amount / 12
-              : sub.frequency === "quarterly"
-                ? sub.amount / 3
-                : sub.amount;
+            sub.frequency === "onetime"
+              ? 0
+              : sub.frequency === "yearly"
+                ? sub.amount / 12
+                : sub.frequency === "quarterly"
+                  ? sub.amount / 3
+                  : sub.amount;
           return (
             <div
               key={sub.id}
@@ -605,13 +613,12 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
                     marginTop: 2,
                   }}
                 >
-                  {fmt(sub.amount)}/
-                  {sub.frequency === "yearly"
-                    ? "yr"
-                    : sub.frequency === "quarterly"
-                      ? "qtr"
-                      : "mo"}
+                  {fmt(sub.amount)}
+                  {sub.frequency === "onetime"
+                    ? " one-time"
+                    : `/${sub.frequency === "yearly" ? "yr" : sub.frequency === "quarterly" ? "qtr" : "mo"}`}
                   {sub.frequency !== "monthly" &&
+                    sub.frequency !== "onetime" &&
                     ` (${fmt(Math.round(moAmt))}/mo)`}
                 </div>
               </div>
