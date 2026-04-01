@@ -3917,118 +3917,304 @@ export default function Budget({
                 </div>
               )}
 
-              {filteredOnetimeExps.map((exp) => (
-                <div
-                  key={exp.id}
-                  style={{
-                    background: "var(--bg-card2)",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "12px 14px",
-                    marginBottom: 8,
-                    borderLeft: "3px solid var(--gold)",
-                  }}
-                >
+              {filteredOnetimeExps.map((exp) => {
+                const entries = exp.entries || [];
+                const isOpen = expandedExp[exp.id];
+                const ef = getEntryForm(exp.id);
+                return (
                   <div
-                    className="budget-onetime-row"
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <MobileInput
-                      value={exp.name}
-                      label="Expense name"
-                      onChange={(v) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id ? { ...x, name: v } : x,
-                          ),
-                        )
-                      }
-                      style={{ flex: 1, minWidth: 0 }}
-                    />
-                    <MobileInput
-                      type="number"
-                      value={exp.amount}
-                      label="Amount"
-                      onChange={(v) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id ? { ...x, amount: Number(v) } : x,
-                          ),
-                        )
-                      }
-                      style={{ width: 100, flexShrink: 0 }}
-                      min="0"
-                      placeholder="₹"
-                    />
-                    <div className="budget-exp-actions">
-                      <MoveButton expId={exp.id} currentType="onetime" />
-                      <button
-                        className="btn-danger"
-                        aria-label={`Delete ${exp.name}`}
-                        onClick={async () => {
-                          if (
-                            await confirm(
-                              "Delete expense?",
-                              `Remove "${exp.name}"?`,
-                            )
-                          )
-                            updatePerson(
-                              "expenses",
-                              expenses.filter((x) => x.id !== exp.id),
-                            );
-                        }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                  <div
-                    className="budget-onetime-meta"
+                    key={exp.id}
                     style={{
-                      display: "flex",
-                      gap: 6,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      marginTop: 8,
+                      background: "var(--bg-card2)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "12px 14px",
+                      marginBottom: 8,
+                      borderLeft: "3px solid var(--gold)",
                     }}
                   >
-                    <input
-                      type="date"
-                      value={exp.date || ""}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, date: e.target.value }
-                              : x,
-                          ),
-                        )
-                      }
-                      style={{ flex: "0 0 130px", fontSize: 12 }}
-                    />
-                    <select
-                      value={exp.category}
-                      onChange={(e) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id
-                              ? { ...x, category: e.target.value }
-                              : x,
-                          ),
-                        )
-                      }
-                      style={{ flex: "0 1 130px", fontSize: 12 }}
+                    <div
+                      className="budget-onetime-row"
+                      style={{ display: "flex", gap: 8, alignItems: "center" }}
                     >
-                      {EXPENSE_CATEGORIES.map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
+                      <MobileInput
+                        value={exp.name}
+                        label="Expense name"
+                        onChange={(v) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id ? { ...x, name: v } : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      <MobileInput
+                        type="number"
+                        value={exp.amount}
+                        label="Amount"
+                        onChange={(v) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id ? { ...x, amount: Number(v) } : x,
+                            ),
+                          )
+                        }
+                        style={{ width: 100, flexShrink: 0 }}
+                        min="0"
+                        placeholder="₹"
+                      />
+                      <div
+                        className="budget-exp-actions"
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          alignItems: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            toggleExpandExp(exp.id);
+                            if (!isOpen) setEF(exp.id, {});
+                          }}
+                          title="Log purchases"
+                          style={{
+                            background:
+                              entries.length > 0
+                                ? "var(--gold-dim)"
+                                : "rgba(255,255,255,0.06)",
+                            border:
+                              entries.length > 0
+                                ? "1px solid var(--gold-border)"
+                                : "1px solid var(--border)",
+                            color:
+                              entries.length > 0
+                                ? "var(--gold)"
+                                : "var(--text-muted)",
+                            borderRadius: 6,
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <CalendarDays size={11} />
+                          {entries.length > 0 ? entries.length : "Log"}
+                        </button>
+                        <MoveButton expId={exp.id} currentType="onetime" />
+                        <button
+                          className="btn-danger"
+                          aria-label={`Delete ${exp.name}`}
+                          onClick={async () => {
+                            if (
+                              await confirm(
+                                "Delete expense?",
+                                `Remove "${exp.name}"?`,
+                              )
+                            )
+                              updatePerson(
+                                "expenses",
+                                expenses.filter((x) => x.id !== exp.id),
+                              );
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      className="budget-onetime-meta"
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        marginTop: 8,
+                      }}
+                    >
+                      <input
+                        type="date"
+                        value={exp.date || ""}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, date: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "0 0 130px", fontSize: 12 }}
+                      />
+                      <select
+                        value={exp.category}
+                        onChange={(e) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) =>
+                              x.id === exp.id
+                                ? { ...x, category: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                        style={{ flex: "0 1 130px", fontSize: 12 }}
+                      >
+                        {EXPENSE_CATEGORIES.map((c) => (
+                          <option key={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Purchase log panel */}
+                    {isOpen && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: "10px 12px",
+                          background: "var(--bg-card)",
+                          borderRadius: "var(--radius-sm)",
+                          borderLeft: `3px solid ${personColor}`,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            marginBottom: 8,
+                            textTransform: "uppercase",
+                            letterSpacing: ".06em",
+                          }}
+                        >
+                          Purchase log
+                        </div>
+                        {entries.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            {[...entries]
+                              .sort((a, b) => b.date.localeCompare(a.date))
+                              .map((e) => (
+                                <div
+                                  key={e.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "4px 0",
+                                    borderBottom: "1px solid var(--border)",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: "var(--text-muted)",
+                                      fontVariantNumeric: "tabular-nums",
+                                      flexShrink: 0,
+                                      width: 72,
+                                    }}
+                                  >
+                                    {e.date.slice(5).replace("-", " ")}
+                                  </span>
+                                  <span
+                                    style={{
+                                      flex: 1,
+                                      color: "var(--text-secondary)",
+                                    }}
+                                  >
+                                    {e.note || "—"}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontWeight: 600,
+                                      color: "var(--red)",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {fmt(e.amount)}
+                                  </span>
+                                  <button
+                                    onClick={async () => {
+                                      if (
+                                        await confirm(
+                                          "Delete entry?",
+                                          `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                        )
+                                      )
+                                        deleteEntry(exp, e.id);
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      cursor: "pointer",
+                                      color: "var(--text-muted)",
+                                      padding: 2,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                        <div
+                          className="budget-entry-form"
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <input
+                            type="date"
+                            value={ef.date}
+                            onChange={(e) =>
+                              setEF(exp.id, { date: e.target.value })
+                            }
+                            style={{ flex: "0 0 130px" }}
+                          />
+                          <MobileInput
+                            type="number"
+                            placeholder="₹"
+                            value={ef.amount}
+                            label="Amount"
+                            onChange={(v) => setEF(exp.id, { amount: v })}
+                            style={{ flex: "0 0 90px" }}
+                            min="0"
+                          />
+                          <MobileInput
+                            placeholder="Note"
+                            value={ef.note}
+                            label="Note"
+                            onChange={(v) => setEF(exp.id, { note: v })}
+                            style={{ flex: 1, minWidth: 100 }}
+                          />
+                          <button
+                            className="btn-primary"
+                            style={{
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "6px 12px",
+                            }}
+                            onClick={() => addEntry(exp)}
+                            disabled={!ef.amount || !ef.date}
+                          >
+                            <Plus size={11} /> Log
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {filteredOnetimeExps.length > 0 && (
                 <div
