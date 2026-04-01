@@ -182,7 +182,7 @@ const DEFAULT_ORDER = [
   "projection",
 ];
 
-function personStats(data) {
+function personStats(data, ym) {
   if (!data)
     return {
       income: 0,
@@ -193,7 +193,33 @@ function personStats(data) {
       savingsRate: 0,
     };
   const income = data.incomes?.reduce((s, x) => s + x.amount, 0) ?? 0;
-  const expenses = data.expenses?.reduce((s, x) => s + x.amount, 0) ?? 0;
+  // Month-aware expense filtering:
+  // - Monthly (recurring) expenses always included
+  // - One-time expenses only for the matching month
+  // - Trip expenses only for the matching month
+  const curMonth = ym
+    ? parseInt(ym.split("-")[1], 10) - 1
+    : new Date().getMonth();
+  const expenses = (data.expenses || []).reduce((s, x) => {
+    if (x.expenseType === "onetime") {
+      // Only include if date falls in selected month
+      return s + (x.date?.slice(0, 7) === ym ? x.amount : 0);
+    }
+    if (x.expenseType === "trip") {
+      // Only include if startDate falls in selected month
+      return (
+        s + ((x.startDate || x.date || "").slice(0, 7) === ym ? x.amount : 0)
+      );
+    }
+    // Monthly/recurring: check recurrence gating
+    if (x.recurrence === "yearly" && (x.recurrenceMonth ?? 0) !== curMonth)
+      return s;
+    if (x.recurrence === "quarterly") {
+      const months = x.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(curMonth)) return s;
+    }
+    return s + x.amount;
+  }, 0);
   const investments =
     data.investments?.reduce(
       (s, x) => s + freqToMonthly(x.amount, x.frequency),
@@ -1247,8 +1273,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     bPrevTx.income > 0 ||
     bPrevTx.expenses > 0;
 
-  const aStanding = personStats(abhav); // standing config (for corpus20)
-  const bStanding = personStats(aanya);
+  const aStanding = personStats(abhav, selectedMonth); // standing config (for corpus20)
+  const bStanding = personStats(aanya, selectedMonth);
 
   // Always use standing expenses (matches Budget page totals) so per-person
   // cards are consistent with the Budget page. Income uses actual entries
@@ -1265,28 +1291,62 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   const a = recalc(aStanding);
   const b = recalc(bStanding);
 
-  // Shared trips (joint trips visible to both persons)
-  const sharedTrips = shared?.trips || [];
+  // Shared trips (joint trips visible to both persons) — filter by selected month
+  const sharedTrips = (shared?.trips || []).filter(
+    (t) => (t.startDate || "").slice(0, 7) === selectedMonth,
+  );
   const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
 
-  // Expense breakdown for info modals
+  // Expense breakdown for info modals — filtered by selected month
+  const selMonth = parseInt(selectedMonth.split("-")[1], 10) - 1;
+  const isMonthlyActive = (e) => {
+    if (e.recurrence === "yearly" && (e.recurrenceMonth ?? 0) !== selMonth)
+      return false;
+    if (e.recurrence === "quarterly") {
+      const months = e.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(selMonth)) return false;
+    }
+    return true;
+  };
   const abhavMonthly = (abhav?.expenses || [])
-    .filter((e) => !e.expenseType || e.expenseType === "monthly")
+    .filter(
+      (e) =>
+        (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
+    )
     .reduce((s, x) => s + x.amount, 0);
   const abhavTrips = (abhav?.expenses || [])
-    .filter((e) => e.expenseType === "trip")
+    .filter(
+      (e) =>
+        e.expenseType === "trip" &&
+        (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
+    )
     .reduce((s, x) => s + x.amount, 0);
   const abhavOnetime = (abhav?.expenses || [])
-    .filter((e) => e.expenseType === "onetime")
+    .filter(
+      (e) =>
+        e.expenseType === "onetime" &&
+        (e.date || "").slice(0, 7) === selectedMonth,
+    )
     .reduce((s, x) => s + x.amount, 0);
   const aanyaMonthly = (aanya?.expenses || [])
-    .filter((e) => !e.expenseType || e.expenseType === "monthly")
+    .filter(
+      (e) =>
+        (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
+    )
     .reduce((s, x) => s + x.amount, 0);
   const aanyaTrips = (aanya?.expenses || [])
-    .filter((e) => e.expenseType === "trip")
+    .filter(
+      (e) =>
+        e.expenseType === "trip" &&
+        (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
+    )
     .reduce((s, x) => s + x.amount, 0);
   const aanyaOnetime = (aanya?.expenses || [])
-    .filter((e) => e.expenseType === "onetime")
+    .filter(
+      (e) =>
+        e.expenseType === "onetime" &&
+        (e.date || "").slice(0, 7) === selectedMonth,
+    )
     .reduce((s, x) => s + x.amount, 0);
   const aHasData =
     aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;

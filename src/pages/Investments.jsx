@@ -198,11 +198,11 @@ export const SIPCard = memo(function SIPCard({
   const corpusN = isFDInv
     ? null
     : isOneTimeInv
-      ? lumpCorpus(currentVal, inv.returnPct, projYears)
+      ? lumpCorpus(currentVal, inv.returnPct || 0, projYears)
       : totalCorpus(
           inv.existingCorpus || 0,
           effMonthly,
-          inv.returnPct,
+          inv.returnPct || 0,
           projYears,
         );
   const gainsN =
@@ -301,10 +301,10 @@ export const SIPCard = memo(function SIPCard({
       pts.push({
         year: `Y${y}`,
         corpus: Math.round(
-          totalCorpus(actualBase, effMonthly, inv.returnPct, y),
+          totalCorpus(actualBase, effMonthly, inv.returnPct || 0, y),
         ),
         expected: Math.round(
-          totalCorpus(idealNow, effMonthly, inv.returnPct, y),
+          totalCorpus(idealNow, effMonthly, inv.returnPct || 0, y),
         ),
         invested: Math.round(totalInv + effMonthly * 12 * y),
       });
@@ -332,7 +332,12 @@ export const SIPCard = memo(function SIPCard({
           const totalInv0 = getInvested(inv);
           const totalInvY = Math.round(totalInv0 + effMonthly * 12 * y);
           const corpusY = Math.round(
-            totalCorpus(inv.existingCorpus || 0, effMonthly, inv.returnPct, y),
+            totalCorpus(
+              inv.existingCorpus || 0,
+              effMonthly,
+              inv.returnPct || 0,
+              y,
+            ),
           );
           return {
             year: `Y${y}`,

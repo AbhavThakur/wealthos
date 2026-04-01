@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { fmt, nextId, EXPENSE_CATEGORIES, lumpCorpus } from "../utils/finance";
-import { Plus, Trash2, Search, RefreshCw, Bell, BellOff } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Search,
+  RefreshCw,
+  Bell,
+  BellOff,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { autoRecurringRules } from "../utils/autoRecurringRules";
 import { useData } from "../context/DataContext";
@@ -14,11 +23,29 @@ const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
 // Filter rules to only those that actually occur in the given month
 function rulesForMonth(rules, year, month) {
   return rules.filter((r) => {
+    // Skip one-time and variable expenses — they don't recur
+    const rec = r.recurrence;
+    if (rec === "once" || rec === "variable") return false;
+
+    // Check recurrence-based gating (for autoRecurringRules expenses)
+    if (rec === "yearly") {
+      const dueMonth = r.recurrenceMonth ?? 0;
+      return month === dueMonth;
+    }
+    if (rec === "quarterly") {
+      const dueMonths = r.recurrenceMonths ?? [0, 3, 6, 9];
+      return dueMonths.includes(month);
+    }
+
+    // Investment frequency gating
     const freq = r.frequency || "monthly";
     if (freq === "monthly" || freq === "weekly") return true;
     if (freq === "yearly" && r.startDate) {
       const startMonth = new Date(r.startDate).getMonth();
       return month === startMonth;
+    }
+    if (freq === "yearly" && r.recurrenceMonth != null) {
+      return month === r.recurrenceMonth;
     }
     if (freq === "quarterly" && r.startDate) {
       const startMonth = new Date(r.startDate).getMonth();
@@ -143,6 +170,12 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
   const [showAddRule, setShowAddRule] = useState(false);
   const [expandedSchedCats, setExpandedSchedCats] = useState({});
   const [expandedHistCats, setExpandedHistCats] = useState({});
+  // History month selector - defaults to current month
+  const now = new Date();
+  const [historyMonth, setHistoryMonth] = useSessionState(
+    `cf_history_month_${personName}`,
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
+  );
   const [newTx, setNewTx] = useState({
     date: new Date().toISOString().slice(0, 10),
     desc: "",
@@ -168,7 +201,6 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
     ...manualRules.filter((r) => r.active !== false),
   ];
 
-  const now = new Date();
   const today = now.getDate();
   const allActiveRules = rulesForMonth(
     allRulesRaw,
@@ -180,6 +212,28 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
     month: "long",
     year: "numeric",
   });
+
+  // History month navigation helpers
+  const historyDate = new Date(historyMonth + "-01");
+  const historyMonthName = historyDate.toLocaleString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+  const prevMonth = () => {
+    const d = new Date(historyDate);
+    d.setMonth(d.getMonth() - 1);
+    setHistoryMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const nextMonth = () => {
+    const d = new Date(historyDate);
+    d.setMonth(d.getMonth() + 1);
+    setHistoryMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const isCurrentMonth = historyMonth === ym;
 
   const monthTx = transactions.filter((t) => t.date?.startsWith(ym));
   const loggedIn = monthTx
@@ -206,6 +260,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
   const filtered = transactions
     .filter(
       (t) =>
+        t.date?.startsWith(historyMonth) &&
         (filterType === "all" || t.type === filterType) &&
         (t.desc.toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
@@ -656,13 +711,74 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
       {/* ── History tab ── */}
       {tab === "history" && (
         <div>
+          {/* Month navigation */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              marginBottom: "1rem",
+              padding: "10px 0",
+            }}
+          >
+            <button
+              onClick={prevMonth}
+              style={{
+                background: "var(--bg-card2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "6px 10px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: 15,
+                minWidth: 150,
+                textAlign: "center",
+              }}
+            >
+              {historyMonthName}
+            </div>
+            <button
+              onClick={nextMonth}
+              style={{
+                background: "var(--bg-card2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "6px 10px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+              aria-label="Next month"
+            >
+              <ChevronRight size={16} />
+            </button>
+            {!isCurrentMonth && (
+              <button
+                onClick={() => setHistoryMonth(ym)}
+                className="btn-ghost"
+                style={{ fontSize: 12 }}
+              >
+                Today
+              </button>
+            )}
+          </div>
           <div className="grid-3 section-gap">
             <div className="metric-card">
-              <div className="metric-label">In (filtered)</div>
+              <div className="metric-label">In ({historyMonthName})</div>
               <div className="metric-value green-text">{fmt(totalIn)}</div>
             </div>
             <div className="metric-card">
-              <div className="metric-label">Out (filtered)</div>
+              <div className="metric-label">Out ({historyMonthName})</div>
               <div className="metric-value red-text">{fmt(totalOut)}</div>
             </div>
             <div className="metric-card">

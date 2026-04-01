@@ -524,6 +524,15 @@ export function DataProvider({ children }) {
 
   const takeSnapshot = useCallback(() => {
     if (!abhav || !aanya) return;
+    // Don't take a snapshot if data is still empty / loading
+    const hasData =
+      (abhav.investments?.length || 0) > 0 ||
+      (abhav.assets?.length || 0) > 0 ||
+      (abhav.savingsAccounts?.length || 0) > 0 ||
+      (aanya.investments?.length || 0) > 0 ||
+      (aanya.assets?.length || 0) > 0 ||
+      (aanya.savingsAccounts?.length || 0) > 0;
+    if (!hasData) return;
     const now = new Date();
     const label = `${now.toLocaleString("default", { month: "short" })} ${now.getFullYear()}`;
 

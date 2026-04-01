@@ -1,8 +1,8 @@
 export const fmt = (n = 0) =>
-  "₹" + Math.abs(Math.round(n)).toLocaleString("en-IN");
+  "₹" + Math.abs(Math.round(Number(n) || 0)).toLocaleString("en-IN");
 
 export const fmtCr = (n = 0) => {
-  const a = Math.abs(n);
+  const a = Math.abs(Number(n) || 0);
   if (a >= 10000000) return "₹" + (a / 10000000).toFixed(2) + " Cr";
   if (a >= 100000) return "₹" + (a / 100000).toFixed(1) + " L";
   return fmt(n);

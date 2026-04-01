@@ -658,11 +658,14 @@ export default function NetWorth({
     setTimeout(() => setSnapshotDone(false), 3000);
   };
 
-  const chartData = history.map((s) => ({
-    abhav: Math.round(s.abhavNetWorth || 0),
-    aanya: Math.round(s.aanyaNetWorth || 0),
-    household: Math.round((s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0)),
-  }));
+  const chartData = history
+    .filter((s) => (s.abhavNetWorth || 0) !== 0 || (s.aanyaNetWorth || 0) !== 0)
+    .map((s) => ({
+      label: s.label || `${s.month}/${s.year}`,
+      abhav: Math.round(s.abhavNetWorth || 0),
+      aanya: Math.round(s.aanyaNetWorth || 0),
+      household: Math.round((s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0)),
+    }));
 
   return (
     <div>

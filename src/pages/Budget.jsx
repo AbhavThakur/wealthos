@@ -18,6 +18,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   CalendarDays,
   X,
   MapPin,
@@ -743,6 +745,30 @@ export default function Budget({
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
 
+  // ── Month selector for expense tabs ────────────────────────────────────
+  const _now = new Date();
+  const _curYm = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`;
+  const [expMonth, setExpMonth] = useState(_curYm);
+  const expMonthDate = new Date(expMonth + "-01");
+  const expMonthLabel = expMonthDate.toLocaleString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+  const expPrevMonth = () => {
+    const d = new Date(expMonthDate);
+    d.setMonth(d.getMonth() - 1);
+    setExpMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const expNextMonth = () => {
+    const d = new Date(expMonthDate);
+    d.setMonth(d.getMonth() + 1);
+    setExpMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+
   // ── Expense sub-tab (monthly | trips | onetime) ───────────────────────
   const [expTab, setExpTab] = useState("monthly");
   const [moveMenuOpen, setMoveMenuOpen] = useState(null); // expId or null
@@ -755,12 +781,33 @@ export default function Budget({
   const tripExps = expenses.filter((e) => e.expenseType === "trip");
   const onetimeExps = expenses.filter((e) => e.expenseType === "onetime");
 
+  // Month-filtered versions for display
+  const filteredOnetimeExps = onetimeExps.filter(
+    (e) => (e.date || "").slice(0, 7) === expMonth,
+  );
+  const filteredTripExps = tripExps.filter(
+    (e) => (e.startDate || e.date || "").slice(0, 7) === expMonth,
+  );
+  const _expMonthNum = parseInt(expMonth.split("-")[1], 10) - 1;
+  const filteredMonthlyExps = monthlyExps.filter((e) => {
+    if (e.recurrence === "yearly" && (e.recurrenceMonth ?? 0) !== _expMonthNum)
+      return false;
+    if (e.recurrence === "quarterly") {
+      const months = e.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(_expMonthNum)) return false;
+    }
+    return true;
+  });
+
   // Shared trips (visible to both persons)
   const sharedTrips = shared?.trips || [];
-  // Combined trip list for display (tagged with _isShared for rendering)
+  const filteredSharedTrips = sharedTrips.filter(
+    (t) => (t.startDate || "").slice(0, 7) === expMonth,
+  );
+  // Combined trip list for display (tagged with _isShared for rendering) — filtered by month
   const allTrips = [
-    ...tripExps.map((t) => ({ ...t, _isShared: false })),
-    ...sharedTrips.map((t) => ({ ...t, _isShared: true })),
+    ...filteredTripExps.map((t) => ({ ...t, _isShared: false })),
+    ...filteredSharedTrips.map((t) => ({ ...t, _isShared: true })),
   ];
 
   // ── Trip management ────────────────────────────────────────────────────
@@ -983,18 +1030,43 @@ export default function Budget({
   };
 
   const totalIncome = incomes.reduce((s, x) => s + x.amount, 0);
-  const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
+
+  // ── Month-filtered expense totals for overview ─────────────────────────
+  const _isMonthlyActiveForOverview = (e) => {
+    if (e.recurrence === "yearly" && (e.recurrenceMonth ?? 0) !== _expMonthNum)
+      return false;
+    if (e.recurrence === "quarterly") {
+      const months = e.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(_expMonthNum)) return false;
+    }
+    return true;
+  };
+  const monthFilteredExpenses = expenses.filter((x) => {
+    if (x.expenseType === "onetime")
+      return (x.date || "").slice(0, 7) === expMonth;
+    if (x.expenseType === "trip")
+      return (x.startDate || x.date || "").slice(0, 7) === expMonth;
+    // monthly: apply recurrence gating
+    return _isMonthlyActiveForOverview(x);
+  });
+  const monthFilteredSharedTrips = sharedTrips.filter(
+    (t) => (t.startDate || "").slice(0, 7) === expMonth,
+  );
+  const sharedTripTotal = monthFilteredSharedTrips.reduce(
+    (s, x) => s + (x.amount || 0),
+    0,
+  );
   const totalExpenses =
-    expenses.reduce((s, x) => s + x.amount, 0) + sharedTripTotal;
+    monthFilteredExpenses.reduce((s, x) => s + x.amount, 0) + sharedTripTotal;
   const savingsRate =
     totalIncome > 0
       ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
       : 0;
 
-  // Include shared trips in category aggregations
+  // Include shared trips in category aggregations (month-filtered)
   const allExpensesForCategories = [
-    ...expenses,
-    ...sharedTrips.map((t) => ({ ...t, expenseType: "trip" })),
+    ...monthFilteredExpenses,
+    ...monthFilteredSharedTrips.map((t) => ({ ...t, expenseType: "trip" })),
   ];
   const expByCategory = buildExpByCategory(allExpensesForCategories);
 
@@ -1031,7 +1103,10 @@ export default function Budget({
         name: "New trip",
         amount: 0,
         category: "Others",
-        startDate: new Date().toISOString().slice(0, 10),
+        startDate:
+          expMonth === _curYm
+            ? new Date().toISOString().slice(0, 10)
+            : `${expMonth}-01`,
         endDate: "",
         budget: 0,
         items: [],
@@ -1048,7 +1123,10 @@ export default function Budget({
         name: "New shared trip",
         amount: 0,
         category: "Others",
-        startDate: new Date().toISOString().slice(0, 10),
+        startDate:
+          expMonth === _curYm
+            ? new Date().toISOString().slice(0, 10)
+            : `${expMonth}-01`,
         endDate: "",
         budget: 0,
         items: [],
@@ -1088,7 +1166,10 @@ export default function Budget({
         name: "New purchase",
         amount: 0,
         category: "Others",
-        date: new Date().toISOString().slice(0, 10),
+        date:
+          expMonth === _curYm
+            ? new Date().toISOString().slice(0, 10)
+            : `${expMonth}-01`,
         recurrence: "once",
       },
       ...expenses,
@@ -1206,6 +1287,9 @@ export default function Budget({
           new Date().toISOString().slice(0, 10),
       };
     } else if (targetType === "onetime") {
+      const movedDate =
+        (src === "trip" ? exp.startDate : exp.date) ||
+        new Date().toISOString().slice(0, 10);
       moved = {
         id: exp.id,
         expenseType: "onetime",
@@ -1213,9 +1297,7 @@ export default function Budget({
         amount: exp.amount,
         category: exp.category || "Others",
         recurrence: "once",
-        date:
-          (src === "trip" ? exp.startDate : exp.date) ||
-          new Date().toISOString().slice(0, 10),
+        date: movedDate,
       };
     }
 
@@ -1225,6 +1307,11 @@ export default function Budget({
         expenses.map((x) => (x.id === expId ? moved : x)),
       );
       setExpTab(targetType);
+      // Navigate to the month the expense belongs to
+      const movedYm = (moved.startDate || moved.date || "").slice(0, 7);
+      if (movedYm && (targetType === "onetime" || targetType === "trip")) {
+        setExpMonth(movedYm);
+      }
     }
   };
 
@@ -1511,6 +1598,67 @@ export default function Budget({
 
       {tab === "overview" && (
         <div>
+          {/* Month selector for overview */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+              marginBottom: "1rem",
+              padding: "8px 0",
+            }}
+          >
+            <button
+              onClick={expPrevMonth}
+              style={{
+                background: "var(--bg-card2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "6px 10px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: 14,
+                minWidth: 140,
+                textAlign: "center",
+              }}
+            >
+              {expMonthLabel}
+            </div>
+            <button
+              onClick={expNextMonth}
+              style={{
+                background: "var(--bg-card2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "6px 10px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+              aria-label="Next month"
+            >
+              <ChevronRight size={16} />
+            </button>
+            {expMonth !== _curYm && (
+              <button
+                onClick={() => setExpMonth(_curYm)}
+                className="btn-ghost"
+                style={{ fontSize: 12 }}
+              >
+                Today
+              </button>
+            )}
+          </div>
           <div className="grid-3 section-gap">
             <div className="metric-card">
               <div className="metric-label">
@@ -1551,13 +1699,13 @@ export default function Budget({
             <div className="metric-card">
               <div className="metric-label">
                 Expenses
-                <InfoModal title="Expenses breakdown">
-                  {monthlyExps.length > 0 && (
+                <InfoModal title={`Expenses breakdown — ${expMonthLabel}`}>
+                  {filteredMonthlyExps.length > 0 && (
                     <>
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        🔁 Monthly ({monthlyExps.length})
+                        🔁 Monthly ({filteredMonthlyExps.length})
                       </div>
-                      {monthlyExps.map((e) => (
+                      {filteredMonthlyExps.map((e) => (
                         <div
                           key={e.id}
                           style={{
@@ -1584,12 +1732,17 @@ export default function Budget({
                       >
                         <span>Monthly subtotal</span>
                         <span>
-                          {fmt(monthlyExps.reduce((s, x) => s + x.amount, 0))}
+                          {fmt(
+                            filteredMonthlyExps.reduce(
+                              (s, x) => s + x.amount,
+                              0,
+                            ),
+                          )}
                         </span>
                       </div>
                     </>
                   )}
-                  {tripExps.length > 0 && (
+                  {filteredTripExps.length > 0 && (
                     <>
                       <div
                         style={{
@@ -1598,9 +1751,9 @@ export default function Budget({
                           marginBottom: 4,
                         }}
                       >
-                        ✈️ My Trips ({tripExps.length})
+                        ✈️ My Trips ({filteredTripExps.length})
                       </div>
-                      {tripExps.map((e) => (
+                      {filteredTripExps.map((e) => (
                         <div
                           key={e.id}
                           style={{
@@ -1618,7 +1771,7 @@ export default function Budget({
                       ))}
                     </>
                   )}
-                  {sharedTrips.length > 0 && (
+                  {filteredSharedTrips.length > 0 && (
                     <>
                       <div
                         style={{
@@ -1628,9 +1781,9 @@ export default function Budget({
                           color: "var(--green)",
                         }}
                       >
-                        🤝 Shared Trips ({sharedTrips.length})
+                        🤝 Shared Trips ({filteredSharedTrips.length})
                       </div>
-                      {sharedTrips.map((e) => (
+                      {filteredSharedTrips.map((e) => (
                         <div
                           key={e.id}
                           style={{
@@ -1648,7 +1801,7 @@ export default function Budget({
                       ))}
                     </>
                   )}
-                  {onetimeExps.length > 0 && (
+                  {filteredOnetimeExps.length > 0 && (
                     <>
                       <div
                         style={{
@@ -1657,9 +1810,9 @@ export default function Budget({
                           marginBottom: 4,
                         }}
                       >
-                        💳 One-time ({onetimeExps.length})
+                        💳 One-time ({filteredOnetimeExps.length})
                       </div>
-                      {onetimeExps.map((e) => (
+                      {filteredOnetimeExps.map((e) => (
                         <div
                           key={e.id}
                           style={{
@@ -2486,12 +2639,12 @@ export default function Budget({
               {
                 key: "trip",
                 icon: <Plane size={12} />,
-                count: tripExps.length + sharedTrips.length,
+                count: filteredTripExps.length + filteredSharedTrips.length,
               },
               {
                 key: "onetime",
                 icon: <CreditCard size={12} />,
-                count: onetimeExps.length,
+                count: filteredOnetimeExps.length,
               },
             ].map(({ key, icon, count }) => {
               const meta = EXPENSE_TYPES[key];
@@ -2537,6 +2690,70 @@ export default function Budget({
               );
             })}
           </div>
+
+          {/* ── Month selector (for one-time and trips) ── */}
+          {(expTab === "onetime" || expTab === "trip") && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 16,
+                marginBottom: "1rem",
+                padding: "8px 0",
+              }}
+            >
+              <button
+                onClick={expPrevMonth}
+                style={{
+                  background: "var(--bg-card2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                aria-label="Previous month"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  minWidth: 140,
+                  textAlign: "center",
+                }}
+              >
+                {expMonthLabel}
+              </div>
+              <button
+                onClick={expNextMonth}
+                style={{
+                  background: "var(--bg-card2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                aria-label="Next month"
+              >
+                <ChevronRight size={16} />
+              </button>
+              {expMonth !== _curYm && (
+                <button
+                  onClick={() => setExpMonth(_curYm)}
+                  className="btn-ghost"
+                  style={{ fontSize: 12 }}
+                >
+                  Today
+                </button>
+              )}
+            </div>
+          )}
 
           {/* ══════════════════ MONTHLY EXPENSES ══════════════════ */}
           {expTab === "monthly" && (
@@ -3088,8 +3305,8 @@ export default function Budget({
                     textAlign: "center",
                   }}
                 >
-                  No trips yet. Create one to group travel, hotel, food &amp;
-                  shopping expenses together.
+                  No trips in {expMonthLabel}. Create one to group travel,
+                  hotel, food &amp; shopping expenses together.
                 </div>
               )}
 
@@ -3686,7 +3903,7 @@ export default function Budget({
                 </button>
               </div>
 
-              {onetimeExps.length === 0 && (
+              {filteredOnetimeExps.length === 0 && (
                 <div
                   style={{
                     fontSize: 13,
@@ -3695,12 +3912,12 @@ export default function Budget({
                     textAlign: "center",
                   }}
                 >
-                  No one-time expenses. Add big purchases like electronics,
-                  furniture, or medical bills.
+                  No one-time expenses in {expMonthLabel}. Add big purchases
+                  like electronics, furniture, or medical bills.
                 </div>
               )}
 
-              {onetimeExps.map((exp) => (
+              {filteredOnetimeExps.map((exp) => (
                 <div
                   key={exp.id}
                   style={{
@@ -3813,7 +4030,7 @@ export default function Budget({
                 </div>
               ))}
 
-              {onetimeExps.length > 0 && (
+              {filteredOnetimeExps.length > 0 && (
                 <div
                   style={{
                     textAlign: "right",
@@ -3824,7 +4041,7 @@ export default function Budget({
                 >
                   One-time total:{" "}
                   <span className="red-text">
-                    {fmt(onetimeExps.reduce((s, x) => s + x.amount, 0))}
+                    {fmt(filteredOnetimeExps.reduce((s, x) => s + x.amount, 0))}
                   </span>
                 </div>
               )}
