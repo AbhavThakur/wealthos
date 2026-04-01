@@ -4068,21 +4068,70 @@ export default function Budget({
 }
 
 export function HouseholdBudget({ abhav, aanya, shared }) {
+  // ── Month selector ─────────────────────────────────────────────────────
+  const _hhNow = new Date();
+  const _hhCurYm = `${_hhNow.getFullYear()}-${String(_hhNow.getMonth() + 1).padStart(2, "0")}`;
+  const [hhMonth, setHhMonth] = useState(_hhCurYm);
+  const hhMonthDate = new Date(hhMonth + "-01");
+  const hhMonthLabel = hhMonthDate.toLocaleString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+  const hhPrevMonth = () => {
+    const d = new Date(hhMonthDate);
+    d.setMonth(d.getMonth() - 1);
+    setHhMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const hhNextMonth = () => {
+    const d = new Date(hhMonthDate);
+    d.setMonth(d.getMonth() + 1);
+    setHhMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const _hhMonthNum = parseInt(hhMonth.split("-")[1], 10) - 1;
+
+  // ── Recurrence gating helper ───────────────────────────────────────────
+  const _hhIsActive = (e) => {
+    if (e.recurrence === "yearly" && (e.recurrenceMonth ?? 0) !== _hhMonthNum)
+      return false;
+    if (e.recurrence === "quarterly") {
+      const months = e.recurrenceMonths || [0, 3, 6, 9];
+      if (!months.includes(_hhMonthNum)) return false;
+    }
+    return true;
+  };
+
+  // ── Month-filtered expenses per person ─────────────────────────────────
+  const filterPersonExpenses = (data) =>
+    (data?.expenses || []).filter((x) => {
+      if (x.expenseType === "onetime")
+        return (x.date || "").slice(0, 7) === hhMonth;
+      if (x.expenseType === "trip")
+        return (x.startDate || x.date || "").slice(0, 7) === hhMonth;
+      return _hhIsActive(x);
+    });
+
+  const abhavFiltered = filterPersonExpenses(abhav);
+  const aanyaFiltered = filterPersonExpenses(aanya);
+
   const abhavIncome = (abhav?.incomes || []).reduce((s, x) => s + x.amount, 0);
   const aanyaIncome = (aanya?.incomes || []).reduce((s, x) => s + x.amount, 0);
   const totalIncome = abhavIncome + aanyaIncome;
 
   const sharedTrips = shared?.trips || [];
-  const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
+  const filteredSharedTrips = sharedTrips.filter(
+    (t) => (t.startDate || "").slice(0, 7) === hhMonth,
+  );
+  const sharedTripTotal = filteredSharedTrips.reduce(
+    (s, x) => s + (x.amount || 0),
+    0,
+  );
 
-  const abhavExpenses = (abhav?.expenses || []).reduce(
-    (s, x) => s + x.amount,
-    0,
-  );
-  const aanyaExpenses = (aanya?.expenses || []).reduce(
-    (s, x) => s + x.amount,
-    0,
-  );
+  const abhavExpenses = abhavFiltered.reduce((s, x) => s + x.amount, 0);
+  const aanyaExpenses = aanyaFiltered.reduce((s, x) => s + x.amount, 0);
   const totalExpenses = abhavExpenses + aanyaExpenses + sharedTripTotal;
 
   const surplus = totalIncome - totalExpenses;
@@ -4090,8 +4139,8 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
     totalIncome > 0 ? Math.round((surplus / totalIncome) * 100) : 0;
 
   // { cat: { total, abhav, aanya, subs: { sub: { total, abhav, aanya } } } }
-  const mergeGrouped = (data, key) =>
-    (data?.expenses || []).reduce((acc, e) => {
+  const mergeGrouped = (exps, key) =>
+    exps.reduce((acc, e) => {
       if (e.expenseType === "trip") {
         // Expand trip items into categories
         for (const item of e.items || []) {
@@ -4120,8 +4169,8 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
       return acc;
     }, {});
 
-  const aGrouped = mergeGrouped(abhav, "abhav");
-  const anGrouped = mergeGrouped(aanya, "aanya");
+  const aGrouped = mergeGrouped(abhavFiltered, "abhav");
+  const anGrouped = mergeGrouped(aanyaFiltered, "aanya");
 
   // Merge both into a single map for display
   const grouped = {};
@@ -4150,7 +4199,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
     });
   }
   // Merge shared trips into grouped (attribute by addedBy)
-  for (const trip of sharedTrips) {
+  for (const trip of filteredSharedTrips) {
     for (const item of trip.items || []) {
       const cat = item.category || "Others";
       if (!grouped[cat])
@@ -4189,12 +4238,52 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
     <div>
       <div
         style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: "1.25rem",
+          flexWrap: "wrap",
+          gap: 8,
         }}
       >
-        <span style={{ color: "var(--gold)" }}>Household</span> Budget
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22 }}>
+          <span style={{ color: "var(--gold)" }}>Household</span> Budget
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--bg-card2)",
+            borderRadius: "var(--radius-sm)",
+            padding: "4px 10px",
+          }}
+        >
+          <button
+            className="btn-icon"
+            onClick={hhPrevMonth}
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span
+            style={{
+              minWidth: 120,
+              textAlign: "center",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            {hhMonthLabel}
+          </span>
+          <button
+            className="btn-icon"
+            onClick={hhNextMonth}
+            aria-label="Next month"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="grid-3 section-gap">

@@ -34,7 +34,7 @@ import {
 } from "./investmentHelpers";
 
 export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
-  const { personNames } = useData();
+  const { personNames } = useData() || {};
   const [filterPerson, setFilterPerson] = useState("All");
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");

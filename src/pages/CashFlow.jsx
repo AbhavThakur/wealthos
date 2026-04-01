@@ -14,6 +14,7 @@ import { useConfirm } from "../hooks/useConfirm";
 import { autoRecurringRules } from "../utils/autoRecurringRules";
 import { useData } from "../context/DataContext";
 import { useSessionState } from "../hooks/useSessionState";
+import { InfoModal } from "../components/InfoModal";
 
 // All transaction categories (income + expense)
 const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
@@ -365,7 +366,58 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
           <div className="metric-sub">per month</div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Scheduled out</div>
+          <div className="metric-label">
+            Scheduled out
+            <InfoModal title={`Scheduled outflows — ${monthName}`}>
+              {allActiveRules
+                .filter((r) => r.amount < 0)
+                .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+                .map((r, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "3px 0",
+                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {r.desc}
+                      {r.source && (
+                        <span
+                          style={{
+                            color: "var(--text-muted)",
+                            fontSize: 10,
+                            marginLeft: 6,
+                          }}
+                        >
+                          {r.source}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontWeight: 600, color: "var(--red)" }}>
+                      {fmt(Math.abs(r.amount))}
+                    </span>
+                  </div>
+                ))}
+              <div
+                style={{
+                  borderTop: "1px solid rgba(255,255,255,0.12)",
+                  marginTop: 6,
+                  paddingTop: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: "var(--red)",
+                }}
+              >
+                <span>Total</span>
+                <span>{fmt(scheduledOut)}</span>
+              </div>
+            </InfoModal>
+          </div>
           <div className="metric-value red-text">{fmt(scheduledOut)}</div>
           <div className="metric-sub">per month</div>
         </div>
@@ -375,7 +427,70 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
           <div className="metric-sub">{monthName}</div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">Logged out</div>
+          <div className="metric-label">
+            Logged out
+            <InfoModal title={`Logged outflows — ${monthName}`}>
+              {monthTx
+                .filter((t) => t.amount < 0)
+                .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+                .map((t, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "3px 0",
+                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {t.desc}
+                      {t.category && (
+                        <span
+                          style={{
+                            color: "var(--text-muted)",
+                            fontSize: 10,
+                            marginLeft: 6,
+                          }}
+                        >
+                          {t.category}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontWeight: 600, color: "var(--red)" }}>
+                      {fmt(Math.abs(t.amount))}
+                    </span>
+                  </div>
+                ))}
+              {monthTx.filter((t) => t.amount < 0).length === 0 && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                    padding: 12,
+                  }}
+                >
+                  No outflow transactions logged yet
+                </div>
+              )}
+              <div
+                style={{
+                  borderTop: "1px solid rgba(255,255,255,0.12)",
+                  marginTop: 6,
+                  paddingTop: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontWeight: 700,
+                  color: "var(--red)",
+                }}
+              >
+                <span>Total</span>
+                <span>{fmt(loggedOut)}</span>
+              </div>
+            </InfoModal>
+          </div>
           <div className="metric-value red-text">{fmt(loggedOut)}</div>
           <div className="metric-sub">{monthName}</div>
         </div>
@@ -1428,7 +1543,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
 }
 
 export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
-  const { personNames } = useData();
+  const { personNames } = useData() || {};
   const [tab, setTab] = useState("schedule");
   const [search, setSearch] = useState("");
   const [filterPerson, setFilterPerson] = useState("all");
@@ -1445,6 +1560,32 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
   const { confirm, dialog } = useConfirm();
   const [expandedSchedCats, setExpandedSchedCats] = useState({});
   const [expandedHistCats, setExpandedHistCats] = useState({});
+
+  // ── Month selector ─────────────────────────────────────────────────────
+  const _cfNow = new Date();
+  const _cfCurYm = `${_cfNow.getFullYear()}-${String(_cfNow.getMonth() + 1).padStart(2, "0")}`;
+  const [schedMonth, setSchedMonth] = useState(_cfCurYm);
+  const schedMonthDate = new Date(schedMonth + "-01");
+  const schedMonthLabel = schedMonthDate.toLocaleString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+  const schedPrevMonth = () => {
+    const d = new Date(schedMonthDate);
+    d.setMonth(d.getMonth() - 1);
+    setSchedMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const schedNextMonth = () => {
+    const d = new Date(schedMonthDate);
+    d.setMonth(d.getMonth() + 1);
+    setSchedMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  };
+  const isCurrentMonth = schedMonth === _cfCurYm;
+  const today = isCurrentMonth ? _cfNow.getDate() : 0; // only mark due/upcoming for current month
 
   const abhavAutoRules = autoRecurringRules(abhav || {}).map((r) => ({
     ...r,
@@ -1469,17 +1610,13 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
   ];
 
   const now = new Date();
-  const today = now.getDate();
   const allActiveRules = rulesForMonth(
     allRulesRaw,
-    now.getFullYear(),
-    now.getMonth(),
+    schedMonthDate.getFullYear(),
+    schedMonthDate.getMonth(),
   );
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monthName = now.toLocaleString("en-IN", {
-    month: "long",
-    year: "numeric",
-  });
+  const ym = schedMonth;
+  const monthName = schedMonthLabel;
 
   const abhavTx = (abhav?.transactions || []).map((x) => ({
     ...x,
@@ -1582,12 +1719,52 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
     <div>
       <div
         style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: "0.5rem",
+          flexWrap: "wrap",
+          gap: 8,
         }}
       >
-        <span style={{ color: "var(--gold)" }}>Household</span> Cash Flow
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 22 }}>
+          <span style={{ color: "var(--gold)" }}>Household</span> Cash Flow
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--bg-card2)",
+            borderRadius: "var(--radius-sm)",
+            padding: "4px 10px",
+          }}
+        >
+          <button
+            className="btn-icon"
+            onClick={schedPrevMonth}
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span
+            style={{
+              minWidth: 120,
+              textAlign: "center",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            {schedMonthLabel}
+          </span>
+          <button
+            className="btn-icon"
+            onClick={schedNextMonth}
+            aria-label="Next month"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
       <div
         style={{

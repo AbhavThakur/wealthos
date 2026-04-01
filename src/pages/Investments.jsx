@@ -2310,7 +2310,7 @@ function computeHealthData(rows) {
 
 // ─── Portfolio overview charts + health panel ────────────────────────────────
 export function PortfolioCharts({ rows, isHousehold }) {
-  const { personNames } = useData();
+  const { personNames } = useData() || {};
   const [tab, setTab] = useState("snapshot"); // "snapshot" | "health"
 
   // ── Snapshot data ──
@@ -2501,9 +2501,15 @@ export function PortfolioCharts({ rows, isHousehold }) {
                   ]}
                   horizontal
                   height={Math.max(120, plData.length * 32)}
-                  tooltip={(p) =>
-                    `${p.name}: ${p.value >= 0 ? "+" : "\u2212"}${fmtCr(Math.abs(p.value))}`
-                  }
+                  tooltip={(params) => {
+                    const arr = Array.isArray(params) ? params : [params];
+                    return arr
+                      .map(
+                        (p) =>
+                          `${p.name}: ${p.value >= 0 ? "+" : "\u2212"}${fmtCr(Math.abs(p.value))}`,
+                      )
+                      .join("<br/>");
+                  }}
                   grid={{ top: 0, right: 16, bottom: 0, left: 90 }}
                   labelSize={10}
                   labelColor="#666"
