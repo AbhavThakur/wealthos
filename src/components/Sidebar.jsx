@@ -18,6 +18,7 @@ import {
   RefreshCw,
   MessageSquare,
   MoreHorizontal,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -63,26 +64,57 @@ const NAV_GROUPS = [
 // Flat list for mobile topbar lookup
 const NAV_FLAT = NAV_GROUPS.flatMap((g) => g.items);
 
-// Bottom tab bar items (mobile)
-const BOTTOM_TABS = [
-  { id: "dashboard", icon: LayoutDashboard, label: "Home" },
-  { id: "budget", icon: Wallet, label: "Budget" },
-  { id: "investments", icon: TrendingUp, label: "Invest" },
-  { id: "goals", icon: Target, label: "Goals" },
-  { id: "__more", icon: MoreHorizontal, label: "More" },
-];
+// All nav items with their icons (for bottom bar + more sheet)
+const ALL_NAV_ITEMS = {
+  dashboard: { icon: LayoutDashboard, label: "Home" },
+  budget: { icon: Wallet, label: "Budget" },
+  investments: { icon: TrendingUp, label: "Invest" },
+  goals: { icon: Target, label: "Goals" },
+  cashflow: { icon: Activity, label: "Cash Flow" },
+  networth: { icon: TrendingDown, label: "Net Worth" },
+  debts: { icon: CreditCard, label: "Debts & EMIs" },
+  insurance: { icon: Shield, label: "Insurance" },
+  subscriptions: { icon: RefreshCw, label: "Subscriptions" },
+  alerts: { icon: Bell, label: "Alerts" },
+  tax: { icon: Calculator, label: "Tax Planner" },
+  settings: { icon: Settings, label: "Settings" },
+};
 
-// Items shown in "More" sheet
-const MORE_ITEMS = [
-  { id: "cashflow", icon: Activity, label: "Cash Flow" },
-  { id: "networth", icon: TrendingDown, label: "Net Worth" },
-  { id: "debts", icon: CreditCard, label: "Debts & EMIs" },
-  { id: "insurance", icon: Shield, label: "Insurance" },
-  { id: "subscriptions", icon: RefreshCw, label: "Subscriptions" },
-  { id: "alerts", icon: Bell, label: "Alerts" },
-  { id: "tax", icon: Calculator, label: "Tax Planner" },
-  { id: "settings", icon: Settings, label: "Settings" },
-];
+// Fixed tabs: Dashboard (slot 0) and More (slot 4) can't be changed
+// Customizable: slots 1-3 default to budget, investments, goals
+const DEFAULT_CUSTOM_TABS = ["budget", "investments", "goals"];
+const LS_KEY = "wealthos-bottom-tabs";
+
+function getCustomTabs() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LS_KEY));
+    if (
+      Array.isArray(stored) &&
+      stored.length === 3 &&
+      stored.every((id) => ALL_NAV_ITEMS[id])
+    ) {
+      return stored;
+    }
+  } catch {
+    /* ignore corrupt localStorage */
+  }
+  return DEFAULT_CUSTOM_TABS;
+}
+
+function buildBottomTabs(customIds) {
+  return [
+    { id: "dashboard", ...ALL_NAV_ITEMS.dashboard },
+    ...customIds.map((id) => ({ id, ...ALL_NAV_ITEMS[id] })),
+    { id: "__more", icon: MoreHorizontal, label: "More" },
+  ];
+}
+
+function buildMoreItems(customIds) {
+  const inBar = new Set(["dashboard", ...customIds]);
+  return Object.entries(ALL_NAV_ITEMS)
+    .filter(([id]) => !inBar.has(id))
+    .map(([id, item]) => ({ id, ...item }));
+}
 
 const PROFILES = [
   {
@@ -257,7 +289,25 @@ export default function Sidebar({
   const { logout, user } = useAuth();
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [swapSlot, setSwapSlot] = useState(null); // which slot (1-3) is being swapped
   const moreSheetRef = useRef(null);
+
+  // Customizable bottom tabs (slots 1-3)
+  const [customTabs, setCustomTabs] = useState(getCustomTabs);
+
+  const bottomTabs = buildBottomTabs(customTabs);
+  const moreItems = buildMoreItems(customTabs);
+
+  function handleSwap(moreItemId) {
+    if (swapSlot === null) return;
+    const next = [...customTabs];
+    next[swapSlot - 1] = moreItemId;
+    setCustomTabs(next);
+    localStorage.setItem(LS_KEY, JSON.stringify(next));
+    setSwapSlot(null);
+    // Haptic feedback on swap
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
 
   // Lock body scroll when More sheet is open
   useEffect(() => {
@@ -287,7 +337,7 @@ export default function Sidebar({
   }));
 
   // Is current page one of the primary bottom tabs?
-  const isBottomTabPage = BOTTOM_TABS.some(
+  const isBottomTabPage = bottomTabs.some(
     (t) => t.id !== "__more" && t.id === page,
   );
 
@@ -321,7 +371,7 @@ export default function Sidebar({
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="mobile-bottom-nav" aria-label="Main navigation">
-        {BOTTOM_TABS.map(({ id, icon: Icon, label }) => {
+        {bottomTabs.map(({ id, icon: Icon, label }) => {
           const isMore = id === "__more";
           const active = isMore
             ? moreOpen || (!isBottomTabPage && !moreOpen)
@@ -334,9 +384,11 @@ export default function Sidebar({
               onClick={() => {
                 if (isMore) {
                   setMoreOpen((v) => !v);
+                  setSwapSlot(null);
                 } else {
                   setPage(id);
                   setMoreOpen(false);
+                  setSwapSlot(null);
                 }
               }}
             >
@@ -349,7 +401,13 @@ export default function Sidebar({
 
       {/* ── More sheet ── */}
       {moreOpen && (
-        <div className="mobile-more-overlay" onClick={() => setMoreOpen(false)}>
+        <div
+          className="mobile-more-overlay"
+          onClick={() => {
+            setMoreOpen(false);
+            setSwapSlot(null);
+          }}
+        >
           <div
             ref={moreSheetRef}
             className="mobile-more-sheet"
@@ -358,14 +416,67 @@ export default function Sidebar({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mobile-more-handle" />
+
+            {/* Swap mode banner */}
+            {swapSlot !== null && (
+              <div className="mobile-more-swap-banner">
+                <ArrowLeftRight size={14} />
+                <span>
+                  Tap a section to swap with{" "}
+                  <strong>
+                    {ALL_NAV_ITEMS[customTabs[swapSlot - 1]]?.label}
+                  </strong>
+                </span>
+                <button
+                  className="mobile-more-swap-cancel"
+                  onClick={() => setSwapSlot(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Customization hint + current bar preview */}
+            {swapSlot === null && (
+              <div className="mobile-more-customize">
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Tap <ArrowLeftRight size={11} style={{ verticalAlign: -1 }} />{" "}
+                  on a tab to swap it here
+                </span>
+                <div className="mobile-more-bar-preview">
+                  {customTabs.map((tabId, i) => {
+                    const item = ALL_NAV_ITEMS[tabId];
+                    if (!item) return null;
+                    const TabIcon = item.icon;
+                    return (
+                      <button
+                        key={tabId}
+                        className="mobile-more-bar-item"
+                        onClick={() => setSwapSlot(i + 1)}
+                        title={`Swap "${item.label}" with another section`}
+                      >
+                        <TabIcon size={16} />
+                        <span>{item.label}</span>
+                        <ArrowLeftRight size={10} className="swap-icon" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="mobile-more-grid">
-              {MORE_ITEMS.map(({ id, icon: Icon, label }) => (
+              {moreItems.map(({ id, icon: Icon, label }) => (
                 <button
                   key={id}
-                  className={`mobile-more-item${page === id ? " active" : ""}`}
+                  className={`mobile-more-item${page === id && swapSlot === null ? " active" : ""}${swapSlot !== null ? " swap-target" : ""}`}
                   onClick={() => {
-                    setPage(id);
-                    setMoreOpen(false);
+                    if (swapSlot !== null) {
+                      handleSwap(id);
+                    } else {
+                      setPage(id);
+                      setMoreOpen(false);
+                    }
                   }}
                 >
                   <div className="mobile-more-icon">

@@ -45,6 +45,10 @@ body {
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  /* PWA: prevent double-tap zoom delay */
+  touch-action: manipulation;
+  /* PWA: prevent overscroll bounce (for pull-to-refresh control) */
+  overscroll-behavior-y: contain;
 }
 ::-webkit-scrollbar {
   width: 6px;
@@ -1263,5 +1267,152 @@ input[type="number"] {
 @media (max-width: 640px) {
   .portfolio-snapshot-grid {
     grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Pull-to-refresh indicator ── */
+.pull-to-refresh-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: height 0.15s ease;
+}
+.pull-spinner {
+  font-size: 22px;
+  color: var(--gold);
+  transition: transform 0.2s ease;
+}
+.pull-spinner.spinning {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── PWA standalone mode adjustments ── */
+@media (display-mode: standalone) {
+  /* Extra padding top for iOS notch / status bar */
+  .mobile-topbar {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  }
+  /* Extra padding bottom for iOS home indicator */
+  .mobile-bottom-nav {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px) !important;
+  }
+  .main-content {
+    /* Breathing room above bottom nav in standalone */
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* Disable text selection on navigation elements for native feel */
+  .mobile-bottom-nav,
+  .mobile-topbar,
+  .mobile-more-sheet {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* ── Touch-friendly form optimizations ── */
+@media (max-width: 768px) {
+  /* Ensure minimum 44px touch targets */
+  input,
+  select,
+  textarea,
+  button {
+    min-height: 44px;
+  }
+  /* Trigger numeric keypad for amount inputs */
+  input[inputmode="decimal"],
+  input[inputmode="numeric"],
+  input[type="number"] {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
+
+/* ── More sheet: customize / swap UI ── */
+@media (max-width: 768px) {
+  .mobile-more-customize {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .mobile-more-bar-preview {
+    display: flex;
+    gap: 6px;
+  }
+  .mobile-more-bar-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 4px 6px;
+    border: 1px dashed var(--border-hover);
+    border-radius: 10px;
+    background: var(--bg-card2);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .mobile-more-bar-item:active {
+    border-color: var(--gold);
+    background: var(--gold-dim);
+    color: var(--gold);
+  }
+  .mobile-more-bar-item .swap-icon {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0.4;
+    color: var(--gold);
+  }
+  .mobile-more-swap-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    background: var(--gold-dim);
+    border: 1px solid var(--gold-border);
+    border-radius: 10px;
+    font-size: 12px;
+    color: var(--gold);
+  }
+  .mobile-more-swap-banner strong {
+    color: var(--gold-light);
+  }
+  .mobile-more-swap-cancel {
+    margin-left: auto;
+    padding: 4px 10px;
+    border: 1px solid var(--gold-border);
+    border-radius: 6px;
+    background: none;
+    color: var(--gold);
+    font-size: 11px;
+    font-family: var(--font-body);
+    cursor: pointer;
+  }
+  .mobile-more-item.swap-target {
+    border: 1px dashed var(--gold-border);
+    animation: swapPulse 1.5s ease infinite;
+  }
+  @keyframes swapPulse {
+    0%,
+    100% {
+      border-color: var(--gold-border);
+    }
+    50% {
+      border-color: var(--gold);
+      background: var(--gold-dim);
+    }
   }
 }

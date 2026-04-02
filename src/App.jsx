@@ -8,6 +8,7 @@ import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
 import QuickAdd from "./components/QuickAdd";
 import useIdleTimer from "./hooks/useIdleTimer";
+import usePullToRefresh from "./hooks/usePullToRefresh";
 import AIAdvisor from "./components/AIAdvisor";
 import { FeedbackButton, FeedbackAdmin } from "./components/Feedback";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
@@ -353,6 +354,13 @@ function AppInner() {
     setPinUnlocked(null);
   }
 
+  // ── Pull-to-refresh (reload current page data) ──────────────────────────
+  const {
+    pullDistance,
+    refreshing,
+    handlers: pullHandlers,
+  } = usePullToRefresh(() => window.location.reload());
+
   useEffect(() => {
     document.title = `${PAGE_TITLES[page] || "WealthOS"} — WealthOS`;
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -532,6 +540,7 @@ function AppInner() {
 
   // ── Badge counts for sidebar notifications ──────────────────────────────
   const badges = {};
+
   if (abhav && aanya) {
     // Insurance renewals within 30 days
     const now = new Date();
@@ -666,7 +675,22 @@ function AppInner() {
         <main
           className="main-content"
           style={{ flex: 1, padding: "2rem", maxWidth: 1100, overflow: "auto" }}
+          {...pullHandlers}
         >
+          {/* Pull-to-refresh indicator */}
+          {(pullDistance > 0 || refreshing) && (
+            <div
+              className="pull-to-refresh-indicator"
+              style={{
+                height: refreshing ? 40 : pullDistance,
+                opacity: refreshing ? 1 : Math.min(pullDistance / 60, 1),
+              }}
+            >
+              <div className={`pull-spinner${refreshing ? " spinning" : ""}`}>
+                ↻
+              </div>
+            </div>
+          )}
           <div key={page} className="page-enter">
             <PageErrorBoundary resetKey={`${page}-${profile}`}>
               <Suspense fallback={<LoadingSkeleton />}>{pageEl}</Suspense>
