@@ -577,8 +577,11 @@ select:focus-visible {
 }
 @media (max-width: 768px) {
   .quick-add-fab {
-    width: 40px;
-    height: 40px;
+    /* Hide on mobile — bottom nav provides quick access to Budget */
+    display: none !important;
+  }
+  .quick-add-overlay {
+    display: none !important;
   }
 }
 
@@ -702,6 +705,12 @@ input[type="number"] {
 .mobile-topbar {
   display: none;
 }
+.mobile-bottom-nav {
+  display: none;
+}
+.mobile-more-overlay {
+  display: none;
+}
 
 /* Mobile drawer */
 .mobile-drawer-overlay {
@@ -752,35 +761,220 @@ input[type="number"] {
   .desktop-sidebar {
     display: none;
   }
-  /* Hide desktop profile bar on mobile — use drawer version */
+  /* Hide desktop profile bar on mobile */
   .profile-bar {
     display: none;
   }
-  /* Show mobile profile switcher inside drawer */
+  /* Hide desktop-only drawer elements */
   .sidebar-profile-mobile {
-    display: flex;
-    gap: 2px;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-card2);
+    display: none;
   }
+
+  /* ── Mobile top bar: profile chips + page title ── */
   .mobile-topbar {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem 0.75rem;
-    background: rgba(19, 19, 26, 0.85);
+    flex-direction: column;
+    gap: 0;
+    background: rgba(19, 19, 26, 0.92);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     z-index: 50;
-    gap: 10px;
   }
+  .mobile-topbar-profiles {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px 4px;
+  }
+  .mobile-profile-chip {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 0;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .mobile-profile-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--chip-color);
+    opacity: 0.4;
+    transition: opacity 0.15s ease;
+  }
+  .mobile-profile-chip.active {
+    background: var(--chip-dim);
+    color: var(--chip-color);
+    font-weight: 600;
+  }
+  .mobile-profile-chip.active .mobile-profile-chip-dot {
+    opacity: 1;
+  }
+  .mobile-topbar-title {
+    padding: 2px 12px 8px;
+    font-family: var(--font-display);
+    font-size: 18px;
+    color: var(--text);
+  }
+
+  /* ── Mobile bottom tab bar ── */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    background: rgba(19, 19, 26, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    padding: 4px 0 env(safe-area-inset-bottom, 8px);
+  }
+  .mobile-bottom-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 0 4px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-bottom-tab.active {
+    color: var(--gold);
+  }
+  .mobile-bottom-tab:active {
+    transform: scale(0.92);
+  }
+
+  /* ── More sheet ── */
+  .mobile-more-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: drawerFadeIn 0.15s ease-out;
+  }
+  .mobile-more-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 86;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 0 16px calc(68px + env(safe-area-inset-bottom, 8px));
+    animation: moreSheetUp 0.22s ease-out;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .mobile-more-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-muted);
+    opacity: 0.3;
+    margin: 10px auto 14px;
+  }
+  .mobile-more-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .mobile-more-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 4px 10px;
+    border: none;
+    border-radius: 12px;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .mobile-more-item.active {
+    background: var(--gold-dim);
+    color: var(--gold);
+  }
+  .mobile-more-item:active {
+    background: var(--bg-card2);
+    transform: scale(0.95);
+  }
+  .mobile-more-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--bg-card2);
+    transition: background 0.15s ease;
+  }
+  .mobile-more-item.active .mobile-more-icon {
+    background: var(--gold-dim);
+  }
+  .mobile-more-signout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .mobile-more-signout:active {
+    background: var(--bg-card2);
+  }
+  @keyframes moreSheetUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
   .main-content {
     padding: 1rem !important;
-    padding-bottom: 160px !important;
+    padding-bottom: 80px !important;
     max-width: 100% !important;
   }
   .grid-3,
@@ -804,7 +998,7 @@ input[type="number"] {
 @media (max-width: 480px) {
   .main-content {
     padding: 0.75rem !important;
-    padding-bottom: 160px !important;
+    padding-bottom: 80px !important;
   }
   .card {
     padding: 0.875rem;

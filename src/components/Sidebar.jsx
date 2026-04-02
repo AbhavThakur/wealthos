@@ -17,6 +17,7 @@ import {
   Shield,
   RefreshCw,
   MessageSquare,
+  MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -61,6 +62,27 @@ const NAV_GROUPS = [
 
 // Flat list for mobile topbar lookup
 const NAV_FLAT = NAV_GROUPS.flatMap((g) => g.items);
+
+// Bottom tab bar items (mobile)
+const BOTTOM_TABS = [
+  { id: "dashboard", icon: LayoutDashboard, label: "Home" },
+  { id: "budget", icon: Wallet, label: "Budget" },
+  { id: "investments", icon: TrendingUp, label: "Invest" },
+  { id: "goals", icon: Target, label: "Goals" },
+  { id: "__more", icon: MoreHorizontal, label: "More" },
+];
+
+// Items shown in "More" sheet
+const MORE_ITEMS = [
+  { id: "cashflow", icon: Activity, label: "Cash Flow" },
+  { id: "networth", icon: TrendingDown, label: "Net Worth" },
+  { id: "debts", icon: CreditCard, label: "Debts & EMIs" },
+  { id: "insurance", icon: Shield, label: "Insurance" },
+  { id: "subscriptions", icon: RefreshCw, label: "Subscriptions" },
+  { id: "alerts", icon: Bell, label: "Alerts" },
+  { id: "tax", icon: Calculator, label: "Tax Planner" },
+  { id: "settings", icon: Settings, label: "Settings" },
+];
 
 const PROFILES = [
   {
@@ -234,12 +256,12 @@ export default function Sidebar({
 }) {
   const { logout, user } = useAuth();
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const drawerRef = useRef(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreSheetRef = useRef(null);
 
-  // Lock body scroll when mobile drawer is open
+  // Lock body scroll when More sheet is open
   useEffect(() => {
-    if (mobileOpen) {
+    if (moreOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -247,153 +269,147 @@ export default function Sidebar({
     return () => {
       document.body.style.overflow = "";
     };
-  }, [mobileOpen]);
+  }, [moreOpen]);
 
-  // Focus trap + Escape key for mobile drawer
+  // Close More sheet on Escape
   useEffect(() => {
-    if (!mobileOpen) return;
+    if (!moreOpen) return;
     const handleKey = (e) => {
-      if (e.key === "Escape") {
-        setMobileOpen(false);
-        return;
-      }
-      if (e.key === "Tab" && drawerRef.current) {
-        const focusable = drawerRef.current.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        );
-        if (!focusable.length) return;
-        const first = focusable[0],
-          last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
+      if (e.key === "Escape") setMoreOpen(false);
     };
     document.addEventListener("keydown", handleKey);
-    requestAnimationFrame(() => {
-      drawerRef.current?.querySelector("button")?.focus();
-    });
     return () => document.removeEventListener("keydown", handleKey);
-  }, [mobileOpen]);
+  }, [moreOpen]);
+
+  const profiles = PROFILES.map((p) => ({
+    ...p,
+    label: p.label || personNames?.[p.id] || p.id,
+  }));
+
+  // Is current page one of the primary bottom tabs?
+  const isBottomTabPage = BOTTOM_TABS.some(
+    (t) => t.id !== "__more" && t.id === page,
+  );
 
   return (
     <>
-      {/* Mobile top bar */}
+      {/* ── Mobile top bar: profile pills + page title ── */}
       <div className="mobile-topbar">
-        <button
-          className="btn-icon"
-          aria-label="Open menu"
-          onClick={() => setMobileOpen(true)}
-          style={{ padding: 8 }}
-        >
-          <Menu size={20} />
-        </button>
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            overflow: "hidden",
-          }}
+          className="mobile-topbar-profiles"
+          role="radiogroup"
+          aria-label="Profile switcher"
         >
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background:
-                profile === "abhav"
-                  ? "var(--abhav)"
-                  : profile === "aanya"
-                    ? "var(--aanya)"
-                    : "var(--gold)",
-              flexShrink: 0,
-            }}
-          />
-          <div
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: 15,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {NAV_FLAT.find((n) => n.id === page)?.label || "WealthOS"}
-          </div>
+          {profiles.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setProfile(p.id)}
+              role="radio"
+              aria-checked={profile === p.id}
+              className={`mobile-profile-chip${profile === p.id ? " active" : ""}`}
+              style={{ "--chip-color": p.color, "--chip-dim": p.dim }}
+            >
+              <span className="mobile-profile-chip-dot" />
+              {p.label}
+            </button>
+          ))}
         </div>
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background:
-              profile === "abhav"
-                ? "var(--abhav-dim)"
-                : profile === "aanya"
-                  ? "var(--aanya-dim)"
-                  : "var(--gold-dim)",
-            border: `1px solid ${
-              profile === "abhav"
-                ? "var(--abhav)"
-                : profile === "aanya"
-                  ? "var(--aanya)"
-                  : "var(--gold)"
-            }44`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 11,
-            fontWeight: 600,
-            color:
-              profile === "abhav"
-                ? "var(--abhav)"
-                : profile === "aanya"
-                  ? "var(--aanya)"
-                  : "var(--gold)",
-            flexShrink: 0,
-          }}
-          onClick={() => setMobileOpen(true)}
-        >
-          {profile === "household"
-            ? "H"
-            : (personNames?.[profile] || profile)[0].toUpperCase()}
+        <div className="mobile-topbar-title">
+          {NAV_FLAT.find((n) => n.id === page)?.label || "WealthOS"}
         </div>
       </div>
 
-      {/* Mobile drawer overlay */}
-      {mobileOpen && (
-        <div
-          className="mobile-drawer-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Navigation menu"
-        >
+      {/* ── Mobile bottom tab bar ── */}
+      <nav className="mobile-bottom-nav" aria-label="Main navigation">
+        {BOTTOM_TABS.map(({ id, icon: Icon, label }) => {
+          const isMore = id === "__more";
+          const active = isMore
+            ? moreOpen || (!isBottomTabPage && !moreOpen)
+            : page === id;
+          return (
+            <button
+              key={id}
+              className={`mobile-bottom-tab${active ? " active" : ""}`}
+              aria-current={!isMore && active ? "page" : undefined}
+              onClick={() => {
+                if (isMore) {
+                  setMoreOpen((v) => !v);
+                } else {
+                  setPage(id);
+                  setMoreOpen(false);
+                }
+              }}
+            >
+              <Icon size={20} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* ── More sheet ── */}
+      {moreOpen && (
+        <div className="mobile-more-overlay" onClick={() => setMoreOpen(false)}>
           <div
-            className="mobile-drawer-backdrop"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div ref={drawerRef} className="mobile-drawer-panel">
-            <SidebarContent
-              page={page}
-              setPage={setPage}
-              profile={profile}
-              setProfile={setProfile}
-              logout={logout}
-              onClose={() => setMobileOpen(false)}
-              badges={badges}
-              personNames={personNames}
-              isAdmin={isAdmin}
-            />
+            ref={moreSheetRef}
+            className="mobile-more-sheet"
+            role="dialog"
+            aria-label="More navigation"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-more-handle" />
+            <div className="mobile-more-grid">
+              {MORE_ITEMS.map(({ id, icon: Icon, label }) => (
+                <button
+                  key={id}
+                  className={`mobile-more-item${page === id ? " active" : ""}`}
+                  onClick={() => {
+                    setPage(id);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <div className="mobile-more-icon">
+                    <Icon size={20} />
+                  </div>
+                  <span>{label}</span>
+                  {badges?.[id] > 0 && (
+                    <span className="nav-badge">{badges[id]}</span>
+                  )}
+                </button>
+              ))}
+              {isAdmin && (
+                <button
+                  className={`mobile-more-item${page === "feedback" ? " active" : ""}`}
+                  onClick={() => {
+                    setPage("feedback");
+                    setMoreOpen(false);
+                  }}
+                >
+                  <div className="mobile-more-icon">
+                    <MessageSquare size={20} />
+                  </div>
+                  <span>Feedback</span>
+                  {badges?.feedback > 0 && (
+                    <span className="nav-badge">{badges.feedback}</span>
+                  )}
+                </button>
+              )}
+            </div>
+            <button
+              className="mobile-more-signout"
+              onClick={() => {
+                setMoreOpen(false);
+                logout();
+              }}
+            >
+              <LogOut size={16} />
+              Sign out
+            </button>
           </div>
         </div>
       )}
 
-      {/* Desktop sidebar */}
+      {/* ── Desktop sidebar (unchanged) ── */}
       <aside className="desktop-sidebar">
         <SidebarContent
           page={page}
