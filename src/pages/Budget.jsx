@@ -713,7 +713,12 @@ function BudgetRuleSection({
                         >
                           {c}
                           {(expByCategory[c] || 0) > 0 && (
-                            <span style={{ marginLeft: 4, opacity: 0.65 }}>
+                            <span
+                              style={{
+                                marginLeft: 4,
+                                color: "var(--text-muted)",
+                              }}
+                            >
                               {fmt(expByCategory[c])}
                             </span>
                           )}

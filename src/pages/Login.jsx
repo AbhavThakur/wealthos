@@ -70,7 +70,7 @@ export default function Login() {
   };
 
   return (
-    <div
+    <main
       style={{
         minHeight: "100vh",
         display: "flex",
@@ -175,14 +175,19 @@ export default function Login() {
                 aria-label={showPwd ? "Hide password" : "Show password"}
                 style={{
                   position: "absolute",
-                  right: 10,
+                  right: 4,
                   top: "50%",
                   transform: "translateY(-50%)",
                   background: "none",
                   border: "none",
                   color: "var(--text-muted)",
                   cursor: "pointer",
-                  padding: 0,
+                  padding: "4px 6px",
+                  minWidth: 24,
+                  minHeight: 24,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -376,6 +381,6 @@ export default function Login() {
           Your data stays in your Firebase project.
         </div>
       </div>
-    </div>
+    </main>
   );
 }
