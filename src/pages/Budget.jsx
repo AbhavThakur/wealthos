@@ -784,7 +784,7 @@ export default function Budget({
       sessionStorage.removeItem("budget-open-tab");
       return signal;
     }
-    return "monthly";
+    return "onetime";
   });
   const [moveMenuOpen, setMoveMenuOpen] = useState(null); // expId or null
   const [moveToTripPicker, setMoveToTripPicker] = useState(null); // expId when showing trip sub-menu
@@ -912,11 +912,14 @@ export default function Budget({
       note: f.note.trim(),
     };
     const newEntries = [...(exp.entries || []), entry];
+    const patch = { entries: newEntries };
+    // For one-time expenses, add entry amount to the running total
+    if (exp.expenseType === "onetime") {
+      patch.amount = (exp.amount || 0) + entry.amount;
+    }
     updatePerson(
       "expenses",
-      expenses.map((x) =>
-        x.id === exp.id ? { ...x, entries: newEntries } : x,
-      ),
+      expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
     );
     setEntryForm((s) => ({
       ...s,
@@ -925,11 +928,15 @@ export default function Budget({
   };
   const deleteEntry = (exp, entryId) => {
     const newEntries = (exp.entries || []).filter((e) => e.id !== entryId);
+    const removed = (exp.entries || []).find((e) => e.id === entryId);
+    const patch = { entries: newEntries };
+    // For one-time expenses, subtract the deleted entry amount
+    if (exp.expenseType === "onetime" && removed) {
+      patch.amount = Math.max(0, (exp.amount || 0) - (removed.amount || 0));
+    }
     updatePerson(
       "expenses",
-      expenses.map((x) =>
-        x.id === exp.id ? { ...x, entries: newEntries } : x,
-      ),
+      expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
     );
   };
 
@@ -2640,9 +2647,9 @@ export default function Budget({
           >
             {[
               {
-                key: "monthly",
-                icon: <Repeat size={12} />,
-                count: monthlyExps.length,
+                key: "onetime",
+                icon: <CreditCard size={12} />,
+                count: filteredOnetimeExps.length,
               },
               {
                 key: "trip",
@@ -2650,9 +2657,9 @@ export default function Budget({
                 count: filteredTripExps.length + filteredSharedTrips.length,
               },
               {
-                key: "onetime",
-                icon: <CreditCard size={12} />,
-                count: filteredOnetimeExps.length,
+                key: "monthly",
+                icon: <Repeat size={12} />,
+                count: monthlyExps.length,
               },
             ].map(({ key, icon, count }) => {
               const meta = EXPENSE_TYPES[key];
