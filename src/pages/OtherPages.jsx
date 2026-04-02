@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { hashPin } from "../utils/hashPin";
 import { useSessionState } from "../hooks/useSessionState";
 import { fmt, nextId, EXPENSE_CATEGORIES, calcEMI } from "../utils/finance";
@@ -6,6 +6,7 @@ import { Plus, Trash2, Search } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
+import { useAuth } from "../context/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
 import {
   isNotificationSupported,
@@ -13,6 +14,11 @@ import {
   requestPermission,
   setNotificationEnabled,
 } from "../utils/notifications";
+import {
+  subscribeToPush,
+  unsubscribeFromPush,
+  isPushSubscribed,
+} from "../utils/pushSubscription";
 import {
   isBiometricAvailable,
   isBiometricEnrolled,
@@ -2688,35 +2694,63 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
 }
 
 function NotificationToggle() {
+  const { user } = useAuth();
   const [enabled, setEnabled] = useState(isNotificationEnabled());
+  const [pushActive, setPushActive] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [permission, setPermission] = useState(null);
 
+  useEffect(() => {
+    isPushSubscribed().then(setPushActive);
+  }, []);
+
   const toggle = async () => {
-    if (enabled) {
-      setNotificationEnabled(false);
-      setEnabled(false);
-    } else {
-      const result = await requestPermission();
-      setPermission(result);
-      if (result === "granted") {
-        setEnabled(true);
+    setBusy(true);
+    try {
+      if (enabled) {
+        setNotificationEnabled(false);
+        setEnabled(false);
+        if (user?.uid) await unsubscribeFromPush(user.uid);
+        setPushActive(false);
+      } else {
+        const result = await requestPermission();
+        setPermission(result);
+        if (result === "granted") {
+          setEnabled(true);
+          if (user?.uid) {
+            const sub = await subscribeToPush(user.uid);
+            setPushActive(!!sub);
+          }
+        }
       }
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <button
-        className={enabled ? "btn-primary" : "btn-ghost"}
-        onClick={toggle}
-        style={{ fontSize: 13 }}
-      >
-        {enabled ? "🔔 Enabled" : "🔕 Enable Notifications"}
-      </button>
-      {permission === "denied" && (
-        <span style={{ fontSize: 12, color: "var(--red)" }}>
-          Blocked by browser. Allow notifications in your browser settings.
-        </span>
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button
+          className={enabled ? "btn-primary" : "btn-ghost"}
+          onClick={toggle}
+          disabled={busy}
+          style={{ fontSize: 13 }}
+        >
+          {busy ? "…" : enabled ? "🔔 Enabled" : "🔕 Enable Notifications"}
+        </button>
+        {permission === "denied" && (
+          <span style={{ fontSize: 12, color: "var(--red)" }}>
+            Blocked by browser. Allow notifications in your browser settings.
+          </span>
+        )}
+      </div>
+      {enabled && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
+          {pushActive
+            ? "✓ Background push active — you'll get reminders even when the app is closed."
+            : "⚡ Local notifications active — reminders fire when you open the app."}
+        </div>
       )}
     </div>
   );
