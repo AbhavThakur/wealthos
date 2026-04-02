@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
+import { haptic } from "../utils/haptic";
 
-// Confirm dialog for destructive actions
+// eslint-disable-next-line react-refresh/only-export-components
 function ConfirmDialog({ open, title, message, onConfirm, onCancel, danger }) {
   if (!open) return null;
   return (
@@ -62,6 +63,7 @@ export function useConfirm() {
       message={state.message}
       danger={state.danger}
       onConfirm={() => {
+        haptic("heavy");
         state.resolve(true);
         setState((s) => ({ ...s, open: false }));
       }}

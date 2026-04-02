@@ -1,6 +1,13 @@
 // WealthOS Service Worker — Cache-first for assets, network-first for API
-const CACHE_NAME = "wealthos-v1";
-const STATIC_ASSETS = ["/", "/index.html"];
+const CACHE_NAME = "wealthos-v2";
+const STATIC_ASSETS = [
+  "/",
+  "/index.html",
+  "/manifest.json",
+  "/favicon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
 
 // Install: pre-cache the app shell
 self.addEventListener("install", (event) => {
@@ -81,5 +88,63 @@ self.addEventListener("fetch", (event) => {
       ),
     );
     return;
+  }
+});
+
+// Push notification handler
+self.addEventListener("push", (event) => {
+  let data = { title: "WealthOS", body: "You have a new notification." };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    // use defaults
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || "wealthos-push",
+    }),
+  );
+});
+
+// Open app when notification is clicked
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((clients) => {
+      if (clients.length) {
+        clients[0].focus();
+      } else {
+        self.clients.openWindow("/");
+      }
+    }),
+  );
+});
+
+// Periodic background sync — fire daily reminders even when app is closed
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "wealthos-daily-reminders") {
+    event.waitUntil(
+      self.clients.matchAll({ type: "window" }).then((clients) => {
+        // Only send notification if no open windows (app is in background)
+        if (clients.length === 0) {
+          return self.registration.showNotification("WealthOS", {
+            body: "Open WealthOS to check your finances and upcoming reminders.",
+            icon: "/icons/icon-192.png",
+            badge: "/icons/icon-192.png",
+            tag: "daily-reminder",
+          });
+        }
+      }),
+    );
+  }
+});
+
+// Notify user about app updates
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
   }
 });

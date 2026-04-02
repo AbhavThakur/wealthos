@@ -7,6 +7,11 @@ import { exportAllData } from "./utils/exportData";
 import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
 import QuickAdd from "./components/QuickAdd";
+import SearchPalette from "./components/SearchPalette";
+import OnboardingTour from "./components/OnboardingTour";
+import { checkReminders } from "./utils/notifications";
+import InstallBanner from "./components/InstallBanner";
+import UpdateBanner from "./components/UpdateBanner";
 import useIdleTimer from "./hooks/useIdleTimer";
 import usePullToRefresh from "./hooks/usePullToRefresh";
 import AIAdvisor from "./components/AIAdvisor";
@@ -324,8 +329,13 @@ function AppInner() {
   } = useData();
   const { user, logout } = useAuth();
   const isAdmin = !!ADMIN_EMAIL && user?.email === ADMIN_EMAIL;
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get("page");
+    return p && PAGE_TITLES[p] ? p : "dashboard";
+  });
   const [profile, setProfile] = useState("household");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // ── PIN Lock (disabled in demo mode) ──────────────────────────────────
   const pinEnabled = !isDemo && shared?.pinEnabled !== false;
@@ -365,6 +375,13 @@ function AppInner() {
     document.title = `${PAGE_TITLES[page] || "WealthOS"} — WealthOS`;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [page]);
+
+  // Fire push-notification reminders once data is ready
+  useEffect(() => {
+    if (!loading && abhav && aanya && shared) {
+      checkReminders(abhav, aanya, shared, personNames);
+    }
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || !abhav || !aanya) return <LoadingSkeleton />;
 
@@ -625,6 +642,7 @@ function AppInner() {
         setProfile={setProfile}
         badges={badges}
         personNames={personNames}
+        onQuickAdd={() => setQuickAddOpen(true)}
       />
       <div className="app-layout">
         <OfflineBanner />
@@ -708,8 +726,20 @@ function AppInner() {
         setPage={setPage}
         setProfile={setProfile}
         personNames={personNames}
+        externalOpen={quickAddOpen}
+        setExternalOpen={setQuickAddOpen}
       />
       <FeedbackButton />
+      <SearchPalette
+        abhav={abhav}
+        aanya={aanya}
+        shared={shared}
+        personNames={personNames}
+        setPage={setPage}
+        setProfile={setProfile}
+      />
+      <OnboardingTour show={!isDemo} />
+      <InstallBanner />
     </>
   );
 }
@@ -717,6 +747,7 @@ function AppInner() {
 export default function Root() {
   return (
     <AuthProvider>
+      <UpdateBanner />
       <App />
     </AuthProvider>
   );

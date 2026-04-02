@@ -1,42 +1,64 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import useDraggable from "../hooks/useDraggable";
+import { haptic } from "../utils/haptic";
 
-export default function QuickAdd({ setPage, setProfile, personNames }) {
+export default function QuickAdd({
+  setPage,
+  setProfile,
+  personNames,
+  externalOpen,
+  setExternalOpen,
+}) {
   const drag = useDraggable("quickadd", { bottom: 148, right: 28 });
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const open = externalOpen || internalOpen;
+  const close = useCallback(() => {
+    setInternalOpen(false);
+    if (setExternalOpen) setExternalOpen(false);
+  }, [setExternalOpen]);
+  const toggle = useCallback(() => {
+    if (externalOpen || internalOpen) {
+      setInternalOpen(false);
+      if (setExternalOpen) setExternalOpen(false);
+    } else {
+      setInternalOpen(true);
+    }
+  }, [externalOpen, internalOpen, setExternalOpen]);
 
   // Keyboard shortcut: Ctrl+E or Cmd+E
   useEffect(() => {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "e") {
         e.preventDefault();
-        setOpen((prev) => !prev);
+        toggle();
       }
-      if (e.key === "Escape" && open) setOpen(false);
+      if (e.key === "Escape" && open) close();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open]);
+  }, [open, close, toggle]);
 
   const navigate = (person) => {
+    haptic("medium");
     setProfile(person);
     setPage("budget");
     // Signal Budget to open the one-time expense tab
     sessionStorage.setItem("budget-open-tab", "onetime");
-    setOpen(false);
+    close();
   };
 
   return (
     <>
-      {/* FAB */}
+      {/* FAB (desktop only — hidden on mobile via CSS) */}
       <button
         className="quick-add-fab"
         {...drag.handlers}
         style={drag.style}
         onClick={() => {
           if (drag.isDragging) return;
-          setOpen((o) => !o);
+          toggle();
         }}
         title="Add expense (Ctrl+E)"
         aria-label="Add expense"
@@ -46,7 +68,7 @@ export default function QuickAdd({ setPage, setProfile, personNames }) {
 
       {/* Person picker popup */}
       {open && (
-        <div className="quick-add-overlay" onClick={() => setOpen(false)}>
+        <div className="quick-add-overlay" onClick={close}>
           <div className="quick-add-modal" onClick={(e) => e.stopPropagation()}>
             <div
               style={{

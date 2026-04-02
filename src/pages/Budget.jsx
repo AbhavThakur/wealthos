@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
+import EmptyState from "../components/EmptyState";
 
 // ── Mobile-friendly input modal ──────────────────────────────────────────────
 // On small screens, inputs get cropped. Tapping opens a full-width bottom sheet
@@ -1882,6 +1883,99 @@ export default function Budget({
             expByCategory={expByCategory}
             savingsAmt={totalIncome - totalExpenses}
           />
+          {/* ── Budget vs Actual ──────────────────────────────────────── */}
+          {(data?.budgetAlerts || []).filter((a) => a.active).length > 0 && (
+            <div className="card">
+              <div className="card-title" style={{ marginBottom: 12 }}>
+                Budget vs Actual
+              </div>
+              {(data?.budgetAlerts || [])
+                .filter((a) => a.active)
+                .map((alert) => {
+                  const spent = expByCategory[alert.category] || 0;
+                  const limit = alert.limit || 0;
+                  const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
+                  const over = spent > limit;
+                  const near = !over && pct >= 80;
+                  const barColor = over
+                    ? "var(--red)"
+                    : near
+                      ? "var(--gold)"
+                      : "var(--green)";
+                  return (
+                    <div
+                      key={alert.id || alert.category}
+                      style={{ marginBottom: 14 }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>
+                          {alert.category}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: barColor,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {fmt(spent)}{" "}
+                          <span
+                            style={{
+                              color: "var(--text-muted)",
+                              fontWeight: 400,
+                            }}
+                          >
+                            / {fmt(limit)}
+                          </span>
+                          {over && (
+                            <span
+                              style={{ marginLeft: 6, color: "var(--red)" }}
+                            >
+                              +{fmt(spent - limit)} over
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          position: "relative",
+                          height: 8,
+                          borderRadius: 4,
+                          background: "var(--bg-card2)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: Math.min(pct, 100) + "%",
+                            height: "100%",
+                            borderRadius: 4,
+                            background: barColor,
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: barColor,
+                          marginTop: 3,
+                        }}
+                      >
+                        {pct}% used
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
           <div className="card">
             <div className="card-title">Expenses by category</div>
             {Object.entries(expGrouped)
@@ -2795,17 +2889,13 @@ export default function Budget({
               </div>
 
               {monthlyExps.length === 0 && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "var(--text-muted)",
-                    padding: "1rem 0",
-                    textAlign: "center",
-                  }}
-                >
-                  No monthly expenses yet. Add recurring costs like rent,
-                  groceries, or subscriptions.
-                </div>
+                <EmptyState
+                  type="budget"
+                  title="No monthly expenses yet"
+                  description="Add recurring costs like rent, groceries, or subscriptions."
+                  actionLabel="+ Add expense"
+                  onAction={addMonthlyExpense}
+                />
               )}
 
               {monthlyExps.map((exp) => {

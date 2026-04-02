@@ -30,6 +30,66 @@
   --radius: 12px;
   --radius-lg: 16px;
 }
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg: #f5f3ef;
+  --bg-card: #ffffff;
+  --bg-card2: #f0ede8;
+  --bg-input: #f7f5f2;
+  --border: rgba(0, 0, 0, 0.09);
+  --border-hover: rgba(0, 0, 0, 0.16);
+  --text-primary: #1a1a1f;
+  --text-secondary: #555560;
+  --text-muted: #7a7a85;
+  --gold: #a08430;
+  --gold-light: #c9a84c;
+  --gold-dim: rgba(160, 132, 48, 0.08);
+  --gold-border: rgba(160, 132, 48, 0.2);
+  --green: #2e8b57;
+  --green-dim: rgba(46, 139, 87, 0.08);
+  --red: #c0392b;
+  --red-dim: rgba(192, 57, 43, 0.08);
+  --blue: #2d6fd6;
+  --blue-dim: rgba(45, 111, 214, 0.08);
+  --purple: #7c5cc4;
+  --purple-dim: rgba(124, 92, 196, 0.08);
+  --abhav: #2d6fd6;
+  --abhav-dim: rgba(45, 111, 214, 0.08);
+  --aanya: #b84a90;
+  --aanya-dim: rgba(184, 74, 144, 0.08);
+}
+
+/* System preference auto-switch (only when no explicit data-theme) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f5f3ef;
+    --bg-card: #ffffff;
+    --bg-card2: #f0ede8;
+    --bg-input: #f7f5f2;
+    --border: rgba(0, 0, 0, 0.09);
+    --border-hover: rgba(0, 0, 0, 0.16);
+    --text-primary: #1a1a1f;
+    --text-secondary: #555560;
+    --text-muted: #7a7a85;
+    --gold: #a08430;
+    --gold-light: #c9a84c;
+    --gold-dim: rgba(160, 132, 48, 0.08);
+    --gold-border: rgba(160, 132, 48, 0.2);
+    --green: #2e8b57;
+    --green-dim: rgba(46, 139, 87, 0.08);
+    --red: #c0392b;
+    --red-dim: rgba(192, 57, 43, 0.08);
+    --blue: #2d6fd6;
+    --blue-dim: rgba(45, 111, 214, 0.08);
+    --purple: #7c5cc4;
+    --purple-dim: rgba(124, 92, 196, 0.08);
+    --abhav: #2d6fd6;
+    --abhav-dim: rgba(45, 111, 214, 0.08);
+    --aanya: #b84a90;
+    --aanya-dim: rgba(184, 74, 144, 0.08);
+  }
+}
 * {
   box-sizing: border-box;
   margin: 0;
@@ -579,10 +639,7 @@ select:focus-visible {
 }
 @media (max-width: 768px) {
   .quick-add-fab {
-    /* Hide on mobile — bottom nav provides quick access to Budget */
-    display: none !important;
-  }
-  .quick-add-overlay {
+    /* Hide desktop FAB on mobile — center FAB in bottom nav replaces it */
     display: none !important;
   }
 }
@@ -833,6 +890,7 @@ input[type="number"] {
   /* ── Mobile bottom tab bar ── */
   .mobile-bottom-nav {
     display: flex;
+    align-items: flex-end;
     position: fixed;
     bottom: 0;
     left: 0;
@@ -866,6 +924,54 @@ input[type="number"] {
   }
   .mobile-bottom-tab:active {
     transform: scale(0.92);
+  }
+
+  /* ── Center FAB with wave notch ── */
+  .mobile-fab-wrapper {
+    width: 68px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    position: relative;
+    align-self: stretch;
+  }
+  .mobile-fab-notch {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .mobile-fab-notch path {
+    fill: rgba(19, 19, 26, 0.92);
+  }
+  .mobile-fab {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+    color: #0c0c0f;
+    box-shadow: 0 4px 16px rgba(201, 168, 76, 0.35);
+    position: relative;
+    z-index: 1;
+    transform: translateY(-18px);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-fab:active {
+    transform: translateY(-18px) scale(0.88);
+    box-shadow: 0 2px 10px rgba(201, 168, 76, 0.5);
   }
 
   /* ── More sheet ── */
@@ -1290,8 +1396,27 @@ input[type="number"] {
   }
 }
 
+@keyframes goalCelebrate {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(8px);
+  }
+  50% {
+    transform: scale(1.03) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 /* ── PWA standalone mode adjustments ── */
 @media (display-mode: standalone) {
+  /* Prevent overscroll bounce for native feel */
+  html,
+  body {
+    overscroll-behavior-y: contain;
+  }
   /* Extra padding top for iOS notch / status bar */
   .mobile-topbar {
     padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
@@ -1310,6 +1435,23 @@ input[type="number"] {
   .mobile-more-sheet {
     user-select: none;
     -webkit-user-select: none;
+  }
+  /* Disable long-press context menu on interactive elements */
+  .mobile-bottom-nav button,
+  .profile-pill,
+  .mobile-topbar button {
+    -webkit-touch-callout: none;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 }
 

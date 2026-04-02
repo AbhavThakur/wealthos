@@ -19,6 +19,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   ArrowLeftRight,
+  Plus,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -80,9 +81,9 @@ const ALL_NAV_ITEMS = {
   settings: { icon: Settings, label: "Settings" },
 };
 
-// Fixed tabs: Dashboard (slot 0) and More (slot 4) can't be changed
-// Customizable: slots 1-3 default to budget, investments, goals
-const DEFAULT_CUSTOM_TABS = ["budget", "investments", "goals"];
+// Fixed tabs: Dashboard (slot 0) and More (slot 3) can't be changed
+// Customizable: slots 1-2 default to budget, goals
+const DEFAULT_CUSTOM_TABS = ["budget", "goals"];
 const LS_KEY = "wealthos-bottom-tabs";
 
 function getCustomTabs() {
@@ -90,7 +91,7 @@ function getCustomTabs() {
     const stored = JSON.parse(localStorage.getItem(LS_KEY));
     if (
       Array.isArray(stored) &&
-      stored.length === 3 &&
+      stored.length === 2 &&
       stored.every((id) => ALL_NAV_ITEMS[id])
     ) {
       return stored;
@@ -285,6 +286,7 @@ export default function Sidebar({
   setProfile,
   badges,
   personNames,
+  onQuickAdd,
 }) {
   const { logout, user } = useAuth();
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
@@ -371,7 +373,43 @@ export default function Sidebar({
 
       {/* ── Mobile bottom tab bar ── */}
       <nav className="mobile-bottom-nav" aria-label="Main navigation">
-        {bottomTabs.map(({ id, icon: Icon, label }) => {
+        {/* Left side: Dashboard + Custom1 */}
+        {bottomTabs.slice(0, 2).map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            className={`mobile-bottom-tab${page === id ? " active" : ""}`}
+            aria-current={page === id ? "page" : undefined}
+            onClick={() => {
+              setPage(id);
+              setMoreOpen(false);
+              setSwapSlot(null);
+            }}
+          >
+            <Icon size={20} />
+            <span>{label}</span>
+          </button>
+        ))}
+
+        {/* Center FAB with wave notch */}
+        <div className="mobile-fab-wrapper">
+          <svg
+            className="mobile-fab-notch"
+            viewBox="0 0 80 40"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M0,40 C12,40 18,40 24,28 C30,14 34,4 40,4 C46,4 50,14 56,28 C62,40 68,40 80,40 Z" />
+          </svg>
+          <button
+            className="mobile-fab"
+            onClick={onQuickAdd}
+            aria-label="Add expense"
+          >
+            <Plus size={22} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        {/* Right side: Custom2 + More */}
+        {bottomTabs.slice(2).map(({ id, icon: Icon, label }) => {
           const isMore = id === "__more";
           const active = isMore
             ? moreOpen || (!isBottomTabPage && !moreOpen)

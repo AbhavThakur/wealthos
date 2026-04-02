@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fmt, nextId, monthsUntil, requiredSIP } from "../utils/finance";
 import { Plus, Edit3, Trash2, Check, X } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
+import EmptyState from "../components/EmptyState";
 
 const EMOJIS = [
   "🏠",
@@ -328,6 +329,40 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
               >
                 {pct}% complete
               </div>
+              {/* 🎉 Goal completed celebration */}
+              {pct >= 100 && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: "8px 12px",
+                    background:
+                      "linear-gradient(135deg, rgba(72,187,120,0.12), rgba(201,168,76,0.12))",
+                    border: "1px solid rgba(72,187,120,0.25)",
+                    borderRadius: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    animation: "goalCelebrate 0.6s ease-out",
+                  }}
+                >
+                  <span style={{ fontSize: 22 }}>🎉</span>
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 13,
+                        color: "var(--green)",
+                      }}
+                    >
+                      Goal achieved!
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      You saved {fmt(saved)} — well done!
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 22, marginLeft: "auto" }}>🏆</span>
+                </div>
+              )}
               {/* SIP adequacy: show required monthly SIP to reach goal */}
               {months > 0 && saved < target && (
                 <div
@@ -466,6 +501,15 @@ export default function Goals({
               <Plus size={13} /> Add
             </button>
           </div>
+          {personalGoals.length === 0 && showAdd !== "personal" && (
+            <EmptyState
+              type="goal"
+              title="No personal goals yet"
+              description="Set a savings target — house, vacation, emergency fund — and track your progress."
+              actionLabel="+ Add goal"
+              onAction={() => setShowAdd("personal")}
+            />
+          )}
           {personalGoals.map((g) => (
             <GoalCard
               key={g.id}

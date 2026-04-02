@@ -3,6 +3,7 @@ import { fmt, fmtCr, nextId } from "../utils/finance";
 import { Plus, Trash2, Shield } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
+import EmptyState from "../components/EmptyState";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INSURANCE TRACKER
@@ -230,16 +231,13 @@ export function Insurance({ data, personName, personColor, updatePerson }) {
           </div>
         )}
         {insurances.length === 0 && !showAdd && (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "2rem 0",
-              color: "var(--text-muted)",
-              fontSize: 13,
-            }}
-          >
-            No policies yet. Add your first insurance policy.
-          </div>
+          <EmptyState
+            type="generic"
+            title="No policies yet"
+            description="Add your insurance policies to track premiums, renewals, and coverage."
+            actionLabel="+ Add policy"
+            onAction={() => setShowAdd(true)}
+          />
         )}
         {insurances.map((ins) => {
           const annPrem =
@@ -553,16 +551,13 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
           </div>
         )}
         {subs.length === 0 && !showAdd && (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "2rem 0",
-              color: "var(--text-muted)",
-              fontSize: 13,
-            }}
-          >
-            No subscriptions yet. Track your OTT, cloud, gym memberships.
-          </div>
+          <EmptyState
+            type="subscription"
+            title="No subscriptions yet"
+            description="Track your OTT, cloud, gym memberships and see how much they cost monthly."
+            actionLabel="+ Add subscription"
+            onAction={() => setShowAdd(true)}
+          />
         )}
         {subs.map((sub) => {
           const moAmt =

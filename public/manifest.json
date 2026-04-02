@@ -8,6 +8,7 @@
   "theme_color": "#0c0c0f",
   "orientation": "portrait-primary",
   "scope": "/",
+  "id": "/",
   "icons": [
     {
       "src": "/favicon.svg",
@@ -34,6 +35,35 @@
       "purpose": "any"
     }
   ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/?page=dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Budget",
+      "short_name": "Budget",
+      "url": "/?page=budget",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Investments",
+      "short_name": "Invest",
+      "url": "/?page=investments",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Goals",
+      "short_name": "Goals",
+      "url": "/?page=goals",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "categories": ["finance", "productivity"],
-  "prefer_related_applications": false
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }

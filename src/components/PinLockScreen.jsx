@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { hashPin } from "../utils/hashPin";
+import { isBiometricEnrolled, authenticateBiometric } from "../utils/biometric";
 
 const LOCKOUT_SECONDS = 30;
 const MAX_ATTEMPTS = 3;
@@ -10,6 +11,8 @@ export default function PinLockScreen({ pin, onUnlock }) {
   const [shake, setShake] = useState(false);
   const [lockoutEnd, setLockoutEnd] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const [biometricAvailable] = useState(() => isBiometricEnrolled());
+  const [biometricBusy, setBiometricBusy] = useState(false);
   const ref0 = useRef();
   const ref1 = useRef();
   const ref2 = useRef();
@@ -24,6 +27,32 @@ export default function PinLockScreen({ pin, onUnlock }) {
   useEffect(() => {
     refs[0].current?.focus();
   }, [refs]);
+
+  // Attempt biometric unlock automatically on mount
+  const tryBiometric = useCallback(async () => {
+    if (!biometricAvailable || biometricBusy) return;
+    setBiometricBusy(true);
+    try {
+      const ok = await authenticateBiometric();
+      if (ok) {
+        sessionStorage.setItem("wealthos_unlocked", "household");
+        sessionStorage.setItem("wealthos_unlock_ts", String(Date.now()));
+        onUnlock("household");
+        return;
+      }
+    } catch {
+      // User cancelled or error — fall back to PIN
+    }
+    setBiometricBusy(false);
+  }, [biometricAvailable, biometricBusy, onUnlock]);
+
+  useEffect(() => {
+    if (biometricAvailable) {
+      // Small delay to let the lock screen render first
+      const t = setTimeout(() => tryBiometric(), 400);
+      return () => clearTimeout(t);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lockout countdown
   useEffect(() => {
@@ -253,6 +282,35 @@ export default function PinLockScreen({ pin, onUnlock }) {
         >
           Enter your household PIN to unlock.
         </div>
+
+        {/* Biometric unlock button */}
+        {biometricAvailable && (
+          <button
+            onClick={tryBiometric}
+            disabled={biometricBusy}
+            style={{
+              marginTop: 20,
+              background: "none",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              padding: "10px 20px",
+              cursor: biometricBusy ? "wait" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              color: "var(--text-primary)",
+              fontSize: 13,
+              fontWeight: 500,
+              opacity: biometricBusy ? 0.5 : 1,
+              transition: "opacity 0.2s",
+            }}
+          >
+            <span style={{ fontSize: 20 }}>
+              {/Mac|iPhone|iPad/.test(navigator.userAgent) ? "🫥" : "👆"}
+            </span>
+            {biometricBusy ? "Verifying…" : "Unlock with Biometrics"}
+          </button>
+        )}
       </div>
     </div>
   );

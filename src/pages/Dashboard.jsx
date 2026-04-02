@@ -31,9 +31,41 @@ import {
 } from "lucide-react";
 import { InfoModal } from "../components/InfoModal";
 import { useMarketData } from "../hooks/useMarketData";
+import MonthlySummary from "../components/MonthlySummary";
+
+function Sparkline({ data, color, width = 64, height = 24 }) {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      width={width}
+      height={height}
+      style={{ display: "block", marginTop: 4 }}
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.7"
+      />
+    </svg>
+  );
+}
 
 // ── Month-aware stats from transactions ────────────────────────────────────
-function statsFromTxns(txns, exps, incomes, ym) {
+function statsFromTxns(txns, exps, incomes, ym, subs) {
   let income = 0,
     expenses = 0,
     investments = 0,
@@ -60,6 +92,10 @@ function statsFromTxns(txns, exps, incomes, ym) {
       if (!e.date || e.date.slice(0, 7) !== ym) continue;
       income += e.amount;
     }
+  }
+  // Add active subscriptions as monthly expense
+  for (const s of subs || []) {
+    if (s.active !== false) expenses += freqToMonthly(s.amount, s.frequency);
   }
   const debts = emis;
   const savings = income - expenses - investments - debts;
@@ -119,7 +155,19 @@ function personStats(data, ym) {
       savings: 0,
       savingsRate: 0,
     };
-  const income = data.incomes?.reduce((s, x) => s + x.amount, 0) ?? 0;
+  const income =
+    data.incomes?.reduce((s, x) => {
+      let base = x.amount || 0;
+      // Add variable income entries (bonus, freelance, dividend, etc.) for the selected month
+      if (ym && x.incomeEntries) {
+        for (const e of x.incomeEntries) {
+          if (e.date && e.date.slice(0, 7) === ym) {
+            base += e.amount || 0;
+          }
+        }
+      }
+      return s + base;
+    }, 0) ?? 0;
   // Month-aware expense filtering:
   // - Monthly (recurring) expenses always included
   // - One-time expenses only for the matching month
@@ -147,13 +195,20 @@ function personStats(data, ym) {
     }
     return s + x.amount;
   }, 0);
+  // Include active subscriptions as monthly expenses
+  const subsTotal =
+    data.subscriptions?.reduce(
+      (s, x) =>
+        s + (x.active !== false ? freqToMonthly(x.amount, x.frequency) : 0),
+      0,
+    ) ?? 0;
   const investments =
     data.investments?.reduce(
       (s, x) => s + freqToMonthly(x.amount, x.frequency),
       0,
     ) ?? 0;
   const debts = data.debts?.reduce((s, x) => s + x.emi, 0) ?? 0;
-  const savings = income - expenses - investments - debts;
+  const savings = income - expenses - subsTotal - investments - debts;
   const savingsRate =
     income > 0
       ? Math.round(((investments + Math.max(0, savings)) / income) * 100)
@@ -178,7 +233,7 @@ function personStats(data, ym) {
     }, 0) ?? 0;
   return {
     income,
-    expenses,
+    expenses: expenses + subsTotal,
     investments,
     debts,
     savings,
@@ -1169,12 +1224,14 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     abhav?.expenses,
     abhav?.incomes,
     selectedMonth,
+    abhav?.subscriptions,
   );
   const bTxStats = statsFromTxns(
     aanya?.transactions,
     aanya?.expenses,
     aanya?.incomes,
     selectedMonth,
+    aanya?.subscriptions,
   );
   // Previous month stats for month-over-month comparison
   const prevYm = (() => {
@@ -1187,12 +1244,14 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     abhav?.expenses,
     abhav?.incomes,
     prevYm,
+    abhav?.subscriptions,
   );
   const bPrevTx = statsFromTxns(
     aanya?.transactions,
     aanya?.expenses,
     aanya?.incomes,
     prevYm,
+    aanya?.subscriptions,
   );
   const prevHasData =
     aPrevTx.income > 0 ||
@@ -1420,6 +1479,30 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     document.getElementById(`tab-${DASH_TABS[next].id}`)?.focus();
   };
 
+  // ── Sparkline data (last 6 months income/expense/savings trend) ─────────
+  const sparkMonths = months.slice(-6);
+  const sparkData = sparkMonths.map((m) => {
+    const aS = statsFromTxns(
+      abhav?.transactions,
+      abhav?.expenses,
+      abhav?.incomes,
+      m,
+      abhav?.subscriptions,
+    );
+    const bS = statsFromTxns(
+      aanya?.transactions,
+      aanya?.expenses,
+      aanya?.incomes,
+      m,
+      aanya?.subscriptions,
+    );
+    const aSt = personStats(abhav, m);
+    const bSt = personStats(aanya, m);
+    const inc = (aS.income || aSt.income) + (bS.income || bSt.income);
+    const exp = (aS.expenses || aSt.expenses) + (bS.expenses || bSt.expenses);
+    return { income: inc, expenses: exp, savings: inc - exp };
+  });
+
   // ── Section renderers ───────────────────────────────────────────────────
   const _infoRow = (label, val, color) => (
     <div
@@ -1492,6 +1575,10 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
           <div className="metric-value" style={{ color: "var(--green)" }}>
             {fmt(hIncome)}
           </div>
+          <Sparkline
+            data={sparkData.map((d) => d.income)}
+            color="var(--green)"
+          />
         </div>
 
         <div className="metric-card">
@@ -1595,6 +1682,10 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
           <div className="metric-value" style={{ color: "var(--red)" }}>
             {fmt(hExpenses)}
           </div>
+          <Sparkline
+            data={sparkData.map((d) => d.expenses)}
+            color="var(--red)"
+          />
         </div>
 
         <div className="metric-card">
@@ -2786,6 +2877,99 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
       </div>
     ),
 
+    personCards: (
+      <div className="grid-2 section-gap">
+        {[
+          {
+            key: "abhav",
+            stats: a,
+            standing: aStanding,
+            color: "var(--abhav)",
+            score: aScore,
+          },
+          {
+            key: "aanya",
+            stats: b,
+            standing: bStanding,
+            color: "var(--aanya)",
+            score: bScore,
+          },
+        ].map(({ key, stats, standing, color, score }) => (
+          <div
+            className="card"
+            key={key}
+            style={{ borderTop: `3px solid ${color}` }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 14, color }}>
+                {personNames?.[key] || key}
+              </div>
+              <HealthRing score={score} />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Income</span>
+                <span style={{ color: "var(--green)", fontWeight: 600 }}>
+                  {fmt(standing.income)}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Expenses</span>
+                <span style={{ color: "var(--red)", fontWeight: 600 }}>
+                  {fmt(standing.expenses)}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Investments</span>
+                <span style={{ fontWeight: 600 }}>
+                  {fmt(stats.investments)}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Debts/EMIs</span>
+                <span style={{ fontWeight: 600 }}>{fmt(stats.debts)}</span>
+              </div>
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Savings rate</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color:
+                      standing.savingsRate >= 20
+                        ? "var(--green)"
+                        : "var(--gold)",
+                  }}
+                >
+                  {standing.savingsRate}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    ),
+
     monthcompare: prevHasData
       ? (() => {
           const curIncome = aTxStats.income + bTxStats.income;
@@ -3188,6 +3372,12 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
           <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
             Combined household overview
           </span>
+          <MonthlySummary
+            abhav={abhav}
+            aanya={aanya}
+            shared={shared}
+            personNames={personNames}
+          />
 
           {/* Month picker */}
           <div
@@ -3353,6 +3543,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
         {dashTab === "people" && (
           <>
+            {sections.personCards}
             {sections.persons}
             {sections.monthcompare}
           </>

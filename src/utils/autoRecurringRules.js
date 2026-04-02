@@ -77,5 +77,29 @@ export function autoRecurringRules(data) {
     });
   }
 
+  // Subscription rules (active subs auto-generate monthly debit transactions)
+  for (const sub of data.subscriptions || []) {
+    if (sub.active === false) continue;
+    const freq = sub.frequency || "monthly";
+    if (freq === "onetime") continue;
+    rules.push({
+      id: id--,
+      desc: sub.name,
+      amount: -Math.abs(sub.amount),
+      type: "expense",
+      category: sub.category || "Subscription",
+      dayOfMonth: sub.startDate ? parseInt(sub.startDate.slice(8, 10), 10) : 1,
+      active: true,
+      auto: true,
+      sourceType: "subscription",
+      recurrence:
+        freq === "yearly"
+          ? "yearly"
+          : freq === "quarterly"
+            ? "quarterly"
+            : "monthly",
+    });
+  }
+
   return rules;
 }

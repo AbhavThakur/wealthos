@@ -6,6 +6,20 @@ import { Plus, Trash2, Search } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
+import ThemeToggle from "../components/ThemeToggle";
+import {
+  isNotificationSupported,
+  isNotificationEnabled,
+  requestPermission,
+  setNotificationEnabled,
+} from "../utils/notifications";
+import {
+  isBiometricAvailable,
+  isBiometricEnrolled,
+  enrollBiometric,
+  removeBiometric,
+} from "../utils/biometric";
+import CSVImport from "../components/CSVImport";
 
 export function Debts({ data, personName, personColor, updatePerson }) {
   const debts = data?.debts || [];
@@ -2673,6 +2687,147 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   );
 }
 
+function NotificationToggle() {
+  const [enabled, setEnabled] = useState(isNotificationEnabled());
+  const [permission, setPermission] = useState(null);
+
+  const toggle = async () => {
+    if (enabled) {
+      setNotificationEnabled(false);
+      setEnabled(false);
+    } else {
+      const result = await requestPermission();
+      setPermission(result);
+      if (result === "granted") {
+        setEnabled(true);
+      }
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <button
+        className={enabled ? "btn-primary" : "btn-ghost"}
+        onClick={toggle}
+        style={{ fontSize: 13 }}
+      >
+        {enabled ? "🔔 Enabled" : "🔕 Enable Notifications"}
+      </button>
+      {permission === "denied" && (
+        <span style={{ fontSize: 12, color: "var(--red)" }}>
+          Blocked by browser. Allow notifications in your browser settings.
+        </span>
+      )}
+    </div>
+  );
+}
+
+function BiometricSetup() {
+  const [available, setAvailable] = useState(false);
+  const [enrolled, setEnrolled] = useState(isBiometricEnrolled());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useState(() => {
+    isBiometricAvailable().then(setAvailable);
+  });
+
+  if (!available) return null;
+
+  const handleEnroll = async () => {
+    setBusy(true);
+    setMsg("");
+    const ok = await enrollBiometric();
+    setBusy(false);
+    if (ok) {
+      setEnrolled(true);
+      setMsg("✓ Biometric unlock enabled");
+    } else {
+      setMsg("Enrollment failed or was cancelled.");
+    }
+    setTimeout(() => setMsg(""), 4000);
+  };
+
+  const handleRemove = () => {
+    removeBiometric();
+    setEnrolled(false);
+    setMsg("Biometric unlock removed");
+    setTimeout(() => setMsg(""), 3000);
+  };
+
+  const isApple = /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const label = isApple ? "Face ID / Touch ID" : "Fingerprint / Biometric";
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: "12px",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--bg-card2)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 18 }}>{isApple ? "🫥" : "👆"}</span>
+          <div>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text-primary)",
+              }}
+            >
+              {label}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+              {enrolled
+                ? "Unlock the app without entering your PIN"
+                : "Use biometrics instead of PIN"}
+            </div>
+          </div>
+        </div>
+        {enrolled ? (
+          <button
+            className="btn-ghost"
+            style={{ fontSize: 12, padding: "4px 10px", color: "var(--red)" }}
+            onClick={handleRemove}
+          >
+            Remove
+          </button>
+        ) : (
+          <button
+            className="btn-primary"
+            style={{ fontSize: 12, padding: "6px 14px" }}
+            onClick={handleEnroll}
+            disabled={busy}
+          >
+            {busy ? "Setting up…" : "Enable"}
+          </button>
+        )}
+      </div>
+      {msg && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: msg.startsWith("✓") ? "var(--green)" : "var(--red)",
+          }}
+        >
+          {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PinSetup({ sharedData, updateShared }) {
   const pin = sharedData?.pin || ""; // single hashed PIN for household
   const pinEnabled = sharedData?.pinEnabled !== false;
@@ -2958,6 +3113,9 @@ function PinSetup({ sharedData, updateShared }) {
           — never stored in plain text.
         </div>
       )}
+
+      {/* Biometric unlock setup */}
+      {hasPin && <BiometricSetup />}
     </div>
   );
 }
@@ -3129,6 +3287,39 @@ export function Settings({
           {saved ? "✓ Saved!" : "Save"}
         </button>
       </div>
+
+      {/* Theme Toggle */}
+      <div className="card section-gap">
+        <div className="card-title">Appearance</div>
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--text-secondary)",
+            marginBottom: 12,
+          }}
+        >
+          Choose your preferred color scheme.
+        </div>
+        <ThemeToggle />
+      </div>
+
+      {/* Notifications */}
+      {isNotificationSupported() && (
+        <div className="card section-gap">
+          <div className="card-title">Notifications</div>
+          <div
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              marginBottom: 12,
+            }}
+          >
+            Get reminded about insurance renewals and goal deadlines.
+          </div>
+          <NotificationToggle />
+        </div>
+      )}
+
       {/* PIN Lock Setup */}
       <PinSetup sharedData={sharedData} updateShared={updateShared} />
 
@@ -3239,6 +3430,39 @@ export function Settings({
           >
             📥 Export All Data (CSV)
           </button>
+        </div>
+      )}
+
+      {/* CSV Bank Statement Import */}
+      {updatePerson && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "1rem",
+          }}
+        >
+          <CSVImport
+            personName={personNames?.abhav || "Person 1"}
+            onImport={(txns) => {
+              const existing = [];
+              updatePerson("abhav", "transactions", [...existing, ...txns]);
+              setBackupMsg(
+                `✓ Imported ${txns.length} transactions for ${personNames?.abhav || "Person 1"}`,
+              );
+              setTimeout(() => setBackupMsg(""), 4000);
+            }}
+          />
+          <CSVImport
+            personName={personNames?.aanya || "Person 2"}
+            onImport={(txns) => {
+              updatePerson("aanya", "transactions", [...txns]);
+              setBackupMsg(
+                `✓ Imported ${txns.length} transactions for ${personNames?.aanya || "Person 2"}`,
+              );
+              setTimeout(() => setBackupMsg(""), 4000);
+            }}
+          />
         </div>
       )}
 
