@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Sparkles, Send, X, Trash2, Zap, Globe } from "lucide-react";
 import { askSmart } from "../utils/smartAdvisor";
 import { askAdvisor, buildContext } from "../utils/aiAdvisor";
+import useDraggable from "../hooks/useDraggable";
 
 const QUICK_PROMPTS = [
   "How am I doing this month?",
@@ -33,6 +34,7 @@ function renderText(text) {
 }
 
 export default function AIAdvisor({ abhav, aanya, shared, profile }) {
+  const drag = useDraggable("ai-advisor", { bottom: 24, right: 24 });
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([{ role: "ai", text: WELCOME }]);
   const [input, setInput] = useState("");
@@ -83,24 +85,24 @@ export default function AIAdvisor({ abhav, aanya, shared, profile }) {
     <>
       {/* Floating trigger */}
       <button
-        onClick={() => setOpen((o) => !o)}
+        {...drag.handlers}
+        onClick={() => {
+          if (!drag.isDragging) setOpen((o) => !o);
+        }}
         aria-label={open ? "Close AI advisor" : "Open AI advisor"}
         style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
+          ...drag.style,
           width: 52,
           height: 52,
           borderRadius: "50%",
           background: "var(--gold)",
           border: "none",
-          cursor: "pointer",
+          cursor: "grab",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           boxShadow: "0 4px 24px rgba(201,168,76,0.35)",
           zIndex: 200,
-          transition: "transform .15s",
         }}
       >
         {open ? (

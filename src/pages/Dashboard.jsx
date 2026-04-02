@@ -1,21 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { EmergencyFundCard } from "./MorePages";
 import { Chart, DonutChart } from "../components/Chart";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   fmt,
   fmtCr,
@@ -35,7 +20,6 @@ import {
   TrendingUp,
   TrendingDown,
   Sparkles,
-  GripVertical,
   ChevronLeft,
   ChevronRight,
   Target,
@@ -118,69 +102,12 @@ function allAvailableMonths(abhav, aanya) {
   return [...set].sort();
 }
 
-// ── Drag handle + sortable wrapper ─────────────────────────────────────────
-function SortableSection({ id, children }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.45 : 1,
-    position: "relative",
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="sortable-section">
-      <button
-        {...attributes}
-        {...listeners}
-        title="Drag to reorder"
-        style={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          zIndex: 10,
-          background: "none",
-          border: "none",
-          cursor: "grab",
-          color: "var(--text-muted)",
-          opacity: 0,
-          padding: 4,
-          borderRadius: 4,
-          display: "flex",
-          alignItems: "center",
-          transition: "opacity 0.15s",
-        }}
-        className="drag-handle"
-      >
-        <GripVertical size={15} />
-      </button>
-      {children}
-    </div>
-  );
-}
-
-const LS_KEY = "dashboard-section-order";
-const DEFAULT_ORDER = [
-  "metrics",
-  "wealthinsights",
-  "marketpulse",
-  "cashflow",
-  "persons",
-  "comparison",
-  "monthcompare",
-  "goals",
-  "emergency",
-  "cashforecast",
-  "projection",
+const DASH_TABS = [
+  { id: "pulse", label: "Pulse", icon: "📊" },
+  { id: "people", label: "People", icon: "👥" },
+  { id: "wealth", label: "Wealth", icon: "💰" },
 ];
+const DASH_TAB_LS = "dashboard-active-tab";
 
 function personStats(data, ym) {
   if (!data)
@@ -1466,43 +1393,32 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   // Shared goals
   const sharedGoals = shared?.goals || [];
 
-  // ── Section order (persisted in localStorage) ──────────────────────────
-  const [sectionOrder, setSectionOrder] = useState(() => {
+  // ── Dashboard tab (persisted in localStorage) ───────────────────────────
+  const [dashTab, setDashTab] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(LS_KEY));
-      // ensure any new sections not in saved are appended
-      if (Array.isArray(saved)) {
-        const merged = [...saved];
-        for (const id of DEFAULT_ORDER) {
-          if (!merged.includes(id)) merged.push(id);
-        }
-        return merged;
-      }
+      const saved = localStorage.getItem(DASH_TAB_LS);
+      if (saved && DASH_TABS.some((t) => t.id === saved)) return saved;
     } catch {
-      // ignore
+      /* ignore */
     }
-    return DEFAULT_ORDER;
+    return "pulse";
   });
+  const switchTab = (id) => {
+    setDashTab(id);
+    localStorage.setItem(DASH_TAB_LS, id);
+  };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 6 },
-    }),
-  );
-
-  const handleDragEnd = useCallback(({ active, over }) => {
-    if (!over || active.id === over.id) return;
-    setSectionOrder((prev) => {
-      const next = arrayMove(
-        prev,
-        prev.indexOf(active.id),
-        prev.indexOf(over.id),
-      );
-      localStorage.setItem(LS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  // Arrow-key navigation for tab bar
+  const handleTabKey = (e, idx) => {
+    let next = idx;
+    if (e.key === "ArrowRight") next = (idx + 1) % DASH_TABS.length;
+    else if (e.key === "ArrowLeft")
+      next = (idx - 1 + DASH_TABS.length) % DASH_TABS.length;
+    else return;
+    e.preventDefault();
+    switchTab(DASH_TABS[next].id);
+    document.getElementById(`tab-${DASH_TABS[next].id}`)?.focus();
+  };
 
   // ── Section renderers ───────────────────────────────────────────────────
   const _infoRow = (label, val, color) => (
@@ -3272,9 +3188,6 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
           <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>
             Combined household overview
           </span>
-          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-            · drag ⠿ to reorder
-          </span>
 
           {/* Month picker */}
           <div
@@ -3399,26 +3312,62 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         )}
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
+      {/* ── Hero Metrics (always visible) ── */}
+      {sections.metrics}
+
+      {/* ── Tab Bar ── */}
+      <div className="dash-tabs" role="tablist" aria-label="Dashboard sections">
+        {DASH_TABS.map((t, i) => (
+          <button
+            key={t.id}
+            className={`dash-tab${dashTab === t.id ? " active" : ""}`}
+            onClick={() => switchTab(t.id)}
+            onKeyDown={(e) => handleTabKey(e, i)}
+            role="tab"
+            aria-selected={dashTab === t.id}
+            aria-controls={`tabpanel-${t.id}`}
+            id={`tab-${t.id}`}
+            tabIndex={dashTab === t.id ? 0 : -1}
+          >
+            <span style={{ marginRight: 5 }}>{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab Content ── */}
+      <div
+        className="dash-tab-content"
+        key={dashTab}
+        role="tabpanel"
+        id={`tabpanel-${dashTab}`}
+        aria-labelledby={`tab-${dashTab}`}
       >
-        <SortableContext
-          items={sectionOrder}
-          strategy={verticalListSortingStrategy}
-        >
-          {sectionOrder.map((id) => {
-            const content = sections[id];
-            if (!content) return null;
-            return (
-              <SortableSection key={id} id={id}>
-                {content}
-              </SortableSection>
-            );
-          })}
-        </SortableContext>
-      </DndContext>
+        {dashTab === "pulse" && (
+          <>
+            {sections.cashflow}
+            {sections.comparison}
+            {sections.goals}
+          </>
+        )}
+
+        {dashTab === "people" && (
+          <>
+            {sections.persons}
+            {sections.monthcompare}
+          </>
+        )}
+
+        {dashTab === "wealth" && (
+          <>
+            {sections.wealthinsights}
+            {sections.marketpulse}
+            {sections.projection}
+            {sections.emergency}
+            {sections.cashforecast}
+          </>
+        )}
+      </div>
     </div>
   );
 }

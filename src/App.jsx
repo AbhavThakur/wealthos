@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import { exportAllData } from "./utils/exportData";
 import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
+import QuickAdd from "./components/QuickAdd";
 import useIdleTimer from "./hooks/useIdleTimer";
 import AIAdvisor from "./components/AIAdvisor";
 import { FeedbackButton, FeedbackAdmin } from "./components/Feedback";
@@ -618,6 +619,50 @@ function AppInner() {
       />
       <div className="app-layout">
         <OfflineBanner />
+        {/* ── Profile switcher (always visible) ── */}
+        <div className="profile-bar">
+          <div
+            className="profile-switcher"
+            role="radiogroup"
+            aria-label="Profile selection"
+          >
+            {[
+              {
+                id: "household",
+                label: "Household",
+                color: "var(--gold)",
+                dim: "var(--gold-dim)",
+              },
+              {
+                id: "abhav",
+                label: personNames.abhav,
+                color: "var(--abhav)",
+                dim: "var(--abhav-dim)",
+              },
+              {
+                id: "aanya",
+                label: personNames.aanya,
+                color: "var(--aanya)",
+                dim: "var(--aanya-dim)",
+              },
+            ].map((p) => (
+              <button
+                key={p.id}
+                className={`profile-pill${profile === p.id ? " active" : ""}`}
+                style={{
+                  "--pill-color": p.color,
+                  "--pill-dim": p.dim,
+                }}
+                onClick={() => setProfile(p.id)}
+                role="radio"
+                aria-checked={profile === p.id}
+              >
+                <span className="profile-pill-dot" />
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <main
           className="main-content"
           style={{ flex: 1, padding: "2rem", maxWidth: 1100, overflow: "auto" }}
@@ -634,6 +679,11 @@ function AppInner() {
         aanya={aanya}
         shared={shared}
         profile={profile}
+      />
+      <QuickAdd
+        setPage={setPage}
+        setProfile={setProfile}
+        personNames={personNames}
       />
       <FeedbackButton />
     </>

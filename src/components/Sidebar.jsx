@@ -23,20 +23,44 @@ import { useAuth } from "../context/AuthContext";
 // Admin emails — must match Feedback.jsx
 const ADMIN_EMAILS = ["abhav.aanya@gmail.com"];
 
-const NAV = [
-  { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { id: "budget", icon: Wallet, label: "Budget" },
-  { id: "investments", icon: TrendingUp, label: "Investments" },
-  { id: "goals", icon: Target, label: "Goals" },
-  { id: "networth", icon: TrendingDown, label: "Net Worth" },
-  { id: "debts", icon: CreditCard, label: "Debts & EMIs" },
-  { id: "cashflow", icon: Activity, label: "Cash Flow" },
-  { id: "insurance", icon: Shield, label: "Insurance" },
-  { id: "subscriptions", icon: RefreshCw, label: "Subscriptions" },
-  { id: "alerts", icon: Bell, label: "Budget Alerts" },
-  { id: "tax", icon: Calculator, label: "Tax Planner" },
-  { id: "settings", icon: Settings, label: "Settings" },
+const NAV_GROUPS = [
+  {
+    items: [{ id: "dashboard", icon: LayoutDashboard, label: "Dashboard" }],
+  },
+  {
+    label: "Money",
+    items: [
+      { id: "budget", icon: Wallet, label: "Budget" },
+      { id: "cashflow", icon: Activity, label: "Cash Flow" },
+    ],
+  },
+  {
+    label: "Wealth",
+    items: [
+      { id: "investments", icon: TrendingUp, label: "Investments" },
+      { id: "networth", icon: TrendingDown, label: "Net Worth" },
+      { id: "goals", icon: Target, label: "Goals" },
+    ],
+  },
+  {
+    label: "Commitments",
+    items: [
+      { id: "debts", icon: CreditCard, label: "Debts & EMIs" },
+      { id: "insurance", icon: Shield, label: "Insurance" },
+      { id: "subscriptions", icon: RefreshCw, label: "Subscriptions" },
+    ],
+  },
+  {
+    label: "Tools",
+    items: [
+      { id: "alerts", icon: Bell, label: "Alerts" },
+      { id: "tax", icon: Calculator, label: "Tax Planner" },
+    ],
+  },
 ];
+
+// Flat list for mobile topbar lookup
+const NAV_FLAT = NAV_GROUPS.flatMap((g) => g.items);
 
 const PROFILES = [
   {
@@ -109,21 +133,8 @@ function SidebarContent({
         )}
       </div>
 
-      <div
-        style={{ padding: "0.75rem", borderBottom: "1px solid var(--border)" }}
-      >
-        <div
-          style={{
-            fontSize: 10,
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: ".08em",
-            marginBottom: 6,
-            paddingLeft: 4,
-          }}
-        >
-          Viewing
-        </div>
+      {/* Mobile-only: compact profile switcher inside drawer */}
+      <div className="sidebar-profile-mobile">
         {profiles.map((p) => (
           <button
             key={p.id}
@@ -131,174 +142,79 @@ function SidebarContent({
               setProfile(p.id);
               onClose?.();
             }}
+            className={`profile-pill${profile === p.id ? " active" : ""}`}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "7px 10px",
-              borderRadius: "var(--radius-sm)",
-              marginBottom: 2,
-              background: profile === p.id ? p.dim : "transparent",
-              color: profile === p.id ? p.color : "var(--text-secondary)",
-              border:
-                profile === p.id
-                  ? `1px solid ${p.color}33`
-                  : "1px solid transparent",
-              fontWeight: profile === p.id ? 500 : 400,
-              fontSize: 13,
+              "--pill-color": p.color,
+              "--pill-dim": p.dim,
+              flex: 1,
             }}
           >
-            <div
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                background: `${p.color}22`,
-                border: `1px solid ${p.color}44`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 10,
-                fontWeight: 600,
-                color: p.color,
-                flexShrink: 0,
-              }}
-            >
-              {p.label[0]}
-            </div>
+            <span className="profile-pill-dot" />
             {p.label}
-            {profile === p.id && (
-              <span
-                style={{
-                  marginLeft: "auto",
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: p.color,
-                }}
-              />
-            )}
           </button>
         ))}
       </div>
 
       <nav style={{ flex: 1, padding: "0.5rem 0.75rem", overflowY: "auto" }}>
-        {NAV.map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            onClick={() => {
-              setPage(id);
-              onClose?.();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              width: "100%",
-              padding: "8px 10px",
-              borderRadius: "var(--radius-sm)",
-              marginBottom: 2,
-              background: page === id ? "var(--gold-dim)" : "transparent",
-              color: page === id ? "var(--gold)" : "var(--text-secondary)",
-              border:
-                page === id
-                  ? "1px solid var(--gold-border)"
-                  : "1px solid transparent",
-              fontWeight: page === id ? 500 : 400,
-              fontSize: 13,
-            }}
-          >
-            <Icon size={14} />
-            {label}{" "}
-            {badges?.[id] > 0 && (
-              <span
-                style={{
-                  marginLeft: "auto",
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
-                  background: "var(--red)",
-                  color: "#fff",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "0 5px",
+        {NAV_GROUPS.map((group, gi) => (
+          <div key={gi} className={gi > 0 ? "nav-group" : undefined}>
+            {group.label && (
+              <div className="nav-group-label">{group.label}</div>
+            )}
+            {group.items.map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => {
+                  setPage(id);
+                  onClose?.();
                 }}
+                className={`nav-item${page === id ? " active" : ""}`}
               >
-                {badges[id]}
-              </span>
-            )}{" "}
-          </button>
+                <Icon size={14} />
+                {label}
+                {badges?.[id] > 0 && (
+                  <span className="nav-badge">{badges[id]}</span>
+                )}
+              </button>
+            ))}
+          </div>
         ))}
 
         {/* Admin-only: Feedback management */}
         {isAdmin && (
-          <button
-            onClick={() => {
-              setPage("feedback");
-              onClose?.();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              width: "100%",
-              padding: "8px 10px",
-              borderRadius: "var(--radius-sm)",
-              marginBottom: 2,
-              marginTop: 8,
-              background:
-                page === "feedback" ? "var(--gold-dim)" : "transparent",
-              color:
-                page === "feedback" ? "var(--gold)" : "var(--text-secondary)",
-              border:
-                page === "feedback"
-                  ? "1px solid var(--gold-border)"
-                  : "1px solid transparent",
-              fontWeight: page === "feedback" ? 500 : 400,
-              fontSize: 13,
-            }}
-          >
-            <MessageSquare size={14} />
-            Feedback Admin
-            {badges?.feedback > 0 && (
-              <span
-                style={{
-                  marginLeft: "auto",
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 9,
-                  background: "var(--red)",
-                  color: "#fff",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "0 5px",
-                }}
-              >
-                {badges.feedback}
-              </span>
-            )}
-          </button>
+          <div className="nav-group">
+            <div className="nav-group-label">Admin</div>
+            <button
+              onClick={() => {
+                setPage("feedback");
+                onClose?.();
+              }}
+              className={`nav-item${page === "feedback" ? " active" : ""}`}
+            >
+              <MessageSquare size={14} />
+              Feedback
+              {badges?.feedback > 0 && (
+                <span className="nav-badge">{badges.feedback}</span>
+              )}
+            </button>
+          </div>
         )}
       </nav>
 
-      <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border)" }}>
+      <div className="nav-footer">
         <button
-          className="btn-ghost"
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            justifyContent: "center",
-            padding: "7px",
+          onClick={() => {
+            setPage("settings");
+            onClose?.();
           }}
+          className={`nav-item${page === "settings" ? " active" : ""}`}
+        >
+          <Settings size={14} />
+          Settings
+        </button>
+        <button
+          className="nav-item"
+          style={{ color: "var(--text-muted)" }}
           onClick={logout}
         >
           <LogOut size={13} /> Sign out
@@ -407,7 +323,7 @@ export default function Sidebar({
               textOverflow: "ellipsis",
             }}
           >
-            {NAV.find((n) => n.id === page)?.label || "WealthOS"}
+            {NAV_FLAT.find((n) => n.id === page)?.label || "WealthOS"}
           </div>
         </div>
         <div

@@ -741,7 +741,10 @@ export default function Budget({
 }) {
   const incomes = data?.incomes || [];
   const expenses = data?.expenses || [];
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(() => {
+    const signal = sessionStorage.getItem("budget-open-tab");
+    return signal ? "expenses" : "overview";
+  });
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
 
@@ -770,7 +773,14 @@ export default function Budget({
   };
 
   // ── Expense sub-tab (monthly | trips | onetime) ───────────────────────
-  const [expTab, setExpTab] = useState("monthly");
+  const [expTab, setExpTab] = useState(() => {
+    const signal = sessionStorage.getItem("budget-open-tab");
+    if (signal) {
+      sessionStorage.removeItem("budget-open-tab");
+      return signal;
+    }
+    return "monthly";
+  });
   const [moveMenuOpen, setMoveMenuOpen] = useState(null); // expId or null
   const [moveToTripPicker, setMoveToTripPicker] = useState(null); // expId when showing trip sub-menu
 
@@ -1574,22 +1584,15 @@ export default function Budget({
         <span style={{ color: personColor }}>{personName}'s</span> Budget
       </div>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: "1.25rem" }}>
+      <div className="dash-tabs" role="tablist" aria-label="Budget sections">
         {tabs.map((t) => (
           <button
             key={t}
+            className={`dash-tab${tab === t ? " active" : ""}`}
             onClick={() => setTab(t)}
-            style={{
-              padding: "7px 16px",
-              borderRadius: "var(--radius-sm)",
-              background: tab === t ? "var(--gold-dim)" : "transparent",
-              color: tab === t ? "var(--gold)" : "var(--text-secondary)",
-              border:
-                tab === t
-                  ? "1px solid var(--gold-border)"
-                  : "1px solid var(--border)",
-              textTransform: "capitalize",
-            }}
+            role="tab"
+            aria-selected={tab === t}
+            style={{ textTransform: "capitalize" }}
           >
             {t}
           </button>

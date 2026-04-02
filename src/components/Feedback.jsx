@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
+import useDraggable from "../hooks/useDraggable";
 import {
   collection,
   addDoc,
@@ -67,6 +68,7 @@ const fmtDate = (ts) => {
 
 export function FeedbackButton() {
   const { user } = useAuth();
+  const drag = useDraggable("feedback", { bottom: 88, right: 24 });
   const [open, setOpen] = useState(false);
   const [feedbackList, setFeedbackList] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -122,34 +124,26 @@ export function FeedbackButton() {
     <>
       {/* Floating button - positioned above AI advisor button */}
       <button
-        onClick={() => setOpen(true)}
+        {...drag.handlers}
+        onClick={() => {
+          if (!drag.isDragging) setOpen(true);
+        }}
         className="feedback-fab"
         title="Send Feedback"
         style={{
-          position: "fixed",
-          bottom: 88,
-          right: 24,
+          ...drag.style,
           width: 48,
           height: 48,
           borderRadius: "50%",
           background: "var(--accent)",
           color: "#fff",
           border: "none",
-          cursor: "pointer",
+          cursor: "grab",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
           zIndex: 199,
-          transition: "transform 0.2s, box-shadow 0.2s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "scale(1.1)";
-          e.currentTarget.style.boxShadow = "0 6px 16px rgba(0,0,0,0.4)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "scale(1)";
-          e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
         }}
       >
         <MessageSquare size={20} />

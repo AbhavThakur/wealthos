@@ -497,24 +497,14 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: "flex", gap: 8, marginBottom: "1.25rem" }}>
+      <div className="dash-tabs" role="tablist" aria-label="Cash flow sections">
         {CF_TABS.map(([id, label]) => (
           <button
             key={id}
+            className={`dash-tab${tab === id ? " active" : ""}`}
             onClick={() => setTab(id)}
-            style={{
-              padding: "7px 16px",
-              borderRadius: "var(--radius-sm)",
-              background: tab === id ? "var(--gold-dim)" : "transparent",
-              color: tab === id ? "var(--gold)" : "var(--text-secondary)",
-              border:
-                tab === id
-                  ? "1px solid var(--gold-border)"
-                  : "1px solid var(--border)",
-              fontSize: 13,
-              fontWeight: tab === id ? 600 : 400,
-              cursor: "pointer",
-            }}
+            role="tab"
+            aria-selected={tab === id}
           >
             {label}
           </button>
@@ -1799,24 +1789,18 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: "1.25rem" }}>
+      <div
+        className="dash-tabs"
+        role="tablist"
+        aria-label="Household cash flow sections"
+      >
         {CF_TABS.map(([id, label]) => (
           <button
             key={id}
+            className={`dash-tab${tab === id ? " active" : ""}`}
             onClick={() => setTab(id)}
-            style={{
-              padding: "7px 16px",
-              borderRadius: "var(--radius-sm)",
-              background: tab === id ? "var(--gold-dim)" : "transparent",
-              color: tab === id ? "var(--gold)" : "var(--text-secondary)",
-              border:
-                tab === id
-                  ? "1px solid var(--gold-border)"
-                  : "1px solid var(--border)",
-              fontSize: 13,
-              fontWeight: tab === id ? 600 : 400,
-              cursor: "pointer",
-            }}
+            role="tab"
+            aria-selected={tab === id}
           >
             {label}
           </button>
