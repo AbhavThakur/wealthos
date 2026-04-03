@@ -194,6 +194,13 @@ function MobileInput({
 const tripTotal = (trip) =>
   (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
 
+// Helper: for one-time expenses, card amount + logged entries total
+const onetimeEffective = (exp) => {
+  const base = exp.amount || 0;
+  const logged = (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
+  return exp.expenseType === "onetime" ? base + logged : base;
+};
+
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
 const buildExpByCategory = (expenses) =>
   expenses.reduce((acc, e) => {
@@ -204,7 +211,9 @@ const buildExpByCategory = (expenses) =>
         acc[cat] = (acc[cat] || 0) + (item.amount || 0);
       }
     } else {
-      acc[e.category] = (acc[e.category] || 0) + (e.amount || 0);
+      const amt =
+        e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
+      acc[e.category] = (acc[e.category] || 0) + amt;
     }
     return acc;
   }, {});
@@ -224,9 +233,11 @@ const buildExpGrouped = (expenses) =>
     } else {
       const cat = e.category;
       if (!acc[cat]) acc[cat] = { total: 0, subs: {} };
-      acc[cat].total += e.amount || 0;
+      const amt =
+        e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
+      acc[cat].total += amt;
       const sub = e.subCategory || "";
-      acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + (e.amount || 0);
+      acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + amt;
     }
     return acc;
   }, {});
@@ -914,10 +925,6 @@ export default function Budget({
     };
     const newEntries = [...(exp.entries || []), entry];
     const patch = { entries: newEntries };
-    // For one-time expenses, add entry amount to the running total
-    if (exp.expenseType === "onetime") {
-      patch.amount = (exp.amount || 0) + entry.amount;
-    }
     updatePerson(
       "expenses",
       expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
@@ -929,12 +936,7 @@ export default function Budget({
   };
   const deleteEntry = (exp, entryId) => {
     const newEntries = (exp.entries || []).filter((e) => e.id !== entryId);
-    const removed = (exp.entries || []).find((e) => e.id === entryId);
     const patch = { entries: newEntries };
-    // For one-time expenses, subtract the deleted entry amount
-    if (exp.expenseType === "onetime" && removed) {
-      patch.amount = Math.max(0, (exp.amount || 0) - (removed.amount || 0));
-    }
     updatePerson(
       "expenses",
       expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
@@ -1080,7 +1082,11 @@ export default function Budget({
     0,
   );
   const totalExpenses =
-    monthFilteredExpenses.reduce((s, x) => s + x.amount, 0) + sharedTripTotal;
+    monthFilteredExpenses.reduce(
+      (s, x) =>
+        s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
+      0,
+    ) + sharedTripTotal;
   const savingsRate =
     totalIncome > 0
       ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
@@ -4202,6 +4208,45 @@ export default function Budget({
                       )}
                     </div>
 
+                    {/* Logged total pill */}
+                    {entries.length > 0 &&
+                      (() => {
+                        const loggedTotal = entries.reduce(
+                          (s, e) => s + (e.amount || 0),
+                          0,
+                        );
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              marginTop: 8,
+                              padding: "6px 10px",
+                              background: "rgba(255,255,255,0.04)",
+                              borderRadius: "var(--radius-sm)",
+                              fontSize: 12,
+                            }}
+                          >
+                            <span style={{ color: "var(--text-muted)" }}>
+                              Logged:{" "}
+                              <span
+                                style={{ fontWeight: 600, color: "var(--red)" }}
+                              >
+                                {fmt(loggedTotal)}
+                              </span>
+                              <span style={{ margin: "0 6px", opacity: 0.4 }}>
+                                ·
+                              </span>
+                              Total:{" "}
+                              <span style={{ fontWeight: 600 }}>
+                                {fmt((exp.amount || 0) + loggedTotal)}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                     {/* Purchase log panel */}
                     {isOpen && (
                       <div
@@ -4357,7 +4402,12 @@ export default function Budget({
                 >
                   One-time total:{" "}
                   <span className="red-text">
-                    {fmt(filteredOnetimeExps.reduce((s, x) => s + x.amount, 0))}
+                    {fmt(
+                      filteredOnetimeExps.reduce(
+                        (s, x) => s + onetimeEffective(x),
+                        0,
+                      ),
+                    )}
                   </span>
                 </div>
               )}
@@ -4446,8 +4496,16 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
     0,
   );
 
-  const abhavExpenses = abhavFiltered.reduce((s, x) => s + x.amount, 0);
-  const aanyaExpenses = aanyaFiltered.reduce((s, x) => s + x.amount, 0);
+  const abhavExpenses = abhavFiltered.reduce(
+    (s, x) =>
+      s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
+    0,
+  );
+  const aanyaExpenses = aanyaFiltered.reduce(
+    (s, x) =>
+      s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
+    0,
+  );
   const totalExpenses = abhavExpenses + aanyaExpenses + sharedTripTotal;
 
   const surplus = totalIncome - totalExpenses;
