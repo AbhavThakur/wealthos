@@ -4145,7 +4145,7 @@ export default function Budget({
                       >
                         <CalendarDays size={12} />
                         {entries.length > 0
-                          ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} logged`
+                          ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} · tap to add more`
                           : "Add purchase log"}
                       </button>
                     </div>
@@ -4323,6 +4323,17 @@ export default function Budget({
                             disabled={!ef.amount || !ef.date}
                           >
                             <Plus size={11} /> Submit
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            style={{
+                              flexShrink: 0,
+                              padding: "6px 12px",
+                              fontSize: 12,
+                            }}
+                            onClick={() => toggleExpandExp(exp.id)}
+                          >
+                            Close
                           </button>
                         </div>
                       </div>
