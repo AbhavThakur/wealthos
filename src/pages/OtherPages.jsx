@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { hashPin } from "../utils/hashPin";
 import { useSessionState } from "../hooks/useSessionState";
 import { fmt, nextId, EXPENSE_CATEGORIES, calcEMI } from "../utils/finance";
-import { Plus, Trash2, Search } from "lucide-react";
+import { Plus, Trash2, Search, Sparkles } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
+import RELEASE_NOTES from "../data/releaseNotes";
+import { APP_VERSION } from "../components/UpdateBanner";
 import {
   isNotificationSupported,
   isNotificationEnabled,
@@ -3357,6 +3359,90 @@ export function Settings({
       {/* PIN Lock Setup */}
       <PinSetup sharedData={sharedData} updateShared={updateShared} />
 
+      {/* What's New — Release Notes */}
+      <div className="card section-gap">
+        <div
+          className="card-title"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <Sparkles size={16} style={{ color: "var(--gold)" }} />
+          What&apos;s New
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {RELEASE_NOTES.map((release, idx) => (
+            <div
+              key={release.version}
+              style={{
+                padding: "12px 14px",
+                background: idx === 0 ? "var(--gold-dim)" : "var(--bg-card2)",
+                border:
+                  idx === 0
+                    ? "1px solid var(--gold-border)"
+                    : "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background:
+                      idx === 0 ? "var(--gold)" : "rgba(255,255,255,0.08)",
+                    color: idx === 0 ? "#000" : "var(--text-muted)",
+                  }}
+                >
+                  v{release.version}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {new Date(release.date).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+                {idx === 0 && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "var(--gold)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    LATEST
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                {release.title}
+              </div>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: 16,
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.7,
+                }}
+              >
+                {release.highlights.map((h, i) => (
+                  <li key={i}>{h}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="card section-gap">
         <div className="card-title">About WealthOS</div>
         <div
@@ -3366,7 +3452,22 @@ export function Settings({
             lineHeight: 1.8,
           }}
         >
-          <div>Personal household finance tracker.</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Personal household finance tracker.
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 4,
+                background: "var(--gold-dim)",
+                border: "1px solid var(--gold-border)",
+                color: "var(--gold)",
+              }}
+            >
+              v{APP_VERSION}
+            </span>
+          </div>
           <div>Data synced securely via Firebase Firestore.</div>
           <div
             style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}

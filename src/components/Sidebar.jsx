@@ -22,9 +22,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-
-// Admin emails — must match Feedback.jsx
-const ADMIN_EMAILS = ["abhav.aanya@gmail.com"];
+import ADMIN_EMAILS from "../utils/adminEmails";
 
 const NAV_GROUPS = [
   {

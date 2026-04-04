@@ -34,11 +34,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-// ─── Admin emails (add yours here) ───────────────────────────────────────────
-const ADMIN_EMAILS = [
-  "abhav.aanya@gmail.com",
-  // Add more admin emails as needed
-];
+import ADMIN_EMAILS from "../utils/adminEmails";
 
 const CATEGORIES = [
   { value: "bug", label: "🐛 Bug Report", color: "#e05c5c" },

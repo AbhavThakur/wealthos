@@ -1,5 +1,5 @@
 // WealthOS Service Worker — Cache-first for assets, network-first for API
-const CACHE_NAME = "wealthos-v2";
+const CACHE_NAME = "wealthos-v3";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -15,6 +15,13 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)),
   );
   self.skipWaiting();
+});
+
+// Handle SKIP_WAITING message from the client
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 // Activate: clean up old caches

@@ -24,5 +24,20 @@ service cloud.firestore {
       allow delete: if request.auth != null && 
         request.auth.token.email == "abhav.aanya@gmail.com";
     }
+    
+    // Notifications collection — admin sends, all authenticated users read
+    match /notifications/{notificationId} {
+      // Any authenticated user can read notifications
+      allow read: if request.auth != null;
+      
+      // Any authenticated user can update (for marking as read via readBy array)
+      allow update: if request.auth != null;
+      
+      // Only admin can create notifications
+      allow create: if request.auth != null && 
+        request.auth.token.email == "abhav.aanya@gmail.com";
+      // Any authenticated user can delete (dismiss for themselves, admin full delete)
+      allow delete: if request.auth != null;
+    }
   }
 }

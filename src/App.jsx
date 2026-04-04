@@ -16,7 +16,9 @@ import useIdleTimer from "./hooks/useIdleTimer";
 import usePullToRefresh from "./hooks/usePullToRefresh";
 import AIAdvisor from "./components/AIAdvisor";
 import { FeedbackButton, FeedbackAdmin } from "./components/Feedback";
+import NotificationBell from "./components/NotificationBell";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
+import ADMIN_EMAILS from "./utils/adminEmails";
 
 // ── Error boundary to catch runtime crashes ─────────────────────────────────
 class PageErrorBoundary extends Component {
@@ -306,8 +308,6 @@ function App() {
   );
 }
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || "";
-
 function AppInner() {
   const {
     abhav,
@@ -328,7 +328,7 @@ function AppInner() {
     isDemo,
   } = useData();
   const { user, logout } = useAuth();
-  const isAdmin = !!ADMIN_EMAIL && user?.email === ADMIN_EMAIL;
+  const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email);
   const [page, setPage] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("page");
@@ -730,6 +730,7 @@ function AppInner() {
         setExternalOpen={setQuickAddOpen}
       />
       <FeedbackButton />
+      <NotificationBell isAdmin={isAdmin} />
       <SearchPalette
         abhav={abhav}
         aanya={aanya}
