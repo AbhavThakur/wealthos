@@ -449,7 +449,7 @@ export default function NotificationBell({ isAdmin }) {
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
         style={{
           position: "fixed",
-          top: 12,
+          top: 22,
           right: 12,
           zIndex: 999,
           background: "var(--bg-card)",

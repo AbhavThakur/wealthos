@@ -4,7 +4,13 @@
  *  No rate limits, no API key, instant responses.
  */
 
-import { fmt, fmtCr, totalCorpus, freqToMonthly } from "./finance";
+import {
+  fmt,
+  fmtCr,
+  totalCorpus,
+  freqToMonthly,
+  onetimeEffective,
+} from "./finance";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,7 +116,7 @@ function personData(d) {
     recurringRules: d.recurringRules || [],
     onetimeExpenses: (d.expenses || [])
       .filter((e) => e.expenseType !== "monthly")
-      .sort((a, b) => (b.amount || 0) - (a.amount || 0)),
+      .sort((a, b) => onetimeEffective(b) - onetimeEffective(a)),
   };
 }
 
@@ -681,9 +687,12 @@ function handleIntent(
           ),
         );
         if (subExpenses.length > 0) {
-          const total = subExpenses.reduce((s, e) => s + (e.amount || 0), 0);
+          const total = subExpenses.reduce(
+            (s, e) => s + onetimeEffective(e),
+            0,
+          );
           const lines = subExpenses
-            .map((e) => `• ${e.name}: ${fmt(e.amount)}/mo`)
+            .map((e) => `• ${e.name}: ${fmt(onetimeEffective(e))}/mo`)
             .join("\n");
           insights.push({
             emoji: "📺",
@@ -743,10 +752,10 @@ function handleIntent(
                 : e.expenseType === "trip"
                   ? " (trip)"
                   : " (one-time)";
-            return `• ${e.name}: ${fmt(e.amount)}${freq}`;
+            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;
           })
           .join("\n");
-        const total = matches.reduce((s, e) => s + (e.amount || 0), 0);
+        const total = matches.reduce((s, e) => s + onetimeEffective(e), 0);
         insights.push({
           emoji: "🔍",
           title: "Expense Lookup",
@@ -755,7 +764,7 @@ function handleIntent(
       } else {
         // Show top expenses as fallback
         const topExp = [...(p?.expenses_ || [])]
-          .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+          .sort((a, b) => onetimeEffective(b) - onetimeEffective(a))
           .slice(0, 8);
         const lines = topExp
           .map((e) => {
@@ -765,7 +774,7 @@ function handleIntent(
                 : e.expenseType === "trip"
                   ? " (trip)"
                   : " (one-time)";
-            return `• ${e.name}: ${fmt(e.amount)}${freq}`;
+            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;
           })
           .join("\n");
         insights.push({
@@ -929,7 +938,7 @@ function handleIntent(
           e.subCategory ||
           "Uncategorized"
         ).toLowerCase();
-        byCategory[cat] = (byCategory[cat] || 0) + (e.amount || 0);
+        byCategory[cat] = (byCategory[cat] || 0) + onetimeEffective(e);
       }
       const cats = Object.keys(byCategory);
       const matchedCat = cats.find((c) => msgLower.includes(c));
@@ -939,10 +948,10 @@ function handleIntent(
             (e.category || e.subCategory || "").toLowerCase() === matchedCat,
         );
         const lines = catExpenses
-          .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+          .sort((a, b) => onetimeEffective(b) - onetimeEffective(a))
           .map((e) => {
             const freq = e.expenseType === "monthly" ? "/mo" : " (one-time)";
-            return `• ${e.name}: ${fmt(e.amount)}${freq}`;
+            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;
           })
           .join("\n");
         insights.push({
@@ -1008,7 +1017,11 @@ function handleIntent(
             : e.expenseType === "trip"
               ? " (trip)"
               : " (one-time)";
-        addResult("Expense", e.name || "", `${fmt(e.amount)}${freq}`);
+        addResult(
+          "Expense",
+          e.name || "",
+          `${fmt(onetimeEffective(e))}${freq}`,
+        );
       }
       for (const i of p?.investments || []) {
         addResult(

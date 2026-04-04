@@ -10,6 +10,12 @@ export const fmtCr = (n = 0) => {
 
 export const nextId = (arr) => Math.max(0, ...arr.map((x) => x.id ?? 0)) + 1;
 
+/** For one-time expenses the effective amount is the sum of log entries only. */
+export const onetimeEffective = (exp) => {
+  if (exp.expenseType !== "onetime") return exp.amount || 0;
+  return (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
+};
+
 export const sipCorpus = (monthly, rateAnnual, years) => {
   const r = rateAnnual / 100 / 12;
   const n = years * 12;

@@ -7,6 +7,7 @@ const genEntryId = () => ++_entryIdSeq;
 import {
   fmt,
   nextId,
+  onetimeEffective,
   EXPENSE_CATEGORIES,
   EXPENSE_SUBCATEGORIES,
   EXPENSE_TYPES,
@@ -193,12 +194,6 @@ function MobileInput({
 // Helper: compute total from trip items
 const tripTotal = (trip) =>
   (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
-
-// Helper: for one-time expenses, total is sum of log entries only
-const onetimeEffective = (exp) => {
-  if (exp.expenseType !== "onetime") return exp.amount || 0;
-  return (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
-};
 
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
 const buildExpByCategory = (expenses) =>

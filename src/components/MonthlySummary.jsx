@@ -1,5 +1,10 @@
 import { useState, useRef } from "react";
-import { fmt, freqToMonthly, EXPENSE_CATEGORIES } from "../utils/finance";
+import {
+  fmt,
+  freqToMonthly,
+  EXPENSE_CATEGORIES,
+  onetimeEffective,
+} from "../utils/finance";
 
 // ── Compute per-person stats for a given YYYY-MM ──────────────────────────
 function monthStats(data, ym) {
@@ -35,7 +40,7 @@ function monthStats(data, ym) {
   for (const x of data.expenses || []) {
     let amt = 0;
     if (x.expenseType === "onetime") {
-      amt = x.date?.slice(0, 7) === ym ? x.amount : 0;
+      amt = x.date?.slice(0, 7) === ym ? onetimeEffective(x) : 0;
     } else if (x.expenseType === "trip") {
       amt = (x.startDate || x.date || "").slice(0, 7) === ym ? x.amount : 0;
     } else {
@@ -48,9 +53,11 @@ function monthStats(data, ym) {
         amt = 0;
       else amt = x.amount;
     }
-    // Expense entries (logged actuals)
-    for (const e of x.entries || []) {
-      if (e.date?.slice(0, 7) === ym) amt += e.amount;
+    // Expense entries (logged actuals) — skip for one-time (already counted via onetimeEffective)
+    if (x.expenseType !== "onetime") {
+      for (const e of x.entries || []) {
+        if (e.date?.slice(0, 7) === ym) amt += e.amount;
+      }
     }
     if (amt > 0) {
       expenses += amt;

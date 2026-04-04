@@ -15,6 +15,7 @@ import {
   currentCorpus,
   unused80C,
   insuranceAdequacy,
+  onetimeEffective,
 } from "../utils/finance";
 import {
   TrendingUp,
@@ -65,6 +66,7 @@ function Sparkline({ data, color, width = 64, height = 24 }) {
 }
 
 // ── Month-aware stats from transactions ────────────────────────────────────
+
 function statsFromTxns(txns, exps, incomes, ym, subs) {
   let income = 0,
     expenses = 0,
@@ -177,8 +179,8 @@ function personStats(data, ym) {
     : new Date().getMonth();
   const expenses = (data.expenses || []).reduce((s, x) => {
     if (x.expenseType === "onetime") {
-      // Only include if date falls in selected month
-      return s + (x.date?.slice(0, 7) === ym ? x.amount : 0);
+      // Only include if date falls in selected month — use entry sum
+      return s + (x.date?.slice(0, 7) === ym ? onetimeEffective(x) : 0);
     }
     if (x.expenseType === "trip") {
       // Only include if startDate falls in selected month
@@ -375,13 +377,9 @@ function buildCashFlow(
     }
   };
 
-  // Process budget expense entries (each has its own date + note/vendor).
-  // Entries are a purchase log — the *standing* expense amount is the budget total.
-  // We add entries to `detail` (for the schedule view) but use `exp.amount`
-  // for the aggregate so the cash flow total matches the Budget page.
   const processExps = (exps) => {
     for (const exp of exps || []) {
-      const monthsWithEntries = new Set();
+      const monthEntrySum = {}; // ym → sum of entry amounts
       for (const e of exp.entries || []) {
         if (!e.date) continue;
         const ym = e.date.slice(0, 7);
@@ -394,15 +392,17 @@ function buildCashFlow(
           amount: e.amount,
           note: e.note || "",
         });
-        monthsWithEntries.add(ym);
+        monthEntrySum[ym] = (monthEntrySum[ym] || 0) + (e.amount || 0);
         entryCoveredThisMonth.add(`${exp.id}::${ym}`);
       }
-      // Add the standing budget amount once per month (not the entry sum)
-      for (const ym of monthsWithEntries) {
+      // For one-time expenses: use entry sum; for regular: use standing budget amount
+      for (const ym of Object.keys(monthEntrySum)) {
+        const amt =
+          exp.expenseType === "onetime" ? monthEntrySum[ym] : exp.amount;
         if (exp.category === "EMI") {
-          map[ym].emis += exp.amount;
+          map[ym].emis += amt;
         } else {
-          map[ym].expenses += exp.amount;
+          map[ym].expenses += amt;
         }
       }
     }
@@ -508,19 +508,25 @@ function buildCashFlow(
       });
     }
   }
-  // Personal one-time expenses
+  // Personal one-time expenses — add entry details to schedule
+  // (totals already handled by processExps via entry sums)
   for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
     if (exp.expenseType !== "onetime") continue;
+    // One-time expenses without entries have nothing to show
+    if (!exp.entries?.length) continue;
     const oDate = exp.date || `${curYm}-01`;
     const ym = oDate.slice(0, 7);
-    if (exp.amount > 0) {
+    // Only add detail rows for expenses that weren't already covered by processExps
+    if (entryCoveredThisMonth.has(`${exp.id}::${ym}`)) continue;
+    const total = onetimeEffective(exp);
+    if (total > 0) {
       ensure(ym);
-      map[ym].expenses += exp.amount;
+      map[ym].expenses += total;
       map[ym].detail.push({
         expName: exp.name,
         category: exp.category || "Others",
         date: oDate,
-        amount: exp.amount,
+        amount: total,
         note: "one-time",
       });
     }
@@ -1313,7 +1319,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         e.expenseType === "onetime" &&
         (e.date || "").slice(0, 7) === selectedMonth,
     )
-    .reduce((s, x) => s + x.amount, 0);
+    .reduce((s, x) => s + onetimeEffective(x), 0);
   const aanyaMonthly = (aanya?.expenses || [])
     .filter(
       (e) =>
@@ -1333,7 +1339,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         e.expenseType === "onetime" &&
         (e.date || "").slice(0, 7) === selectedMonth,
     )
-    .reduce((s, x) => s + x.amount, 0);
+    .reduce((s, x) => s + onetimeEffective(x), 0);
   const aHasData =
     aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;
   const bHasData =

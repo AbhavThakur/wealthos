@@ -19,7 +19,7 @@ export function autoRecurringRules(data) {
 
   // Expense rules
   for (const exp of data.expenses || []) {
-    if (exp.expenseType === "trip") continue;
+    if (exp.expenseType === "trip" || exp.expenseType === "onetime") continue;
     const recurrence =
       exp.recurrence || (exp.expenseType === "onetime" ? "once" : "monthly");
     rules.push({

@@ -590,13 +590,27 @@ export function DataProvider({ children }) {
       year: now.getFullYear(),
       timestamp: now.toISOString(),
       abhavIncome: (abhav.incomes || []).reduce((s, x) => s + x.amount, 0),
-      abhavExpenses: (abhav.expenses || []).reduce((s, x) => s + x.amount, 0),
+      abhavExpenses: (abhav.expenses || []).reduce(
+        (s, x) =>
+          s +
+          (x.expenseType === "onetime"
+            ? (x.entries || []).reduce((es, e) => es + (e.amount || 0), 0)
+            : x.amount),
+        0,
+      ),
       abhavInvestments: (abhav.investments || []).reduce(
         (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
       ),
       aanyaIncome: (aanya.incomes || []).reduce((s, x) => s + x.amount, 0),
-      aanyaExpenses: (aanya.expenses || []).reduce((s, x) => s + x.amount, 0),
+      aanyaExpenses: (aanya.expenses || []).reduce(
+        (s, x) =>
+          s +
+          (x.expenseType === "onetime"
+            ? (x.entries || []).reduce((es, e) => es + (e.amount || 0), 0)
+            : x.amount),
+        0,
+      ),
       aanyaInvestments: (aanya.investments || []).reduce(
         (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
