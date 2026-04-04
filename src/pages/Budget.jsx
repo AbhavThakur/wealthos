@@ -194,11 +194,10 @@ function MobileInput({
 const tripTotal = (trip) =>
   (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
 
-// Helper: for one-time expenses, card amount + logged entries total
+// Helper: for one-time expenses, total is sum of log entries only
 const onetimeEffective = (exp) => {
-  const base = exp.amount || 0;
-  const logged = (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
-  return exp.expenseType === "onetime" ? base + logged : base;
+  if (exp.expenseType !== "onetime") return exp.amount || 0;
+  return (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
 };
 
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
@@ -1187,10 +1186,11 @@ export default function Budget({
     );
     setExpandedTrips((s) => ({ ...s, [newId]: true }));
   };
-  const addOnetimeExpense = () =>
+  const addOnetimeExpense = () => {
+    const newId = nextId(expenses);
     updatePerson("expenses", [
       {
-        id: nextId(expenses),
+        id: newId,
         expenseType: "onetime",
         name: "New purchase",
         amount: 0,
@@ -1203,6 +1203,8 @@ export default function Budget({
       },
       ...expenses,
     ]);
+    setExpandedExp((s) => ({ ...s, [newId]: true }));
+  };
 
   // ── Move expense between types ─────────────────────────────────────────
   const buildItemsFromExpense = (exp) => {
@@ -4043,126 +4045,30 @@ export default function Budget({
                       borderLeft: "3px solid var(--gold)",
                     }}
                   >
+                    {/* Row 1: Expense name */}
+                    <MobileInput
+                      value={exp.name}
+                      label="Expense name"
+                      onChange={(v) =>
+                        updatePerson(
+                          "expenses",
+                          expenses.map((x) =>
+                            x.id === exp.id ? { ...x, name: v } : x,
+                          ),
+                        )
+                      }
+                      style={{ width: "100%", marginBottom: 6 }}
+                      placeholder="Expense name"
+                    />
+                    {/* Row 2: Category + subcategory */}
                     <div
-                      className="budget-onetime-row"
-                      style={{ display: "flex", gap: 8, alignItems: "center" }}
-                    >
-                      <MobileInput
-                        value={exp.name}
-                        label="Expense name"
-                        onChange={(v) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id ? { ...x, name: v } : x,
-                            ),
-                          )
-                        }
-                        style={{ flex: 1, minWidth: 0 }}
-                      />
-                      <MobileInput
-                        type="number"
-                        value={exp.amount}
-                        label="Amount"
-                        onChange={(v) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id ? { ...x, amount: Number(v) } : x,
-                            ),
-                          )
-                        }
-                        style={{ width: 100, flexShrink: 0 }}
-                        min="0"
-                        placeholder="₹"
-                      />
-                      <div
-                        className="budget-exp-actions"
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          alignItems: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <button
-                          onClick={() => {
-                            toggleExpandExp(exp.id);
-                            if (!isOpen) setEF(exp.id, {});
-                          }}
-                          title="Log purchases"
-                          style={{
-                            background:
-                              entries.length > 0
-                                ? "var(--gold-dim)"
-                                : "rgba(255,255,255,0.06)",
-                            border:
-                              entries.length > 0
-                                ? "1px solid var(--gold-border)"
-                                : "1px solid var(--border)",
-                            color:
-                              entries.length > 0
-                                ? "var(--gold)"
-                                : "var(--text-muted)",
-                            borderRadius: 6,
-                            padding: "4px 8px",
-                            fontSize: 11,
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                            flexShrink: 0,
-                          }}
-                        >
-                          <CalendarDays size={11} />
-                          {entries.length > 0 ? entries.length : "Log"}
-                        </button>
-                        <MoveButton expId={exp.id} currentType="onetime" />
-                        <button
-                          className="btn-danger"
-                          aria-label={`Delete ${exp.name}`}
-                          onClick={async () => {
-                            if (
-                              await confirm(
-                                "Delete expense?",
-                                `Remove "${exp.name}"?`,
-                              )
-                            )
-                              updatePerson(
-                                "expenses",
-                                expenses.filter((x) => x.id !== exp.id),
-                              );
-                          }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                    <div
-                      className="budget-onetime-meta"
                       style={{
                         display: "flex",
                         gap: 6,
                         alignItems: "center",
-                        flexWrap: "wrap",
-                        marginTop: 8,
+                        marginBottom: 6,
                       }}
                     >
-                      <input
-                        type="date"
-                        value={exp.date || ""}
-                        onChange={(e) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? { ...x, date: e.target.value }
-                                : x,
-                            ),
-                          )
-                        }
-                        style={{ flex: "0 0 130px", fontSize: 12 }}
-                      />
                       <select
                         value={exp.category}
                         onChange={(e) =>
@@ -4207,6 +4113,42 @@ export default function Budget({
                         </select>
                       )}
                     </div>
+                    {/* Row 3: Log button */}
+                    <div style={{ marginBottom: 4 }}>
+                      <button
+                        onClick={() => {
+                          toggleExpandExp(exp.id);
+                          if (!isOpen) setEF(exp.id, {});
+                        }}
+                        title="Log purchases"
+                        style={{
+                          background:
+                            entries.length > 0
+                              ? "var(--gold-dim)"
+                              : "rgba(255,255,255,0.06)",
+                          border:
+                            entries.length > 0
+                              ? "1px solid var(--gold-border)"
+                              : "1px solid var(--border)",
+                          color:
+                            entries.length > 0
+                              ? "var(--gold)"
+                              : "var(--text-muted)",
+                          borderRadius: 6,
+                          padding: "5px 12px",
+                          fontSize: 12,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <CalendarDays size={12} />
+                        {entries.length > 0
+                          ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} logged`
+                          : "Add purchase log"}
+                      </button>
+                    </div>
 
                     {/* Logged total pill */}
                     {entries.length > 0 &&
@@ -4229,7 +4171,7 @@ export default function Budget({
                             }}
                           >
                             <span style={{ color: "var(--text-muted)" }}>
-                              Logged:{" "}
+                              Total:{" "}
                               <span
                                 style={{ fontWeight: 600, color: "var(--red)" }}
                               >
@@ -4238,10 +4180,8 @@ export default function Budget({
                               <span style={{ margin: "0 6px", opacity: 0.4 }}>
                                 ·
                               </span>
-                              Total:{" "}
-                              <span style={{ fontWeight: 600 }}>
-                                {fmt((exp.amount || 0) + loggedTotal)}
-                              </span>
+                              {entries.length}{" "}
+                              {entries.length === 1 ? "entry" : "entries"}
                             </span>
                           </div>
                         );
@@ -4382,11 +4322,49 @@ export default function Budget({
                             onClick={() => addEntry(exp)}
                             disabled={!ef.amount || !ef.date}
                           >
-                            <Plus size={11} /> Log
+                            <Plus size={11} /> Submit
                           </button>
                         </div>
                       </div>
                     )}
+
+                    {/* Bottom: Move + Delete */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginTop: 10,
+                        paddingTop: 8,
+                        borderTop: "1px solid var(--border)",
+                      }}
+                    >
+                      <MoveButton expId={exp.id} currentType="onetime" />
+                      <button
+                        className="btn-danger"
+                        aria-label={`Delete ${exp.name}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 11,
+                        }}
+                        onClick={async () => {
+                          if (
+                            await confirm(
+                              "Delete expense?",
+                              `Remove "${exp.name}"?`,
+                            )
+                          )
+                            updatePerson(
+                              "expenses",
+                              expenses.filter((x) => x.id !== exp.id),
+                            );
+                        }}
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </div>
                   </div>
                 );
               })}
