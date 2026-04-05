@@ -41,6 +41,7 @@ import {
   MONTHS,
   computeInvRow,
   getInvested,
+  computeAutoInvested,
 } from "./investmentHelpers";
 
 // ─── mfapi.in helpers ────────────────────────────────────────────────────────
@@ -181,6 +182,8 @@ export const SIPCard = memo(function SIPCard({
   const totalInvested = getInvested(inv);
   const isAutoInvested =
     !isFDInv && !isOneTimeInv && !(Number(inv.totalInvested) > 0);
+  const hasLumpSum = Number(inv.lumpSumInvested) > 0;
+  const autoSipPart = isAutoInvested ? computeAutoInvested(inv) : null;
   const actualGain = totalInvested > 0 ? currentVal - totalInvested : null;
   const actualReturnPct =
     totalInvested > 0
@@ -436,10 +439,16 @@ export const SIPCard = memo(function SIPCard({
               ...(!isFD(form.type) && form.frequency !== "onetime"
                 ? [
                     {
+                      key: "lumpSumInvested",
+                      label: "Lump sum purchases (₹)",
+                      type: "number",
+                      placeholder: "One-time top-ups outside SIP",
+                    },
+                    {
                       key: "totalInvested",
                       label: "Total invested override (₹)",
                       type: "number",
-                      placeholder: "Auto-calculated if empty",
+                      placeholder: "Static — overrides auto-calc entirely",
                     },
                   ]
                 : []),
@@ -451,6 +460,12 @@ export const SIPCard = memo(function SIPCard({
                       type: "number",
                       step: 0.001,
                       placeholder: "From your app — enables auto valuation",
+                    },
+                    {
+                      key: "folioNumber",
+                      label: "Folio number",
+                      type: "text",
+                      placeholder: "e.g. 18038096",
                     },
                   ]
                 : []),
@@ -1357,9 +1372,22 @@ export const SIPCard = memo(function SIPCard({
               <span style={{ color: "var(--text-secondary)" }}>
                 Invested:{" "}
                 <strong style={{ color: "var(--text-primary, #fff)" }}>
-                  {isAutoInvested && "~"}
+                  {isAutoInvested && !hasLumpSum && "~"}
                   {fmtCr(totalInvested)}
                 </strong>
+                {isAutoInvested && hasLumpSum && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      fontWeight: 400,
+                      marginLeft: 4,
+                    }}
+                  >
+                    (SIP {fmtCr(autoSipPart)} + lump{" "}
+                    {fmtCr(Number(inv.lumpSumInvested))})
+                  </span>
+                )}
               </span>
               <span style={{ color: "var(--text-secondary)" }}>
                 Gain:{" "}
@@ -2926,12 +2954,26 @@ export function ExportMenu({ rows, rawData, totals, title, filename }) {
       "Monthly Equiv (Rs)",
       "20-yr Projection (Rs)",
       "Return (% pa)",
+      "P&L (Rs)",
+      "P&L (%)",
       "Bank",
       "App",
       "Start Date",
+      "SIP Deduction Date",
+      "SIP Day (Weekly)",
+      "Folio Number",
+      "Scheme Code",
+      "Units",
+      "Cap Category",
+      "Existing Corpus (Rs)",
+      "Lump Sum Invested (Rs)",
+      "Invested Override (Rs)",
+      "Paused",
     ];
     const dataRows = rows.map((r, i) => {
       const x = rawData[i];
+      const gain = r.invested > 0 ? r.cur - r.invested : null;
+      const gainPct = gain !== null ? (gain / r.invested) * 100 : null;
       const cells = [
         ...(isHH ? [personNames?.[r.owner] || r.owner] : []),
         r.name,
@@ -2943,9 +2985,21 @@ export function ExportMenu({ rows, rawData, totals, title, filename }) {
         r.monthly > 0 ? Math.round(r.monthly) : "",
         r.yr20 !== null ? Math.round(r.yr20) : "",
         x.returnPct || "",
+        gain !== null ? Math.round(gain) : "",
+        gainPct !== null ? gainPct.toFixed(1) : "",
         x.bankName || "",
         x.appName || "",
         x.startDate || "",
+        x.deductionDate || "",
+        x.deductionDay || "",
+        x.folioNumber || "",
+        x.schemeCode || "",
+        x.units || "",
+        x.capCategory || "",
+        x.existingCorpus || "",
+        x.lumpSumInvested || "",
+        x.totalInvested || "",
+        x.paused ? "Yes" : "",
       ];
       return cells.map(esc).join(",");
     });
@@ -3015,12 +3069,40 @@ export function ExportMenu({ rows, rawData, totals, title, filename }) {
       if (r.yr20 !== null) {
         out.push(`   20-year projection: ${fmtN(r.yr20)}`);
       }
+      // Detail line: bank, app, start date
       const meta = [
         x.bankName,
         x.appName,
         x.startDate ? `Started ${x.startDate}` : null,
       ].filter(Boolean);
       if (meta.length) out.push(`   ${meta.join("  |  ")}`);
+      // SIP schedule line
+      const sipMeta = [
+        x.deductionDate ? `SIP date: ${x.deductionDate}th of month` : null,
+        x.deductionDay ? `SIP day: ${x.deductionDay}` : null,
+        x.deductionMonth != null ? `SIP month: ${x.deductionMonth + 1}` : null,
+      ].filter(Boolean);
+      if (sipMeta.length) out.push(`   ${sipMeta.join("  |  ")}`);
+      // Identifiers line
+      const ids = [
+        x.folioNumber ? `Folio: ${x.folioNumber}` : null,
+        x.schemeCode ? `Scheme: ${x.schemeCode}` : null,
+        x.units ? `Units: ${x.units}` : null,
+        x.capCategory ? `Category: ${x.capCategory}` : null,
+      ].filter(Boolean);
+      if (ids.length) out.push(`   ${ids.join("  |  ")}`);
+      // Corpus & override line
+      const corpus = [
+        x.existingCorpus ? `Corpus: ${fmtN(x.existingCorpus)}` : null,
+        Number(x.lumpSumInvested) > 0
+          ? `Lump sum top-ups: ${fmtN(x.lumpSumInvested)}`
+          : null,
+        Number(x.totalInvested) > 0
+          ? `Invested override: ${fmtN(x.totalInvested)}`
+          : null,
+        x.paused ? "PAUSED" : null,
+      ].filter(Boolean);
+      if (corpus.length) out.push(`   ${corpus.join("  |  ")}`);
     });
 
     out.push(line);
@@ -3159,6 +3241,10 @@ export default function Investments({
   const [navFetchMsg, setNavFetchMsg] = useState("");
   const [batchSyncing, setBatchSyncing] = useState(false);
   const [batchSyncResult, setBatchSyncResult] = useState(null);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickEdits, setQuickEdits] = useState({});
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickSaved, setQuickSaved] = useState(false);
   useEffect(() => {
     if (
       newInv.type !== "Mutual Fund" ||
@@ -3877,6 +3963,493 @@ export default function Investments({
       </div>
 
       <PortfolioCharts rows={invRows} isHousehold={false} />
+
+      {/* ── Quick Update panel ── */}
+      {(() => {
+        // Indian comma format for amount inputs: 1,50,000
+        const fmtIN = (v) => {
+          const n = Number(String(v).replace(/,/g, ""));
+          if (!n && n !== 0) return "";
+          return Math.round(n).toLocaleString("en-IN");
+        };
+        const parseIN = (v) => String(v).replace(/,/g, "");
+
+        return (
+          investments.some((x) => x.type === "Mutual Fund") && (
+            <div className="card" style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={() => {
+                  if (!quickOpen) {
+                    // Seed edits from current values
+                    const seed = {};
+                    investments
+                      .filter((x) => x.type === "Mutual Fund")
+                      .forEach((inv) => {
+                        seed[inv.id] = {
+                          units: inv.units || "",
+                          value: inv.existingCorpus || "",
+                          invested: getInvested(inv) || "",
+                        };
+                      });
+                    setQuickEdits(seed);
+                    setQuickSaved(false);
+                  }
+                  setQuickOpen((o) => !o);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-secondary)",
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  width: "100%",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    transform: quickOpen ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.15s",
+                  }}
+                >
+                  ▶
+                </span>
+                Quick Update
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 400,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  — edit all MF values in one place
+                </span>
+              </button>
+
+              {quickOpen && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 12,
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            borderBottom: "1px solid rgba(255,255,255,0.1)",
+                          }}
+                        >
+                          <th
+                            style={{
+                              textAlign: "left",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Investment
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "right",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Units
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "right",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            NAV
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "right",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Current Value (₹)
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "right",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Invested (₹)
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "right",
+                              padding: "6px 8px",
+                              color: "var(--text-muted)",
+                              fontWeight: 500,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            P&L
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {investments
+                          .filter((x) => x.type === "Mutual Fund")
+                          .map((inv) => {
+                            const e = quickEdits[inv.id] || {
+                              units: inv.units || "",
+                              value: inv.existingCorpus || "",
+                              invested: getInvested(inv) || "",
+                            };
+                            const nav = Number(inv.latestNav) || 0;
+                            const curVal = Number(e.value) || 0;
+                            const invAmt = Number(e.invested) || 0;
+                            const gain = invAmt > 0 ? curVal - invAmt : null;
+                            const gainPct =
+                              gain !== null && invAmt > 0
+                                ? (gain / invAmt) * 100
+                                : null;
+                            const displayName =
+                              inv.name.length > 30
+                                ? inv.name.slice(0, 28) + "…"
+                                : inv.name;
+
+                            return (
+                              <tr
+                                key={inv.id}
+                                style={{
+                                  borderBottom:
+                                    "1px solid rgba(255,255,255,0.04)",
+                                }}
+                              >
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    color: "var(--text-secondary)",
+                                    maxWidth: 200,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: "50%",
+                                        background: typeColor(inv.type),
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <span title={inv.name}>{displayName}</span>
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--text-muted)",
+                                      marginTop: 2,
+                                    }}
+                                  >
+                                    {inv.type}
+                                    {inv.frequency !== "onetime"
+                                      ? ` · ${inv.frequency}`
+                                      : ""}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  <input
+                                    type="number"
+                                    step="0.0001"
+                                    value={e.units}
+                                    onChange={(ev) => {
+                                      const units = ev.target.value;
+                                      const calc =
+                                        nav > 0 && units
+                                          ? Math.round(
+                                              Number(units) * nav * 100,
+                                            ) / 100
+                                          : e.value;
+                                      setQuickEdits((prev) => ({
+                                        ...prev,
+                                        [inv.id]: {
+                                          ...e,
+                                          units,
+                                          value:
+                                            nav > 0 && units ? calc : e.value,
+                                        },
+                                      }));
+                                    }}
+                                    style={{
+                                      width: 80,
+                                      textAlign: "right",
+                                      padding: "4px 6px",
+                                      fontSize: 12,
+                                      borderRadius: 4,
+                                      border: "1px solid var(--border)",
+                                      background: "var(--bg-card2)",
+                                      color: "var(--text-primary)",
+                                    }}
+                                    placeholder="—"
+                                  />
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    textAlign: "right",
+                                    color: "var(--text-muted)",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {nav > 0 ? `₹${nav.toFixed(2)}` : "—"}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={fmtIN(e.value)}
+                                    onFocus={(ev) => {
+                                      ev.target.value = parseIN(
+                                        String(e.value),
+                                      );
+                                    }}
+                                    onBlur={(ev) => {
+                                      ev.target.value = fmtIN(e.value);
+                                    }}
+                                    onChange={(ev) => {
+                                      const value = parseIN(ev.target.value);
+                                      setQuickEdits((prev) => ({
+                                        ...prev,
+                                        [inv.id]: { ...e, value },
+                                      }));
+                                    }}
+                                    style={{
+                                      width: 110,
+                                      textAlign: "right",
+                                      padding: "4px 6px",
+                                      fontSize: 12,
+                                      borderRadius: 4,
+                                      border: "1px solid var(--border)",
+                                      background: "var(--bg-card2)",
+                                      color: "var(--text-primary)",
+                                    }}
+                                    placeholder="—"
+                                  />
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={fmtIN(e.invested)}
+                                    onFocus={(ev) => {
+                                      ev.target.value = parseIN(
+                                        String(e.invested),
+                                      );
+                                    }}
+                                    onBlur={(ev) => {
+                                      ev.target.value = fmtIN(e.invested);
+                                    }}
+                                    onChange={(ev) => {
+                                      setQuickEdits((prev) => ({
+                                        ...prev,
+                                        [inv.id]: {
+                                          ...e,
+                                          invested: parseIN(ev.target.value),
+                                        },
+                                      }));
+                                    }}
+                                    style={{
+                                      width: 110,
+                                      textAlign: "right",
+                                      padding: "4px 6px",
+                                      fontSize: 12,
+                                      borderRadius: 4,
+                                      border: "1px solid var(--border)",
+                                      background: "var(--bg-card2)",
+                                      color: "var(--text-primary)",
+                                    }}
+                                    placeholder="—"
+                                  />
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "8px 8px",
+                                    textAlign: "right",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {gain !== null ? (
+                                    <span
+                                      style={{
+                                        color:
+                                          gain >= 0
+                                            ? "var(--green)"
+                                            : "var(--red)",
+                                        fontWeight: 500,
+                                      }}
+                                    >
+                                      {gain >= 0 ? "+" : "−"}₹
+                                      {Math.round(
+                                        Math.abs(gain),
+                                      ).toLocaleString("en-IN")}
+                                      <span
+                                        style={{
+                                          fontSize: 10,
+                                          marginLeft: 3,
+                                          opacity: 0.7,
+                                        }}
+                                      >
+                                        ({gainPct >= 0 ? "+" : ""}
+                                        {gainPct.toFixed(1)}%)
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{ color: "var(--text-muted)" }}
+                                    >
+                                      —
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Save All button */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginTop: 12,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    {quickSaved && (
+                      <span style={{ fontSize: 12, color: "var(--green)" }}>
+                        ✓ All values saved
+                      </span>
+                    )}
+                    <button
+                      className="btn-primary"
+                      disabled={quickSaving}
+                      onClick={() => {
+                        setQuickSaving(true);
+                        const today = new Date().toISOString().slice(0, 10);
+                        const newList = investments.map((inv) => {
+                          if (inv.type !== "Mutual Fund") return inv;
+                          const e = quickEdits[inv.id];
+                          if (!e) return inv;
+                          const newVal =
+                            Number(e.value) || inv.existingCorpus || 0;
+                          const newUnits =
+                            e.units !== "" ? Number(e.units) : inv.units;
+                          const newInvested =
+                            e.invested !== "" ? Number(e.invested) : 0;
+                          const patch = { ...inv };
+
+                          // Update units if changed
+                          if (newUnits !== inv.units) patch.units = newUnits;
+
+                          // Update existingCorpus + append to corpusHistory if value changed
+                          if (newVal !== (inv.existingCorpus || 0)) {
+                            patch.existingCorpus = newVal;
+                            const history = inv.corpusHistory || [];
+                            // Avoid duplicate entry for same date
+                            const alreadyToday = history.some(
+                              (h) => h.date === today && h.value === newVal,
+                            );
+                            if (!alreadyToday) {
+                              patch.corpusHistory = [
+                                ...history,
+                                {
+                                  date: today,
+                                  value: newVal,
+                                  note: "Quick Update",
+                                },
+                              ];
+                            }
+                          }
+
+                          // Update totalInvested if different from auto-calculated
+                          const autoInv =
+                            computeAutoInvested(inv) +
+                            (Number(inv.lumpSumInvested) || 0);
+                          if (
+                            newInvested > 0 &&
+                            Math.abs(newInvested - autoInv) > 1
+                          ) {
+                            patch.totalInvested = newInvested;
+                          } else if (
+                            newInvested === 0 ||
+                            Math.abs(newInvested - autoInv) <= 1
+                          ) {
+                            // Clear override if it matches auto-calc
+                            if (inv.totalInvested) patch.totalInvested = 0;
+                          }
+
+                          return patch;
+                        });
+                        updatePerson("investments", newList);
+                        setQuickSaving(false);
+                        setQuickSaved(true);
+                        setTimeout(() => setQuickSaved(false), 3000);
+                      }}
+                      style={{ padding: "6px 18px", fontSize: 12 }}
+                    >
+                      {quickSaving ? "Saving…" : "Save All"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        );
+      })()}
 
       {(allApps.length > 0 ||
         allBanks.length > 0 ||

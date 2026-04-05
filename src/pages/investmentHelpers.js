@@ -170,8 +170,9 @@ export function computeAutoInvested(inv) {
 
     while (y < endY || (y === endY && m <= endM)) {
       if (y === start.getFullYear() && m === start.getMonth()) {
-        // First month: only count if deduction day >= start day of month
-        if (deductDay >= start.getDate()) count++;
+        // First month: always count — the start date means "SIP began this month"
+        // (actual execution may shift a day or two due to weekends/holidays)
+        count++;
       } else if (y === endY && m === endM) {
         // Current month: only count if deduction day has passed
         if (deductDay <= todayDate) count++;
@@ -210,13 +211,14 @@ export function computeAutoInvested(inv) {
 }
 
 // Get the invested amount — prefer manual totalInvested if entered, else auto-calculate
+// lumpSumInvested is ADDED to auto-calculated SIP total (for one-off purchases outside SIP)
 export function getInvested(inv) {
   if (isFD(inv.type)) return inv.amount || 0;
   if (inv.frequency === "onetime") return inv.amount || 0;
-  // If user entered a manual override, use it
+  // If user entered a manual override, use it as-is (fully static)
   if (Number(inv.totalInvested) > 0) return Number(inv.totalInvested);
-  // Auto-calculate from startDate + SIP amount + frequency
-  return computeAutoInvested(inv);
+  // Auto-calculate from startDate + SIP amount + frequency + any lump sums
+  return computeAutoInvested(inv) + (Number(inv.lumpSumInvested) || 0);
 }
 
 // Shared row-computation helper (used in both single-person and household views)

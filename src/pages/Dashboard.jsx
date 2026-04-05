@@ -1863,8 +1863,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         });
       if (excessCash > 50000)
         tips.push({
-          icon: "💤",
-          text: `${fmtCr(excessCash)} idle in savings — move to liquid fund or increase SIP`,
+          icon: "�",
+          text: `You have ${fmtCr(excessCash)} sitting idle in your savings account earning ~3.5% interest. Move it to a Liquid Mutual Fund (earns ~6–7%, withdraw anytime) or increase your monthly SIP to grow your wealth faster.`,
           priority: 3,
         });
       if (!insAdequacy.adequate)
@@ -1911,7 +1911,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
               className="card-title"
               style={{ margin: 0, color: "var(--gold)" }}
             >
-              Wealth Intelligence
+              Financial Snapshot
             </span>
           </div>
 
@@ -1938,7 +1938,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   color={fire >= 25 ? "var(--green)" : "var(--gold)"}
                 />
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  FIRE Ratio
+                  Financial Freedom
                 </span>
               </div>
               <div
@@ -1955,12 +1955,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
               >
                 {fire.toFixed(1)}×
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.4,
+                }}
+              >
                 {fire >= 25
-                  ? "FIRE ready! 🎉"
+                  ? "Your investments can cover all expenses! 🎉"
                   : fire >= 10
-                    ? "Building momentum"
-                    : "Early stages — keep investing"}
+                    ? "Good progress — keep growing your investments"
+                    : "Keep investing every month — it compounds fast"}
               </div>
             </div>
 
@@ -1985,7 +1991,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   color={retireOnTrack ? "var(--green)" : "var(--red)"}
                 />
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  Retirement @ {retireAge}
+                  Retirement by {retireAge}
                 </span>
               </div>
               <div
@@ -1997,10 +2003,16 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
               >
                 {retireOnTrack ? "On Track ✓" : fmtCr(Math.round(retireGap))}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.4,
+                }}
+              >
                 {retireOnTrack
-                  ? `${fmtCr(Math.round(corpusAtRetire))} projected`
-                  : `Need +${fmt(Math.round(additionalSIPNeeded))}/mo SIP`}
+                  ? `Projected to have ${fmtCr(Math.round(corpusAtRetire))}`
+                  : `Short by this amount — add ${fmt(Math.round(additionalSIPNeeded))}/mo SIP`}
               </div>
             </div>
 
@@ -2025,7 +2037,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   color={unused80c > 0 ? "var(--gold)" : "var(--green)"}
                 />
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  80C Unused
+                  Tax Savings Left
                 </span>
               </div>
               <div
@@ -2035,12 +2047,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   color: unused80c > 0 ? "var(--gold)" : "var(--green)",
                 }}
               >
-                {unused80c > 0 ? fmt(unused80c) : "Maxed ✓"}
+                {unused80c > 0 ? fmt(unused80c) : "All used ✓"}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.4,
+                }}
+              >
                 {unused80c > 0
-                  ? `Save ~${fmt(taxSavable)} in tax`
-                  : "Full 80C utilized"}
+                  ? `Invest this in ELSS/PPF to save ~${fmt(taxSavable)} tax this year`
+                  : "You've used your full ₹1.5L tax benefit"}
               </div>
             </div>
 
@@ -2065,7 +2083,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   color={insAdequacy.adequate ? "var(--green)" : "var(--red)"}
                 />
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  Life Cover
+                  Life Insurance
                 </span>
               </div>
               <div
@@ -2079,12 +2097,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   ? fmtCr(insAdequacy.currentCover)
                   : "None"}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.4,
+                }}
+              >
                 {insAdequacy.adequate
-                  ? "Adequate coverage"
+                  ? "Your family is protected"
                   : insAdequacy.gap > 0
-                    ? `Gap: ${fmtCr(insAdequacy.gap)}`
-                    : "Add term insurance"}
+                    ? `Cover gap of ${fmtCr(insAdequacy.gap)} — consider term plan`
+                    : "No life cover — add a term insurance plan"}
               </div>
             </div>
           </div>
@@ -2101,9 +2125,9 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   justifyContent: "space-between",
                 }}
               >
-                <span>Asset Allocation</span>
+                <span>Where your money is invested</span>
                 <span style={{ color: "var(--text-muted)" }}>
-                  Corpus: {fmtCr(allocation.total)}
+                  Total: {fmtCr(allocation.total)}
                 </span>
               </div>
               <div
@@ -2177,7 +2201,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             >
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  Portfolio Returns
+                  How your investments have grown
                 </div>
                 <div
                   style={{
@@ -2232,7 +2256,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   marginBottom: 8,
                 }}
               >
-                Smart Actions
+                Things you can do right now
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {tips
@@ -2276,18 +2300,24 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             }}
           >
             <strong style={{ color: "var(--text-secondary)" }}>
-              Retirement Math
+              How was this calculated?
             </strong>
             <br />
-            Current expenses: {fmt(monthlyExpenseToday)}/mo →{" "}
+            Your current monthly expenses are {fmt(monthlyExpenseToday)}. By the
+            time you turn {retireAge}, inflation will push that to{" "}
             {fmt(
               Math.round(monthlyExpenseToday * Math.pow(1.06, yearsToRetire)),
             )}
-            /mo at age {retireAge} (6% inflation)
+            /month. You'll need a total investment pool of{" "}
+            {fmtCr(Math.round(corpusNeeded))} to retire comfortably. At your
+            current SIP pace, you'll have {fmtCr(Math.round(corpusAtRetire))} —
+            so{" "}
+            {retireOnTrack
+              ? "you're on track! 🎉"
+              : "you need to invest a bit more each month."}
+            .
             <br />
-            Corpus needed: {fmtCr(Math.round(corpusNeeded))} · You'll have:{" "}
-            {fmtCr(Math.round(corpusAtRetire))} at 12% returns
-            <br />
+            Current investments: {fmtCr(corpus)} · Monthly SIPs: {fmt(hInvest)}
             Current invested corpus: {fmtCr(corpus)} · Monthly SIPs:{" "}
             {fmt(hInvest)}
           </div>
@@ -3549,7 +3579,6 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
         {dashTab === "people" && (
           <>
-            {sections.personCards}
             {sections.persons}
             {sections.monthcompare}
           </>
