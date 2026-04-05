@@ -23,6 +23,7 @@ import {
   ChevronRight,
   CalendarDays,
   X,
+  Check,
   MapPin,
   Plane,
   CreditCard,
@@ -30,6 +31,7 @@ import {
   ArrowRightLeft,
   Users,
   Info,
+  Edit3,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
@@ -935,6 +937,49 @@ export default function Budget({
       "expenses",
       expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
     );
+  };
+  // editEntry state: key = `${expId}_${entryId}` → { date, amount, note }
+  const [editEntry, setEditEntry] = useState({});
+  const startEditEntry = (exp, e) =>
+    setEditEntry((s) => ({
+      ...s,
+      [`${exp.id}_${e.id}`]: {
+        date: e.date,
+        amount: String(e.amount),
+        note: e.note || "",
+      },
+    }));
+  const cancelEditEntry = (exp, e) =>
+    setEditEntry((s) => {
+      const n = { ...s };
+      delete n[`${exp.id}_${e.id}`];
+      return n;
+    });
+  const saveEditEntry = (exp, entryId) => {
+    const key = `${exp.id}_${entryId}`;
+    const f = editEntry[key];
+    if (!f || !f.date || !f.amount) return;
+    updatePerson(
+      "expenses",
+      expenses.map((x) =>
+        x.id === exp.id
+          ? {
+              ...x,
+              entries: (x.entries || []).map((e) =>
+                e.id === entryId
+                  ? {
+                      ...e,
+                      date: f.date,
+                      amount: Number(f.amount),
+                      note: f.note.trim(),
+                    }
+                  : e,
+              ),
+            }
+          : x,
+      ),
+    );
+    cancelEditEntry(exp, { id: entryId });
   };
 
   // ── Variable income entries (bonus, freelance, dividend, etc.) ─────────
@@ -3234,68 +3279,170 @@ export default function Budget({
                           <div style={{ marginBottom: 10 }}>
                             {[...entries]
                               .sort((a, b) => b.date.localeCompare(a.date))
-                              .map((e) => (
-                                <div
-                                  key={e.id}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    padding: "4px 0",
-                                    borderBottom: "1px solid var(--border)",
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  <span
+                              .map((e) => {
+                                const editKey = `${exp.id}_${e.id}`;
+                                const isEditing = !!editEntry[editKey];
+                                const ef2 = editEntry[editKey] || {};
+                                if (isEditing) {
+                                  return (
+                                    <div
+                                      key={e.id}
+                                      style={{
+                                        display: "flex",
+                                        gap: 6,
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
+                                        padding: "6px 0",
+                                        borderBottom: "1px solid var(--border)",
+                                      }}
+                                    >
+                                      <input
+                                        type="date"
+                                        value={ef2.date}
+                                        onChange={(ev) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: {
+                                              ...ef2,
+                                              date: ev.target.value,
+                                            },
+                                          }))
+                                        }
+                                        style={{
+                                          flex: "0 0 130px",
+                                          fontSize: 12,
+                                        }}
+                                      />
+                                      <MobileInput
+                                        type="number"
+                                        placeholder="₹"
+                                        value={ef2.amount}
+                                        label="Amount"
+                                        onChange={(v) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: { ...ef2, amount: v },
+                                          }))
+                                        }
+                                        style={{ flex: "0 0 90px" }}
+                                        min="0"
+                                      />
+                                      <MobileInput
+                                        placeholder="Note"
+                                        value={ef2.note}
+                                        label="Note"
+                                        onChange={(v) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: { ...ef2, note: v },
+                                          }))
+                                        }
+                                        style={{ flex: 1, minWidth: 80 }}
+                                      />
+                                      <button
+                                        className="btn-primary"
+                                        style={{
+                                          padding: "4px 10px",
+                                          fontSize: 12,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 4,
+                                        }}
+                                        onClick={() => saveEditEntry(exp, e.id)}
+                                        disabled={!ef2.amount || !ef2.date}
+                                      >
+                                        <Check size={11} /> Save
+                                      </button>
+                                      <button
+                                        className="btn-ghost"
+                                        style={{
+                                          padding: "4px 8px",
+                                          fontSize: 12,
+                                        }}
+                                        onClick={() => cancelEditEntry(exp, e)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    key={e.id}
                                     style={{
-                                      color: "var(--text-muted)",
-                                      fontVariantNumeric: "tabular-nums",
-                                      flexShrink: 0,
-                                      width: 72,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      padding: "4px 0",
+                                      borderBottom: "1px solid var(--border)",
+                                      fontSize: 12,
                                     }}
                                   >
-                                    {e.date.slice(5).replace("-", " ")}
-                                  </span>
-                                  <span
-                                    style={{
-                                      flex: 1,
-                                      color: "var(--text-secondary)",
-                                    }}
-                                  >
-                                    {e.note || "—"}
-                                  </span>
-                                  <span
-                                    style={{
-                                      fontWeight: 600,
-                                      color: "var(--red)",
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    {fmt(e.amount)}
-                                  </span>
-                                  <button
-                                    onClick={async () => {
-                                      if (
-                                        await confirm(
-                                          "Delete entry?",
-                                          `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                    <span
+                                      style={{
+                                        color: "var(--text-muted)",
+                                        fontVariantNumeric: "tabular-nums",
+                                        flexShrink: 0,
+                                        width: 72,
+                                      }}
+                                    >
+                                      {e.date.slice(5).replace("-", " ")}
+                                    </span>
+                                    <span
+                                      style={{
+                                        flex: 1,
+                                        color: "var(--text-secondary)",
+                                      }}
+                                    >
+                                      {e.note || "—"}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: "var(--red)",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {fmt(e.amount)}
+                                    </span>
+                                    <button
+                                      onClick={() => startEditEntry(exp, e)}
+                                      title="Edit"
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        color: "var(--text-muted)",
+                                        padding: 2,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <Edit3 size={11} />
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (
+                                          await confirm(
+                                            "Delete entry?",
+                                            `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                          )
                                         )
-                                      )
-                                        deleteEntry(exp, e.id);
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      cursor: "pointer",
-                                      color: "var(--text-muted)",
-                                      padding: 2,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    <X size={11} />
-                                  </button>
-                                </div>
-                              ))}
+                                          deleteEntry(exp, e.id);
+                                      }}
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        color: "var(--text-muted)",
+                                        padding: 2,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
                           </div>
                         )}
                         <div
@@ -4208,68 +4355,170 @@ export default function Budget({
                           <div style={{ marginBottom: 10 }}>
                             {[...entries]
                               .sort((a, b) => b.date.localeCompare(a.date))
-                              .map((e) => (
-                                <div
-                                  key={e.id}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    padding: "4px 0",
-                                    borderBottom: "1px solid var(--border)",
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  <span
+                              .map((e) => {
+                                const editKey = `${exp.id}_${e.id}`;
+                                const isEditing = !!editEntry[editKey];
+                                const ef2 = editEntry[editKey] || {};
+                                if (isEditing) {
+                                  return (
+                                    <div
+                                      key={e.id}
+                                      style={{
+                                        display: "flex",
+                                        gap: 6,
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
+                                        padding: "6px 0",
+                                        borderBottom: "1px solid var(--border)",
+                                      }}
+                                    >
+                                      <input
+                                        type="date"
+                                        value={ef2.date}
+                                        onChange={(ev) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: {
+                                              ...ef2,
+                                              date: ev.target.value,
+                                            },
+                                          }))
+                                        }
+                                        style={{
+                                          flex: "0 0 130px",
+                                          fontSize: 12,
+                                        }}
+                                      />
+                                      <MobileInput
+                                        type="number"
+                                        placeholder="₹"
+                                        value={ef2.amount}
+                                        label="Amount"
+                                        onChange={(v) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: { ...ef2, amount: v },
+                                          }))
+                                        }
+                                        style={{ flex: "0 0 90px" }}
+                                        min="0"
+                                      />
+                                      <MobileInput
+                                        placeholder="Note"
+                                        value={ef2.note}
+                                        label="Note"
+                                        onChange={(v) =>
+                                          setEditEntry((s) => ({
+                                            ...s,
+                                            [editKey]: { ...ef2, note: v },
+                                          }))
+                                        }
+                                        style={{ flex: 1, minWidth: 80 }}
+                                      />
+                                      <button
+                                        className="btn-primary"
+                                        style={{
+                                          padding: "4px 10px",
+                                          fontSize: 12,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 4,
+                                        }}
+                                        onClick={() => saveEditEntry(exp, e.id)}
+                                        disabled={!ef2.amount || !ef2.date}
+                                      >
+                                        <Check size={11} /> Save
+                                      </button>
+                                      <button
+                                        className="btn-ghost"
+                                        style={{
+                                          padding: "4px 8px",
+                                          fontSize: 12,
+                                        }}
+                                        onClick={() => cancelEditEntry(exp, e)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    key={e.id}
                                     style={{
-                                      color: "var(--text-muted)",
-                                      fontVariantNumeric: "tabular-nums",
-                                      flexShrink: 0,
-                                      width: 72,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      padding: "4px 0",
+                                      borderBottom: "1px solid var(--border)",
+                                      fontSize: 12,
                                     }}
                                   >
-                                    {e.date.slice(5).replace("-", " ")}
-                                  </span>
-                                  <span
-                                    style={{
-                                      flex: 1,
-                                      color: "var(--text-secondary)",
-                                    }}
-                                  >
-                                    {e.note || "—"}
-                                  </span>
-                                  <span
-                                    style={{
-                                      fontWeight: 600,
-                                      color: "var(--red)",
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    {fmt(e.amount)}
-                                  </span>
-                                  <button
-                                    onClick={async () => {
-                                      if (
-                                        await confirm(
-                                          "Delete entry?",
-                                          `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                    <span
+                                      style={{
+                                        color: "var(--text-muted)",
+                                        fontVariantNumeric: "tabular-nums",
+                                        flexShrink: 0,
+                                        width: 72,
+                                      }}
+                                    >
+                                      {e.date.slice(5).replace("-", " ")}
+                                    </span>
+                                    <span
+                                      style={{
+                                        flex: 1,
+                                        color: "var(--text-secondary)",
+                                      }}
+                                    >
+                                      {e.note || "—"}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: "var(--red)",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {fmt(e.amount)}
+                                    </span>
+                                    <button
+                                      onClick={() => startEditEntry(exp, e)}
+                                      title="Edit"
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        color: "var(--text-muted)",
+                                        padding: 2,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <Edit3 size={11} />
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (
+                                          await confirm(
+                                            "Delete entry?",
+                                            `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                          )
                                         )
-                                      )
-                                        deleteEntry(exp, e.id);
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      cursor: "pointer",
-                                      color: "var(--text-muted)",
-                                      padding: 2,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    <X size={11} />
-                                  </button>
-                                </div>
-                              ))}
+                                          deleteEntry(exp, e.id);
+                                      }}
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        color: "var(--text-muted)",
+                                        padding: 2,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
                           </div>
                         )}
                         <div
