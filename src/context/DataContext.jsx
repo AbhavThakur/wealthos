@@ -391,6 +391,23 @@ export function DataProvider({ children }) {
           return false;
         }
       }
+      // Guard against expense entry loss: warn if entries are dropped
+      if (docId !== "shared") {
+        const curExps = current.expenses || [];
+        const newExps = newData.expenses || [];
+        for (const curExp of curExps) {
+          const curEntries = curExp.entries || [];
+          if (curEntries.length === 0) continue;
+          const newExp = newExps.find((e) => e.id === curExp.id);
+          if (!newExp) continue; // expense deleted, that's fine
+          const newEntries = newExp.entries || [];
+          if (curEntries.length > 0 && newEntries.length === 0) {
+            console.warn(
+              `[DataGuard] WARNING: expense "${curExp.name}" (id=${curExp.id}) had ${curEntries.length} entries, write has 0. Possible data loss.`,
+            );
+          }
+        }
+      }
       return true;
     },
     [abhav, aanya, shared],

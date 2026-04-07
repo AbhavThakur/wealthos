@@ -1352,7 +1352,7 @@ export default function Budget({
         amount: exp.amount,
         category: exp.category || "Others",
         recurrence: "monthly",
-        entries: [],
+        entries: exp.entries || [],
         date:
           (src === "trip" ? exp.startDate : exp.date) ||
           new Date().toISOString().slice(0, 10),
@@ -1368,6 +1368,7 @@ export default function Budget({
         amount: exp.amount,
         category: exp.category || "Others",
         recurrence: "once",
+        entries: exp.entries || [],
         date: movedDate,
       };
     }
