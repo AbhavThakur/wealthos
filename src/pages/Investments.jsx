@@ -73,6 +73,7 @@ async function mfLatestNAV(schemeCode) {
 }
 
 import { InfoModal } from "../components/InfoModal";
+export { InfoModal } from "../components/InfoModal";
 
 export const SIPCard = memo(function SIPCard({
   inv,
