@@ -2904,7 +2904,7 @@ function ReminderEmailSetting({ sharedData, updateShared }) {
     }
     setSendStatus("sending");
     try {
-      const res = await fetch("/api/send-reminders?test=1");
+      const res = await fetch("/api/send-reminders?force=1");
       const json = await res.json().catch(() => ({}));
       setSendStatus(res.ok && json.sent > 0 ? "sent" : "error");
     } catch {
