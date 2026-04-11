@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Chart } from "../components/Chart";
 import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
-import { Camera, Plus, Trash2 } from "lucide-react";
+import { Camera, Download, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 
 const MANUAL_ASSET_TYPES = [
@@ -658,6 +658,123 @@ export default function NetWorth({
     setTimeout(() => setSnapshotDone(false), 3000);
   };
 
+  const exportNetWorth = () => {
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const p1 = personNames?.abhav || "Person 1";
+    const p2 = personNames?.aanya || "Person 2";
+    const today = new Date().toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    const rows = [];
+    const section = (title) => {
+      rows.push([]);
+      rows.push([title]);
+    };
+
+    rows.push([`WealthOS — Net Worth Export`].map(esc).join(","));
+    rows.push([`Exported: ${today}`].map(esc).join(","));
+
+    // ── Savings accounts ─────────────────────────────────────────────
+    section("SAVINGS ACCOUNTS");
+    rows.push(
+      ["Person", "Bank", "Balance (₹)", "Interest Rate (%)"].map(esc).join(","),
+    );
+    [
+      [p1, aStats.savingsAccounts],
+      [p2, bStats.savingsAccounts],
+    ].forEach(([name, accounts]) => {
+      accounts.forEach((acc) =>
+        rows.push(
+          [name, acc.bankName || "—", acc.balance || 0, acc.interestRate ?? 3.5]
+            .map(esc)
+            .join(","),
+        ),
+      );
+    });
+
+    // ── Investment assets (current value) ────────────────────────────
+    section("INVESTMENT PORTFOLIO (Current Value)");
+    rows.push(
+      ["Person", "Name", "Type", "Current Value (₹)"].map(esc).join(","),
+    );
+    [
+      [p1, aStats.invAssets],
+      [p2, bStats.invAssets],
+    ].forEach(([name, assets]) => {
+      assets.forEach((a) =>
+        rows.push([name, a.name, a.type, a.value].map(esc).join(",")),
+      );
+    });
+
+    // ── Manual assets ────────────────────────────────────────────────
+    const allManual = [
+      ...aStats.manualAssets.map((a) => ({ ...a, _person: p1 })),
+      ...bStats.manualAssets.map((a) => ({ ...a, _person: p2 })),
+    ];
+    if (allManual.length > 0) {
+      section("MANUAL ASSETS");
+      rows.push(["Person", "Name", "Type", "Value (₹)"].map(esc).join(","));
+      allManual.forEach((a) =>
+        rows.push([a._person, a.name, a.type, a.value || 0].map(esc).join(",")),
+      );
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────
+    const aInvTotal = aStats.invAssets.reduce((s, a) => s + a.value, 0);
+    const bInvTotal = bStats.invAssets.reduce((s, a) => s + a.value, 0);
+    section("SUMMARY");
+    rows.push(["", p1, p2, "Household"].map(esc).join(","));
+    rows.push(
+      [
+        "Savings",
+        aStats.savingsTotal,
+        bStats.savingsTotal,
+        aStats.savingsTotal + bStats.savingsTotal,
+      ]
+        .map(esc)
+        .join(","),
+    );
+    rows.push(
+      ["Investment Value", aInvTotal, bInvTotal, aInvTotal + bInvTotal]
+        .map(esc)
+        .join(","),
+    );
+    rows.push(
+      ["Total Assets", aStats.assets, bStats.assets, hAssets]
+        .map(esc)
+        .join(","),
+    );
+    rows.push(
+      [
+        "Total Liabilities",
+        aStats.liabilities,
+        bStats.liabilities,
+        hLiabilities,
+      ]
+        .map(esc)
+        .join(","),
+    );
+    rows.push(["Net Worth", aStats.net, bStats.net, hNet].map(esc).join(","));
+
+    const content = rows
+      .map((r) => (Array.isArray(r) ? r.join(",") : r))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + content], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `net-worth-${new Date().toISOString().slice(0, 7)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const chartData = history
     .filter((s) => (s.abhavNetWorth || 0) !== 0 || (s.aanyaNetWorth || 0) !== 0)
     .map((s) => ({
@@ -682,14 +799,24 @@ export default function NetWorth({
         <div style={{ fontFamily: "var(--font-display)", fontSize: 22 }}>
           Net Worth Timeline
         </div>
-        <button
-          className="btn-primary"
-          style={{ display: "flex", alignItems: "center", gap: 6 }}
-          onClick={handleSnapshot}
-        >
-          <Camera size={14} />{" "}
-          {snapshotDone ? "✓ Snapshot saved!" : "Take snapshot now"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn-ghost"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+            onClick={exportNetWorth}
+            title="Export savings + investments to CSV"
+          >
+            <Download size={14} /> Export
+          </button>
+          <button
+            className="btn-primary"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+            onClick={handleSnapshot}
+          >
+            <Camera size={14} />{" "}
+            {snapshotDone ? "✓ Snapshot saved!" : "Take snapshot now"}
+          </button>
+        </div>
       </div>
 
       <div className="grid-3 section-gap">
