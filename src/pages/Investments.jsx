@@ -73,7 +73,6 @@ async function mfLatestNAV(schemeCode) {
 }
 
 import { InfoModal } from "../components/InfoModal";
-export { InfoModal } from "../components/InfoModal";
 
 export const SIPCard = memo(function SIPCard({
   inv,
@@ -2013,6 +2012,7 @@ const typeColor = (t) => TYPE_COLORS[t] || "#888888";
 
 // ─── Mutual Fund cap categories ──────────────────────────────────────────────
 // Each entry: { value (stored), label (shown), buckets (cap weights), isActive }
+// eslint-disable-next-line react-refresh/only-export-components
 export const MF_CAP_CATEGORIES = [
   { value: "", label: "Not specified", buckets: null, isActive: null },
   {

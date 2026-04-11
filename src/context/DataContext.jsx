@@ -891,6 +891,7 @@ export function DataProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useData = () => useContext(DataContext);
 
 // ── Demo mode provider (read-only, no Firebase) ─────────────────────────

@@ -32,7 +32,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/644</span>
+                <span class='fraction'>0/626</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/439</span>
+                <span class='fraction'>0/440</span>
             </div>
         
             
@@ -1261,7 +1261,20 @@
 <a name='L1196'></a><a href='#L1196'>1196</a>
 <a name='L1197'></a><a href='#L1197'>1197</a>
 <a name='L1198'></a><a href='#L1198'>1198</a>
-<a name='L1199'></a><a href='#L1199'>1199</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1199'></a><a href='#L1199'>1199</a>
+<a name='L1200'></a><a href='#L1200'>1200</a>
+<a name='L1201'></a><a href='#L1201'>1201</a>
+<a name='L1202'></a><a href='#L1202'>1202</a>
+<a name='L1203'></a><a href='#L1203'>1203</a>
+<a name='L1204'></a><a href='#L1204'>1204</a>
+<a name='L1205'></a><a href='#L1205'>1205</a>
+<a name='L1206'></a><a href='#L1206'>1206</a>
+<a name='L1207'></a><a href='#L1207'>1207</a>
+<a name='L1208'></a><a href='#L1208'>1208</a>
+<a name='L1209'></a><a href='#L1209'>1209</a>
+<a name='L1210'></a><a href='#L1210'>1210</a>
+<a name='L1211'></a><a href='#L1211'>1211</a>
+<a name='L1212'></a><a href='#L1212'>1212</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1271,6 +1284,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1946,6 +1965,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -2272,6 +2294,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -2465,7 +2491,13 @@
  *  No rate limits, no API key, instant responses.
  */
 &nbsp;
-import { fmt, fmtCr, totalCorpus, freqToMonthly } from "./finance";
+import {
+  fmt,
+  fmtCr,
+  totalCorpus,
+  freqToMonthly,
+  onetimeEffective,
+} from "./finance";
 &nbsp;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 &nbsp;
@@ -2571,7 +2603,7 @@ function <span class="fstat-no" title="function not covered" >personData(d</span
     recurringRules: d.recurringRules || [],
     onetimeExpenses: (d.expenses || [])
       .<span class="fstat-no" title="function not covered" >filter((e</span>) =&gt; <span class="cstat-no" title="statement not covered" >e.expenseType !== "monthly")</span>
-      .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; (b.amount || 0) - (a.amount || 0)),</span>
+      .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; onetimeEffective(b) - onetimeEffective(a))</span>,
   };
 }
 &nbsp;
@@ -3142,9 +3174,12 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
           ),
         );
 <span class="cstat-no" title="statement not covered" >        if (subExpenses.length &gt; 0) {</span>
-          const total = <span class="cstat-no" title="statement not covered" >subExpenses.<span class="fstat-no" title="function not covered" >reduce((s</span>, e) =&gt; <span class="cstat-no" title="statement not covered" >s + (e.amount || 0), 0</span>);</span>
+          const total = <span class="cstat-no" title="statement not covered" >subExpenses.<span class="fstat-no" title="function not covered" >reduce(</span></span>
+            (s, e) =&gt; <span class="cstat-no" title="statement not covered" >s + onetimeEffective(e),</span>
+            0,
+          );
           const lines = <span class="cstat-no" title="statement not covered" >subExpenses</span>
-            .<span class="fstat-no" title="function not covered" >map((e</span>) =&gt; <span class="cstat-no" title="statement not covered" >`• ${e.name}: ${fmt(e.amount)}/mo`)</span>
+            .<span class="fstat-no" title="function not covered" >map((e</span>) =&gt; <span class="cstat-no" title="statement not covered" >`• ${e.name}: ${fmt(onetimeEffective(e))}/mo`)</span>
             .join("\n");
 <span class="cstat-no" title="statement not covered" >          insights.push({</span>
             emoji: "📺",
@@ -3204,10 +3239,10 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
                 : e.expenseType === "trip"
                   ? " (trip)"
                   : " (one-time)";
-<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(e.amount)}${freq}`;</span>
+<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;</span>
           })
           .join("\n");
-        const total = <span class="cstat-no" title="statement not covered" >matches.<span class="fstat-no" title="function not covered" >reduce((s</span>, e) =&gt; <span class="cstat-no" title="statement not covered" >s + (e.amount || 0), 0</span>);</span>
+        const total = <span class="cstat-no" title="statement not covered" >matches.<span class="fstat-no" title="function not covered" >reduce((s</span>, e) =&gt; <span class="cstat-no" title="statement not covered" >s + onetimeEffective(e),</span> 0);</span>
 <span class="cstat-no" title="statement not covered" >        insights.push({</span>
           emoji: "🔍",
           title: "Expense Lookup",
@@ -3216,7 +3251,7 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
       } else {
         // Show top expenses as fallback
         const topExp = <span class="cstat-no" title="statement not covered" >[...(p?.expenses_ || [])]</span>
-          .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; (b.amount || 0) - (a.amount || 0))</span>
+          .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; onetimeEffective(b) - onetimeEffective(a))</span>
           .slice(0, 8);
         const lines = <span class="cstat-no" title="statement not covered" >topExp</span>
           .<span class="fstat-no" title="function not covered" >map((e</span>) =&gt; {
@@ -3226,7 +3261,7 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
                 : e.expenseType === "trip"
                   ? " (trip)"
                   : " (one-time)";
-<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(e.amount)}${freq}`;</span>
+<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;</span>
           })
           .join("\n");
 <span class="cstat-no" title="statement not covered" >        insights.push({</span>
@@ -3390,7 +3425,7 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
           e.subCategory ||
           "Uncategorized"
         ).toLowerCase();
-<span class="cstat-no" title="statement not covered" >        byCategory[cat] = (byCategory[cat] || 0) + (e.amount || 0);</span>
+<span class="cstat-no" title="statement not covered" >        byCategory[cat] = (byCategory[cat] || 0) + onetimeEffective(e);</span>
       }
       const cats = <span class="cstat-no" title="statement not covered" >Object.keys(byCategory);</span>
       const matchedCat = <span class="cstat-no" title="statement not covered" >cats.<span class="fstat-no" title="function not covered" >find((c</span>) =&gt; <span class="cstat-no" title="statement not covered" >msgLower.includes(c))</span>;</span>
@@ -3400,10 +3435,10 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
             (e.category || e.subCategory || "").toLowerCase() === matchedCat,
         );
         const lines = <span class="cstat-no" title="statement not covered" >catExpenses</span>
-          .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; (b.amount || 0) - (a.amount || 0))</span>
+          .<span class="fstat-no" title="function not covered" >sort((a</span>, <span class="cstat-no" title="statement not covered" >b) =&gt; onetimeEffective(b) - onetimeEffective(a))</span>
           .<span class="fstat-no" title="function not covered" >map((e</span>) =&gt; {
             const freq = <span class="cstat-no" title="statement not covered" >e.expenseType === "monthly" ? "/mo" : " (one-time)";</span>
-<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(e.amount)}${freq}`;</span>
+<span class="cstat-no" title="statement not covered" >            return `• ${e.name}: ${fmt(onetimeEffective(e))}${freq}`;</span>
           })
           .join("\n");
 <span class="cstat-no" title="statement not covered" >        insights.push({</span>
@@ -3469,7 +3504,11 @@ function <span class="fstat-no" title="function not covered" >handleIntent(</spa
             : e.expenseType === "trip"
               ? " (trip)"
               : " (one-time)";
-<span class="cstat-no" title="statement not covered" >        addResult("Expense", e.name || "", `${fmt(e.amount)}${freq}`);</span>
+<span class="cstat-no" title="statement not covered" >        addResult(</span>
+          "Expense",
+          e.name || "",
+          `${fmt(onetimeEffective(e))}${freq}`,
+        );
       }
 <span class="cstat-no" title="statement not covered" >      for (const i of p?.investments || []) {</span>
 <span class="cstat-no" title="statement not covered" >        addResult(</span>
@@ -3664,7 +3703,7 @@ export function <span class="fstat-no" title="function not covered" >healthRepor
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-26T21:08:31.876Z
+                at 2026-04-11T16:57:29.180Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
