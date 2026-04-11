@@ -288,6 +288,86 @@ function HealthRing({ score }) {
   );
 }
 
+// ── Financial Health Score: 5-pillar model ────────────────────────────────
+function calcHealthScore({
+  savingsRate,
+  dti,
+  emergencyMonths,
+  hasInvestments,
+  insAdequate,
+}) {
+  const pillars = [
+    {
+      key: "savings",
+      label: "Savings Rate",
+      emoji: "💰",
+      maxPts: 25,
+      pts:
+        savingsRate >= 25
+          ? 25
+          : savingsRate >= 20
+            ? 22
+            : Math.round((savingsRate / 20) * 20),
+      detail:
+        savingsRate >= 20
+          ? `${savingsRate}% — on target`
+          : `${savingsRate}% — target 20%+`,
+    },
+    {
+      key: "debt",
+      label: "Debt Load",
+      emoji: "📉",
+      maxPts: 25,
+      pts: dti < 0.2 ? 25 : dti < 0.3 ? 20 : dti < 0.4 ? 12 : dti < 0.5 ? 5 : 0,
+      detail: `${Math.round(dti * 100)}% of income on EMIs — ${dti < 0.3 ? "healthy" : dti < 0.4 ? "manageable" : "high"}`,
+    },
+    {
+      key: "emergency",
+      label: "Emergency Fund",
+      emoji: "🛡️",
+      maxPts: 20,
+      pts:
+        emergencyMonths >= 6
+          ? 20
+          : Math.round((Math.min(emergencyMonths, 6) / 6) * 20),
+      detail: `${emergencyMonths.toFixed(1)} months coverage — ${emergencyMonths >= 6 ? "excellent" : emergencyMonths >= 3 ? "adequate" : "build this up"}`,
+    },
+    {
+      key: "investing",
+      label: "Investing Regularly",
+      emoji: "📈",
+      maxPts: 20,
+      pts: hasInvestments ? 20 : 0,
+      detail: hasInvestments
+        ? "Monthly SIPs/investments active"
+        : "No investments set up yet",
+    },
+    {
+      key: "protection",
+      label: "Life Insurance",
+      emoji: "🔒",
+      maxPts: 10,
+      pts: insAdequate ? 10 : 0,
+      detail: insAdequate
+        ? "Life cover is adequate"
+        : "cover gap — consider a term plan",
+    },
+  ];
+  const score = Math.min(
+    100,
+    pillars.reduce((s, p) => s + p.pts, 0),
+  );
+  const label =
+    score >= 80
+      ? "Excellent"
+      : score >= 65
+        ? "Good"
+        : score >= 45
+          ? "Needs Work"
+          : "At Risk";
+  return { score, label, pillars };
+}
+
 // ── Monthly Cash Flow aggregation ──
 const MONTH_NAMES = [
   "Jan",
@@ -1371,24 +1451,39 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     refresh: refreshMarket,
   } = useMarketData(allInv);
 
-  const healthScore = (stats) =>
-    Math.min(
-      100,
-      Math.round(
-        (stats.savingsRate >= 20 ? 35 : (stats.savingsRate / 20) * 35) +
-          (stats.debts / Math.max(1, stats.income) < 0.3 ? 25 : 10) +
-          20 +
-          20,
-      ),
-    );
+  // ── Health score inputs ────────────────────────────────────────────────
+  const hLiquidCash =
+    (abhav?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0) +
+    (aanya?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0);
+  const hEmergencyMonths = hExpenses > 0 ? hLiquidCash / hExpenses : 0;
+  const hInsAdequacy = insuranceAdequacy(
+    [...(abhav?.insurances || []), ...(aanya?.insurances || [])],
+    hIncome * 12,
+  );
 
-  const aScore = healthScore(a);
-  const bScore = healthScore(b);
-  const hScore = healthScore({
+  const hHealthData = calcHealthScore({
     savingsRate: hSavingsRate,
-    debts: hDebts,
-    income: hIncome,
+    dti: hIncome > 0 ? hDebts / hIncome : 0,
+    emergencyMonths: hEmergencyMonths,
+    hasInvestments: hInvest > 0,
+    insAdequate: hInsAdequacy.adequate,
   });
+  const hScore = hHealthData.score;
+
+  const aScore = calcHealthScore({
+    savingsRate: a.savingsRate,
+    dti: a.income > 0 ? a.debts / a.income : 0,
+    emergencyMonths: hEmergencyMonths,
+    hasInvestments: a.investments > 0,
+    insAdequate: hInsAdequacy.adequate,
+  }).score;
+  const bScore = calcHealthScore({
+    savingsRate: b.savingsRate,
+    dti: b.income > 0 ? b.debts / b.income : 0,
+    emergencyMonths: hEmergencyMonths,
+    hasInvestments: b.investments > 0,
+    insAdequate: hInsAdequacy.adequate,
+  }).score;
 
   // Comparison bar data
   const compareData = [
@@ -1468,6 +1563,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     }
     return "pulse";
   });
+  const [extraSIP, setExtraSIP] = useState(0); // for retirement scenario slider
   const switchTab = (id) => {
     setDashTab(id);
     localStorage.setItem(DASH_TAB_LS, id);
@@ -1791,6 +1887,365 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         </div>
       </div>
     ),
+
+    healthcard: (() => {
+      const { score, label, pillars } = hHealthData;
+      const ringColor =
+        score >= 80
+          ? "var(--green)"
+          : score >= 65
+            ? "var(--gold)"
+            : score >= 45
+              ? "#f97316"
+              : "var(--red)";
+      return (
+        <div
+          className="card section-gap"
+          style={{ border: `1px solid ${ringColor}22` }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 16,
+            }}
+          >
+            <Activity size={18} color={ringColor} />
+            <span
+              className="card-title"
+              style={{ margin: 0, color: ringColor }}
+            >
+              Financial Health Score
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 24,
+              alignItems: "flex-start",
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Ring */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+                flexShrink: 0,
+              }}
+            >
+              <HealthRing score={score} />
+              <div style={{ fontSize: 12, fontWeight: 600, color: ringColor }}>
+                {label}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                out of 100
+              </div>
+            </div>
+            {/* Pillars */}
+            <div
+              style={{
+                flex: 1,
+                minWidth: 220,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              {pillars.map((p) => {
+                const pct = Math.round((p.pts / p.maxPts) * 100);
+                const pColor =
+                  p.pts === p.maxPts
+                    ? "var(--green)"
+                    : p.pts > 0
+                      ? "var(--gold)"
+                      : "var(--red)";
+                return (
+                  <div key={p.key}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <span>{p.emoji}</span>
+                        <span style={{ color: "var(--text-secondary)" }}>
+                          {p.label}
+                        </span>
+                      </span>
+                      <span
+                        style={{ fontSize: 11, color: pColor, fontWeight: 600 }}
+                      >
+                        {p.pts}/{p.maxPts} pts
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        position: "relative",
+                        height: 5,
+                        borderRadius: 3,
+                        background: "var(--bg-card2)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: pct + "%",
+                          height: "100%",
+                          borderRadius: 3,
+                          background: pColor,
+                          transition: "width 0.5s",
+                        }}
+                      />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {p.detail}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {score < 100 && (
+            <div
+              style={{
+                marginTop: 14,
+                fontSize: 12,
+                color: "var(--text-muted)",
+                background: "var(--bg-card2)",
+                borderRadius: 6,
+                padding: "8px 12px",
+              }}
+            >
+              💡 Focus on{" "}
+              <span style={{ color: "var(--gold)" }}>
+                {pillars
+                  .filter((p) => p.pts < p.maxPts)
+                  .map((p) => p.label)
+                  .slice(0, 2)
+                  .join(" and ")}
+              </span>{" "}
+              to improve your score
+            </div>
+          )}
+        </div>
+      );
+    })(),
+
+    moneyplan: (() => {
+      const allInvestments = [
+        ...(abhav?.investments || []),
+        ...(aanya?.investments || []),
+      ];
+      const allDebts = [...(abhav?.debts || []), ...(aanya?.debts || [])];
+      const allIns = [
+        ...(abhav?.insurances || []),
+        ...(aanya?.insurances || []),
+      ];
+      const corpus = currentCorpus(allInvestments);
+      const allInv80c = allInvestments;
+      const unused80c = unused80C(allInv80c, allIns);
+      const retireAge = shared?.profile?.retireAge || 60;
+      const currentAge = shared?.profile?.currentAge || 30;
+      const yearsToRetire = Math.max(1, retireAge - currentAge);
+      const corpusNeeded = retirementCorpus(hExpenses, yearsToRetire);
+      const corpusAtRetire = totalCorpus(corpus, hInvest, 12, yearsToRetire);
+
+      // Rank opportunities by annual ₹ impact
+      const opportunities = [];
+
+      // 1. Idle cash > emergency need → move to liquid MF
+      const emergencyNeed = hExpenses * 6;
+      const excessCash = Math.max(0, hLiquidCash - emergencyNeed);
+      if (excessCash > 25000) {
+        const annualGain = Math.round(excessCash * 0.035); // 3.5% extra vs savings
+        opportunities.push({
+          impact: annualGain,
+          emoji: "🏦",
+          title: "Move idle cash to Liquid MF",
+          desc: `${fmt(excessCash)} is sitting in savings earning ~3.5%. Move to a Liquid Fund (6–7%) — earn ${fmt(annualGain)} extra/year. Over 20 years that idle cash grows to ${fmtCr(Math.round(totalCorpus(excessCash, 0, 7, 20)))}.`,
+          tag: "Easy win",
+          tagColor: "var(--green)",
+        });
+      }
+
+      // 2. 80C tax saving
+      if (unused80c > 10000) {
+        const taxSaved = Math.round(unused80c * 0.3);
+        opportunities.push({
+          impact: taxSaved,
+          emoji: "💸",
+          title: "Claim full 80C benefit",
+          desc: `You have ${fmt(unused80c)} of unused 80C allowance. Invest in ELSS or top up PPF to save ${fmt(taxSaved)} in tax this year — that's money you get to keep.`,
+          tag: "This year",
+          tagColor: "var(--gold)",
+        });
+      }
+
+      // 3. SIP increase if savings rate < 20%
+      if (hSavingsRate < 20 && hIncome > 0) {
+        const targetSIP = Math.round(hIncome * 0.2) - hInvest;
+        if (targetSIP > 0) {
+          const yr20Boost = Math.round(totalCorpus(0, targetSIP, 12, 20));
+          opportunities.push({
+            impact: Math.round(yr20Boost / 240), // monthly equivalent for sorting
+            emoji: "📈",
+            title: `Increase SIP by ${fmt(targetSIP)}/mo`,
+            desc: `At ${hSavingsRate}% savings rate, adding ${fmt(targetSIP)}/mo brings you to 20%. That extra SIP compounds to ${fmtCr(yr20Boost)} in 20 years — a life-changing difference.`,
+            tag: "High impact",
+            tagColor: "var(--blue)",
+          });
+        }
+      }
+
+      // 4. Debt payoff saves interest
+      const highRateDebt = allDebts.filter((d) => d.rate >= 10);
+      if (highRateDebt.length > 0) {
+        const annualInterest = highRateDebt.reduce(
+          (s, d) => s + Math.round((d.outstanding * d.rate) / 100),
+          0,
+        );
+        opportunities.push({
+          impact: annualInterest,
+          emoji: "✂️",
+          title: "Prepay high-interest debt",
+          desc: `Your ${highRateDebt.map((d) => d.name).join(", ")} (avg ${(highRateDebt.reduce((s, d) => s + d.rate, 0) / highRateDebt.length).toFixed(1)}% interest) cost you ${fmt(annualInterest)}/year in interest. Every extra rupee paid = guaranteed ${highRateDebt[0]?.rate}% return.`,
+          tag: "Guaranteed return",
+          tagColor: "#f97316",
+        });
+      }
+
+      // 5. Retirement gap
+      const retireGap = corpusNeeded - corpusAtRetire;
+      if (retireGap > 0) {
+        const extraSIP = Math.round(
+          requiredSIP(retireGap, 12, yearsToRetire * 12),
+        );
+        opportunities.push({
+          impact: Math.round(retireGap / (yearsToRetire * 12)),
+          emoji: "🎯",
+          title: "Close retirement gap",
+          desc: `You need ${fmtCr(Math.round(corpusNeeded))} to retire at ${retireAge}. Currently on track for ${fmtCr(Math.round(corpusAtRetire))}. Adding ${fmt(extraSIP)}/mo SIP closes the gap.`,
+          tag: `${yearsToRetire} yrs away`,
+          tagColor: "var(--purple)",
+        });
+      }
+
+      // 6. No investments at all
+      if (hInvest === 0) {
+        opportunities.push({
+          impact: Math.round(totalCorpus(0, 5000, 12, 20)),
+          emoji: "🚀",
+          title: "Start your first SIP today",
+          desc: `Even ${fmt(5000)}/mo in a Nifty 50 index fund grows to ${fmtCr(Math.round(totalCorpus(0, 5000, 12, 20)))} in 20 years at 12% returns. The best time to start was yesterday — the second best is now.`,
+          tag: "Start here",
+          tagColor: "var(--gold)",
+        });
+      }
+
+      if (opportunities.length === 0) return null;
+      opportunities.sort((a, b) => b.impact - a.impact);
+
+      return (
+        <div className="card section-gap">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            <Sparkles size={18} color="var(--gold)" />
+            <span className="card-title" style={{ margin: 0 }}>
+              Your Money Growth Plan
+            </span>
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              marginBottom: 14,
+            }}
+          >
+            Ranked by financial impact — each one is specific to your numbers
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {opportunities.map((op, i) => (
+              <div
+                key={i}
+                style={{
+                  background: "var(--bg-card2)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "12px 14px",
+                  borderLeft: `3px solid ${op.tagColor}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <span style={{ fontSize: 18 }}>{op.emoji}</span>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>
+                      {op.title}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      background: op.tagColor + "22",
+                      color: op.tagColor,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {op.tag}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    lineHeight: 1.6,
+                    paddingLeft: 26,
+                  }}
+                >
+                  {op.desc}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    })(),
 
     wealthinsights: (() => {
       // ── Wealth Intelligence Calculations ──
@@ -3384,6 +3839,528 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     })(),
   };
 
+  // ── Savings Rate Trend ─────────────────────────────────────────────────────
+  const savingsRateTrendSection = (() => {
+    const nwHist = shared?.netWorthHistory || [];
+    let trendPoints = [];
+    if (nwHist.length >= 2) {
+      trendPoints = nwHist.slice(-8).map((s) => ({
+        label: s.label || `${s.month}/${String(s.year).slice(2)}`,
+        rate: s.savingsRate ?? hSavingsRate,
+      }));
+    }
+    if (trendPoints.length < 2) {
+      trendPoints = sparkData.map((d, i) => {
+        const m = sparkMonths[i];
+        const [y, mo] = m.split("-");
+        const label = `${MONTH_NAMES[parseInt(mo, 10) - 1]} ${y.slice(2)}`;
+        const rate =
+          d.income > 0
+            ? Math.round((Math.max(0, d.income - d.expenses) / d.income) * 100)
+            : 0;
+        return { label, rate };
+      });
+    }
+    if (trendPoints.length < 2) return null;
+    const avg = Math.round(
+      trendPoints.reduce((s, p) => s + p.rate, 0) / trendPoints.length,
+    );
+    const latest = trendPoints[trendPoints.length - 1].rate;
+    const trend = latest - trendPoints[0].rate;
+    return (
+      <div className="card section-gap">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 12,
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <div className="card-title" style={{ marginBottom: 0 }}>
+            📊 Savings Rate Trend
+          </div>
+          <div style={{ display: "flex", gap: 12, fontSize: 12 }}>
+            <span style={{ color: "var(--text-muted)" }}>
+              Avg: <strong style={{ color: "var(--gold)" }}>{avg}%</strong>
+            </span>
+            <span style={{ color: trend >= 0 ? "var(--green)" : "var(--red)" }}>
+              {trend >= 0 ? "▲" : "▼"} {Math.abs(trend)}% over period
+            </span>
+          </div>
+        </div>
+        <div style={{ height: 160 }}>
+          <Chart
+            categories={trendPoints.map((p) => p.label)}
+            series={[
+              {
+                name: "Savings Rate %",
+                type: "line",
+                data: trendPoints.map((p) => p.rate),
+                color: latest >= 20 ? "#4caf82" : "#c9a84c",
+                symbol: "circle",
+              },
+              {
+                name: "Target 20%",
+                type: "line",
+                data: trendPoints.map(() => 20),
+                color: "#5b9cf655",
+                lineStyle: { type: "dashed" },
+                symbol: "none",
+              },
+            ]}
+            fmt={(v) => `${v}%`}
+            grid={{ top: 12, right: 8 }}
+          />
+        </div>
+        <div className="tip" style={{ marginTop: 8 }}>
+          {latest >= 20
+            ? `✅ You're at ${latest}% savings rate — above the 20% target.`
+            : `💡 Current rate is ${latest}%. Reaching 20% would add ${fmt(Math.round(hIncome * 0.2 - hInvest))} more/mo to investments.`}
+        </div>
+      </div>
+    );
+  })();
+
+  // ── Fund Fee Drain Calculator ──────────────────────────────────────────────
+  const feeDrainSection = (() => {
+    const allInvestments = [
+      ...(abhav?.investments || []),
+      ...(aanya?.investments || []),
+    ];
+    const DEFAULT_ER = {
+      "Mutual Fund": 1.2,
+      "Index Fund": 0.15,
+      ELSS: 1.5,
+      ETF: 0.07,
+      SIP: 1.0,
+    };
+    const fundsWithFees = allInvestments
+      .map((inv) => {
+        const corp = inv.existingCorpus || 0;
+        const er =
+          inv.expenseRatio != null
+            ? Number(inv.expenseRatio)
+            : DEFAULT_ER[inv.type] || 0;
+        return {
+          ...inv,
+          er,
+          annualFee: Math.round((corp * er) / 100),
+          corpus: corp,
+        };
+      })
+      .filter((inv) => inv.corpus > 0);
+
+    if (fundsWithFees.length === 0) return null;
+
+    const totalCorpusAll = fundsWithFees.reduce((s, f) => s + f.corpus, 0);
+    const totalAnnualFee = fundsWithFees.reduce((s, f) => s + f.annualFee, 0);
+    const blendedER =
+      totalCorpusAll > 0
+        ? ((totalAnnualFee / totalCorpusAll) * 100).toFixed(2)
+        : 0;
+    const feeLostOver20yr = Math.round(
+      totalCorpus(0, totalAnnualFee / 12, 12, 20),
+    );
+
+    return (
+      <div className="card section-gap">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>💸</span>
+          <span className="card-title" style={{ margin: 0 }}>
+            Fund Fee Drain
+          </span>
+        </div>
+        <div className="grid-3 section-gap" style={{ marginBottom: 16 }}>
+          {[
+            {
+              label: "Annual fees paid",
+              value: fmt(totalAnnualFee),
+              color: "var(--red)",
+              sub: `${fundsWithFees.length} investments`,
+            },
+            {
+              label: "Blended expense ratio",
+              value: `${blendedER}%`,
+              color: Number(blendedER) > 1 ? "var(--red)" : "var(--gold)",
+              sub:
+                Number(blendedER) > 1
+                  ? "above average — review"
+                  : "acceptable range",
+            },
+            {
+              label: "20-yr opportunity cost",
+              value: fmtCr(feeLostOver20yr),
+              color: "var(--red)",
+              sub: "if fees were invested instead",
+            },
+          ].map((m) => (
+            <div
+              key={m.label}
+              style={{
+                background: "var(--bg-card2)",
+                borderRadius: "var(--radius)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  marginBottom: 4,
+                }}
+              >
+                {m.label}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: 22,
+                  color: m.color,
+                }}
+              >
+                {m.value}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {m.sub}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto auto auto",
+              gap: "6px 12px",
+              fontSize: 12,
+              alignItems: "center",
+              minWidth: 380,
+            }}
+          >
+            {["Fund", "Corpus", "Exp Ratio", "Annual Fee"].map((h) => (
+              <span
+                key={h}
+                style={{
+                  color: "var(--text-muted)",
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: ".05em",
+                  textAlign: h === "Fund" ? "left" : "right",
+                }}
+              >
+                {h}
+              </span>
+            ))}
+            {[...fundsWithFees]
+              .sort((a, b) => b.annualFee - a.annualFee)
+              .map((f) => [
+                <span
+                  key={`n-${f.id}`}
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={f.name}
+                >
+                  {f.name}
+                  {f.expenseRatio == null && (
+                    <span
+                      style={{
+                        color: "var(--text-muted)",
+                        fontSize: 10,
+                        marginLeft: 4,
+                      }}
+                    >
+                      *est
+                    </span>
+                  )}
+                </span>,
+                <span
+                  key={`c-${f.id}`}
+                  style={{ textAlign: "right", color: "var(--text-secondary)" }}
+                >
+                  {fmt(f.corpus)}
+                </span>,
+                <span
+                  key={`e-${f.id}`}
+                  style={{
+                    textAlign: "right",
+                    color: f.er > 1 ? "var(--red)" : "var(--green)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {f.er.toFixed(2)}%
+                </span>,
+                <span
+                  key={`f-${f.id}`}
+                  style={{
+                    textAlign: "right",
+                    color: "var(--red)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {fmt(f.annualFee)}
+                </span>,
+              ])}
+          </div>
+        </div>
+        <div className="tip" style={{ marginTop: 12 }}>
+          * Estimated from fund type where not entered.
+          {Number(blendedER) > 0.5 &&
+            ` 💡 Switching high-ER funds to index funds (0.1–0.2%) could save ${fmt(Math.round(totalAnnualFee * 0.8))}/year.`}
+        </div>
+      </div>
+    );
+  })();
+
+  // ── Retirement Scenario Planner ───────────────────────────────────────────
+  const retirementScenarioSection = (() => {
+    const allInvestments = [
+      ...(abhav?.investments || []),
+      ...(aanya?.investments || []),
+    ];
+    const corp = currentCorpus(allInvestments);
+    const retireAge = shared?.profile?.retireAge || 60;
+    const currentAge = shared?.profile?.currentAge || 30;
+    const yearsToRetire = Math.max(1, retireAge - currentAge);
+    const corpusNeeded = retirementCorpus(hExpenses, yearsToRetire);
+    const baseSIP = hInvest + extraSIP;
+
+    const calcRetireYears = (sip) => {
+      for (let y = 1; y <= 50; y++) {
+        if (totalCorpus(corp, sip, 12, y) >= corpusNeeded) return y;
+      }
+      return null;
+    };
+    const baseRetireYears = calcRetireYears(baseSIP);
+    const baseRetireAge = baseRetireYears ? currentAge + baseRetireYears : null;
+    const corpusAtTarget = Math.round(
+      totalCorpus(corp, baseSIP, 12, yearsToRetire),
+    );
+    const gapAtTarget = Math.round(corpusNeeded - corpusAtTarget);
+    const onTrack = gapAtTarget <= 0;
+
+    const scenarioYears = Math.min(yearsToRetire + 5, 35);
+    const scenarioLabels = [];
+    const scenarioBase = [];
+    const scenarioBoosted = [];
+    for (let y = 0; y <= scenarioYears; y += 2) {
+      scenarioLabels.push(String(currentAge + y));
+      scenarioBase.push(Math.round(totalCorpus(corp, hInvest, 12, y)));
+      if (extraSIP > 0) {
+        scenarioBoosted.push(Math.round(totalCorpus(corp, baseSIP, 12, y)));
+      }
+    }
+
+    const steps = [0, 2000, 5000, 10000, 15000, 20000, 30000, 50000];
+
+    return (
+      <div className="card section-gap">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🎯</span>
+          <span className="card-title" style={{ margin: 0 }}>
+            Retirement Scenario Planner
+          </span>
+        </div>
+        <div
+          style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}
+        >
+          Retire at {retireAge} · Current age {currentAge} · Need{" "}
+          {fmtCr(Math.round(corpusNeeded))}
+        </div>
+
+        {/* Slider */}
+        <div style={{ marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginBottom: 6,
+              fontSize: 13,
+            }}
+          >
+            <span style={{ color: "var(--text-secondary)" }}>
+              Extra SIP / month
+            </span>
+            <span style={{ fontWeight: 700, color: "var(--gold)" }}>
+              {extraSIP === 0 ? "Current SIPs only" : `+ ${fmt(extraSIP)}/mo`}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={50000}
+            step={500}
+            value={extraSIP}
+            onChange={(e) => setExtraSIP(Number(e.target.value))}
+            style={{ width: "100%", accentColor: "var(--gold)" }}
+          />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              color: "var(--text-muted)",
+              marginTop: 2,
+            }}
+          >
+            <span>₹0</span>
+            <span>₹50,000</span>
+          </div>
+        </div>
+
+        {/* Quick chips */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            marginBottom: 16,
+          }}
+        >
+          {steps.map((s) => (
+            <button
+              key={s}
+              onClick={() => setExtraSIP(s)}
+              style={{
+                fontSize: 11,
+                padding: "4px 10px",
+                borderRadius: 20,
+                background:
+                  extraSIP === s ? "var(--gold-dim)" : "var(--bg-card2)",
+                border: `1px solid ${extraSIP === s ? "var(--gold-border)" : "var(--border)"}`,
+                color: extraSIP === s ? "var(--gold)" : "var(--text-muted)",
+                cursor: "pointer",
+                fontWeight: extraSIP === s ? 600 : 400,
+              }}
+            >
+              {s === 0 ? "Current" : `+${fmt(s)}`}
+            </button>
+          ))}
+        </div>
+
+        {/* Result callout */}
+        <div
+          style={{
+            background: onTrack
+              ? "rgba(76,175,130,0.1)"
+              : extraSIP > 0
+                ? "rgba(201,168,76,0.1)"
+                : "rgba(239,83,80,0.08)",
+            border: `1px solid ${onTrack ? "rgba(76,175,130,0.3)" : extraSIP > 0 ? "var(--gold-border)" : "rgba(239,83,80,0.25)"}`,
+            borderRadius: "var(--radius)",
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontSize: 13,
+          }}
+        >
+          {onTrack ? (
+            <div style={{ fontWeight: 600, color: "var(--green)" }}>
+              ✅ On track! You'll have {fmtCr(corpusAtTarget)} by age{" "}
+              {retireAge} — {fmtCr(Math.abs(gapAtTarget))} above target.
+              {baseRetireAge && baseRetireAge < retireAge && (
+                <span>
+                  {" "}
+                  You could retire at <strong>{baseRetireAge}</strong>!
+                </span>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {extraSIP > 0 ? (
+                  <>
+                    +{fmt(extraSIP)}/mo → {fmtCr(corpusAtTarget)} by {retireAge}
+                    {gapAtTarget > 0 && (
+                      <span style={{ color: "var(--red)" }}>
+                        {" "}
+                        — {fmtCr(gapAtTarget)} short
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Current pace: {fmtCr(corpusAtTarget)} by {retireAge}
+                    <span style={{ color: "var(--red)" }}>
+                      {" "}
+                      — {fmtCr(gapAtTarget)} short
+                    </span>
+                  </>
+                )}
+              </div>
+              {baseRetireAge && (
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  You'll hit target at age{" "}
+                  <strong style={{ color: "var(--gold)" }}>
+                    {baseRetireAge}
+                  </strong>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Chart */}
+        <div style={{ height: 180 }}>
+          <Chart
+            categories={scenarioLabels}
+            series={[
+              {
+                name: "Current SIPs",
+                type: "line",
+                data: scenarioBase,
+                color: "#5b9cf6",
+                symbol: "circle",
+              },
+              ...(extraSIP > 0
+                ? [
+                    {
+                      name: `+${fmt(extraSIP)}/mo`,
+                      type: "line",
+                      data: scenarioBoosted,
+                      color: "#4caf82",
+                      symbol: "circle",
+                    },
+                  ]
+                : []),
+              {
+                name: "Target corpus",
+                type: "line",
+                data: scenarioLabels.map(() => Math.round(corpusNeeded)),
+                color: "#c9a84c44",
+                lineStyle: { type: "dashed" },
+                symbol: "none",
+              },
+            ]}
+            fmt={fmtCr}
+            grid={{ top: 8, right: 8 }}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+          X-axis = age · assumes 12% annual returns
+        </div>
+      </div>
+    );
+  })();
+
   return (
     <div>
       {/* ── Header ── */}
@@ -3586,6 +4563,11 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
         {dashTab === "wealth" && (
           <>
+            {sections.healthcard}
+            {sections.moneyplan}
+            {retirementScenarioSection}
+            {savingsRateTrendSection}
+            {feeDrainSection}
             {sections.wealthinsights}
             {sections.marketpulse}
             {sections.projection}

@@ -1,26 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { hashPin } from "../utils/hashPin";
 import { useSessionState } from "../hooks/useSessionState";
 import { fmt, nextId, EXPENSE_CATEGORIES, calcEMI } from "../utils/finance";
-import { Plus, Trash2, Search, Sparkles } from "lucide-react";
+import { Plus, Trash2, Search, Sparkles, Calendar } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
-import { useAuth } from "../context/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
 import RELEASE_NOTES from "../data/releaseNotes";
 import { APP_VERSION } from "../components/UpdateBanner";
-import {
-  isNotificationSupported,
-  isNotificationEnabled,
-  requestPermission,
-  setNotificationEnabled,
-} from "../utils/notifications";
-import {
-  subscribeToPush,
-  unsubscribeFromPush,
-  isPushSubscribed,
-} from "../utils/pushSubscription";
 import {
   isBiometricAvailable,
   isBiometricEnrolled,
@@ -163,6 +151,189 @@ export function Debts({ data, personName, personColor, updatePerson }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Paydown Timeline ──────────────────────────────────────────── */}
+      {debts.length > 0 && (
+        <div className="card section-gap">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 16,
+            }}
+          >
+            <Calendar size={15} color="var(--gold)" />
+            <span className="card-title" style={{ margin: 0 }}>
+              📅 Paydown Timeline
+            </span>
+          </div>
+
+          {/* Find the earliest end date to set the bar scale */}
+          {(() => {
+            const now = new Date();
+            const debtRows = [...debts]
+              .sort((a, b) => a.tenure - b.tenure)
+              .map((d) => {
+                const endDate = new Date(
+                  now.getFullYear(),
+                  now.getMonth() + d.tenure,
+                  1,
+                );
+                const totalInterest = Math.round(
+                  d.emi * d.tenure - d.outstanding,
+                );
+                const endLabel = endDate.toLocaleDateString("en-IN", {
+                  month: "short",
+                  year: "numeric",
+                });
+                return { ...d, endDate, endLabel, totalInterest };
+              });
+            const maxTenure = Math.max(...debtRows.map((d) => d.tenure), 1);
+            const totalInterestAll = debtRows.reduce(
+              (s, d) => s + Math.max(0, d.totalInterest),
+              0,
+            );
+
+            return (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                    marginBottom: 16,
+                  }}
+                >
+                  {debtRows.map((d, idx) => {
+                    const pct = Math.round((d.tenure / maxTenure) * 100);
+                    const barColors = [
+                      "var(--red)",
+                      "#f97316",
+                      "var(--gold)",
+                      "var(--green)",
+                    ];
+                    const color = barColors[idx % barColors.length];
+                    return (
+                      <div key={d.id}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: 6,
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontWeight: 500,
+                                fontSize: 13,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              {d.name}
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  background: color + "22",
+                                  color,
+                                }}
+                              >
+                                {d.rate}%
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                marginTop: 2,
+                              }}
+                            >
+                              Ends {d.endLabel} · {d.tenure} months left · Total
+                              interest:{" "}
+                              <span style={{ color: "var(--red)" }}>
+                                {fmt(Math.max(0, d.totalInterest))}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                fontSize: 13,
+                                color: "var(--red)",
+                              }}
+                            >
+                              {fmt(d.outstanding)}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                              }}
+                            >
+                              {fmt(d.emi)}/mo
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            height: 8,
+                            background: "var(--bg-card2)",
+                            borderRadius: 4,
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: pct + "%",
+                              height: "100%",
+                              background: color,
+                              borderRadius: 4,
+                              transition: "width 0.5s",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Total interest summary */}
+                <div
+                  style={{
+                    background: "var(--bg-card2)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "10px 14px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    Total interest you'll pay across all loans
+                  </span>
+                  <strong style={{ color: "var(--red)", fontSize: 15 }}>
+                    {fmt(totalInterestAll)}
+                  </strong>
+                </div>
+                <div className="tip" style={{ marginTop: 10 }}>
+                  💡 Even a single prepayment on the highest-rate loan above can
+                  save {fmt(Math.round(debtRows[0]?.totalInterest * 0.15 || 0))}{" "}
+                  in interest — use the Prepayment Calculator below.
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
       {showAdd ? (
@@ -2695,65 +2866,320 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   );
 }
 
-function NotificationToggle() {
-  const { user } = useAuth();
-  const [enabled, setEnabled] = useState(isNotificationEnabled());
-  const [pushActive, setPushActive] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [permission, setPermission] = useState(null);
+const REMINDER_FREQS = [
+  { value: "daily", label: "Daily", desc: "Every morning at 7am" },
+  { value: "weekly", label: "Weekly", desc: "Every Monday morning" },
+  {
+    value: "monthly",
+    label: "Monthly",
+    desc: "1st of each month · includes full snapshot",
+  },
+];
 
-  useEffect(() => {
-    isPushSubscribed().then(setPushActive);
-  }, []);
+function ReminderEmailSetting({ sharedData, updateShared }) {
+  const saved = sharedData?.reminderEmail || "";
+  const enabled = sharedData?.reminderEnabled !== false;
+  const frequency = sharedData?.reminderFrequency || "daily";
+  const [draft, setDraft] = useState(saved);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [sendStatus, setSendStatus] = useState("");
 
-  const toggle = async () => {
-    setBusy(true);
-    try {
-      if (enabled) {
-        setNotificationEnabled(false);
-        setEnabled(false);
-        if (user?.uid) await unsubscribeFromPush(user.uid);
-        setPushActive(false);
-      } else {
-        const result = await requestPermission();
-        setPermission(result);
-        if (result === "granted") {
-          setEnabled(true);
-          if (user?.uid) {
-            const sub = await subscribeToPush(user.uid);
-            setPushActive(!!sub);
-          }
-        }
-      }
-    } finally {
-      setBusy(false);
+  function handleSave() {
+    const trimmed = draft.trim();
+    updateShared("reminderEmail", trimmed);
+    setSaveStatus(trimmed ? "saved" : "cleared");
+    setTimeout(() => setSaveStatus(""), 2500);
+  }
+
+  function toggleEnabled() {
+    updateShared("reminderEnabled", !enabled);
+  }
+
+  const isDev = import.meta.env.DEV;
+
+  async function handleSendNow() {
+    if (isDev) {
+      setSendStatus("dev");
+      return;
     }
+    setSendStatus("sending");
+    try {
+      const res = await fetch("/api/send-reminders?test=1");
+      const json = await res.json().catch(() => ({}));
+      setSendStatus(res.ok && json.sent > 0 ? "sent" : "error");
+    } catch {
+      setSendStatus("error");
+    }
+    setTimeout(() => setSendStatus(""), 5000);
+  }
+
+  const isActive = !!saved && enabled;
+  const isDirty = draft.trim() !== saved;
+  const freqDesc =
+    REMINDER_FREQS.find((f) => f.value === frequency)?.desc || "";
+
+  const labelStyle = {
+    fontSize: 11,
+    color: "var(--text-muted)",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    marginBottom: 6,
   };
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button
-          className={enabled ? "btn-primary" : "btn-ghost"}
-          onClick={toggle}
-          disabled={busy}
-          style={{ fontSize: 13 }}
-        >
-          {busy ? "…" : enabled ? "🔔 Enabled" : "🔕 Enable Notifications"}
-        </button>
-        {permission === "denied" && (
-          <span style={{ fontSize: 12, color: "var(--red)" }}>
-            Blocked by browser. Allow notifications in your browser settings.
-          </span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        <span style={{ fontSize: 18 }}>📧</span>
+        <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>
+          Email Reminders
+        </span>
+        {saved && (
+          <button
+            onClick={toggleEnabled}
+            style={{
+              padding: "4px 14px",
+              borderRadius: 20,
+              border: "1px solid",
+              borderColor: isActive ? "var(--green)" : "var(--border)",
+              background: isActive ? "rgba(76,175,130,0.1)" : "transparent",
+              color: isActive ? "var(--green)" : "var(--text-muted)",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            {isActive ? "● ON" : "○ OFF"}
+          </button>
         )}
       </div>
-      {enabled && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
-          {pushActive
-            ? "✓ Background push active — you'll get reminders even when the app is closed."
-            : "⚡ Local notifications active — reminders fire when you open the app."}
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={labelStyle}>Send to</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="email"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && isDirty && handleSave()}
+            placeholder="your@email.com"
+            style={{
+              flex: 1,
+              background: "var(--card-bg, #18181c)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontSize: 13,
+              color: "var(--text-primary)",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={handleSave}
+            disabled={!isDirty}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: isDirty ? "var(--gold, #c9a84c)" : "var(--border)",
+              color: isDirty ? "#0c0c0f" : "var(--text-muted)",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: isDirty ? "pointer" : "default",
+              transition: "all 0.2s",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {saveStatus === "saved"
+              ? "Saved ✓"
+              : saveStatus === "cleared"
+                ? "Cleared"
+                : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {saved && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={labelStyle}>Frequency</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {REMINDER_FREQS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => updateShared("reminderFrequency", f.value)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  border: "1px solid",
+                  borderColor:
+                    frequency === f.value
+                      ? "var(--gold, #c9a84c)"
+                      : "var(--border)",
+                  background:
+                    frequency === f.value
+                      ? "rgba(201,168,76,0.1)"
+                      : "transparent",
+                  color:
+                    frequency === f.value
+                      ? "var(--gold, #c9a84c)"
+                      : "var(--text-secondary)",
+                  fontWeight: frequency === f.value ? 600 : 400,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div
+            style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 5 }}
+          >
+            {freqDesc}
+          </div>
         </div>
       )}
+
+      {saved && (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "rgba(150,150,150,0.04)",
+            border: "1px solid var(--border)",
+            marginBottom: 14,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            lineHeight: 1.9,
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 11,
+              color: "var(--text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 4,
+            }}
+          >
+            What&apos;s included in each email
+          </div>
+          · Insurance renewals due within 7 days
+          <br />
+          · Goal deadlines approaching in 14 days
+          <br />· Budget categories over spending limit
+          {frequency === "monthly" && (
+            <>
+              <br />· Full financial snapshot — savings, investments &amp; net
+              worth
+            </>
+          )}
+        </div>
+      )}
+
+      {saved && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={handleSendNow}
+              disabled={sendStatus === "sending"}
+              style={{
+                padding: "7px 16px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color:
+                  sendStatus === "sent"
+                    ? "var(--green)"
+                    : sendStatus === "error"
+                      ? "var(--red, #e05b5b)"
+                      : sendStatus === "dev"
+                        ? "var(--gold, #c9a84c)"
+                        : "var(--text-secondary)",
+                fontWeight: 500,
+                fontSize: 12,
+                cursor: sendStatus === "sending" ? "default" : "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              {sendStatus === "sending"
+                ? "Sending…"
+                : sendStatus === "sent"
+                  ? "✓ Email sent!"
+                  : sendStatus === "error"
+                    ? "✕ Failed"
+                    : "Send Now"}
+            </button>
+            {!sendStatus && (
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Sends immediately to {saved}
+              </span>
+            )}
+          </div>
+          {sendStatus === "dev" && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(201,168,76,0.07)",
+                border: "1px solid rgba(201,168,76,0.2)",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                lineHeight: 1.7,
+              }}
+            >
+              <strong style={{ color: "var(--gold, #c9a84c)" }}>
+                Local dev detected
+              </strong>{" "}
+              — the API endpoint only runs on Vercel.
+              <br />
+              To test instantly, run in your terminal:
+              <br />
+              <code
+                style={{
+                  display: "inline-block",
+                  marginTop: 6,
+                  padding: "4px 10px",
+                  borderRadius: 5,
+                  background: "rgba(0,0,0,0.3)",
+                  color: "#eeeae4",
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  userSelect: "all",
+                }}
+              >
+                node scripts/test-email.js
+              </code>
+            </div>
+          )}
+          {sendStatus === "error" && (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 11,
+                color: "var(--red, #e05b5b)",
+              }}
+            >
+              Check Vercel → Functions → send-reminders logs for details
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-muted)" }}>
+        Powered by Resend · 3,000 emails/month free
+      </div>
     </div>
   );
 }
@@ -3340,21 +3766,13 @@ export function Settings({
       </div>
 
       {/* Notifications */}
-      {isNotificationSupported() && (
-        <div className="card section-gap">
-          <div className="card-title">Notifications</div>
-          <div
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              marginBottom: 12,
-            }}
-          >
-            Get reminded about insurance renewals and goal deadlines.
-          </div>
-          <NotificationToggle />
-        </div>
-      )}
+      <div className="card section-gap">
+        <div className="card-title">Notifications</div>
+        <ReminderEmailSetting
+          sharedData={sharedData}
+          updateShared={updateShared}
+        />
+      </div>
 
       {/* PIN Lock Setup */}
       <PinSetup sharedData={sharedData} updateShared={updateShared} />

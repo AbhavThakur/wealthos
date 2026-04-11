@@ -56,6 +56,7 @@ const NAV_GROUPS = [
     items: [
       { id: "alerts", icon: Bell, label: "Alerts" },
       { id: "tax", icon: Calculator, label: "Tax Planner" },
+      { id: "advisor", icon: MessageSquare, label: "AI Advisor" },
     ],
   },
 ];
@@ -76,6 +77,7 @@ const ALL_NAV_ITEMS = {
   subscriptions: { icon: RefreshCw, label: "Subscriptions" },
   alerts: { icon: Bell, label: "Alerts" },
   tax: { icon: Calculator, label: "Tax Planner" },
+  advisor: { icon: MessageSquare, label: "AI" },
   settings: { icon: Settings, label: "Settings" },
 };
 

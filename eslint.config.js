@@ -33,4 +33,11 @@ export default defineConfig([
       ],
     },
   },
+  // Node.js environment for server-side scripts and API routes
+  {
+    files: ["scripts/**/*.js", "api/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ]);

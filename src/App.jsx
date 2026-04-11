@@ -78,6 +78,7 @@ const HouseholdInvestments = lazy(() =>
 );
 const Goals = lazy(() => import("./pages/Goals"));
 const NetWorth = lazy(() => import("./pages/NetWorth"));
+const AIAdvisorPage = lazy(() => import("./pages/AIAdvisorPage"));
 const BudgetAlerts = lazy(() =>
   import("./pages/Recurring").then((m) => ({ default: m.BudgetAlerts })),
 );
@@ -124,6 +125,7 @@ const PAGE_TITLES = {
   investments: "Investments",
   goals: "Goals",
   networth: "Net Worth",
+  advisor: "AI Advisor",
   debts: "Debts & EMIs",
   cashflow: "Cash Flow",
   insurance: "Insurance",
@@ -548,6 +550,15 @@ function AppInner() {
             isAdmin={isAdmin}
           />
         );
+      case "advisor":
+        return (
+          <AIAdvisorPage
+            abhav={abhav}
+            aanya={aanya}
+            shared={shared}
+            profile={profile}
+          />
+        );
       case "feedback":
         return <FeedbackAdmin />;
       default:
@@ -716,12 +727,7 @@ function AppInner() {
           </div>
         </main>
       </div>
-      <AIAdvisor
-        abhav={abhav}
-        aanya={aanya}
-        shared={shared}
-        profile={profile}
-      />
+      <AIAdvisor setPage={setPage} />
       <QuickAdd
         setPage={setPage}
         setProfile={setProfile}
