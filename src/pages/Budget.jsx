@@ -4765,14 +4765,16 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
         }
       } else {
         const cat = e.category;
+        const amt =
+          e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
         if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
-        acc[cat].total += e.amount;
-        acc[cat][key] = (acc[cat][key] || 0) + e.amount;
+        acc[cat].total += amt;
+        acc[cat][key] = (acc[cat][key] || 0) + amt;
         const sub = e.subCategory || "";
         if (!acc[cat].subs[sub])
           acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
-        acc[cat].subs[sub].total += e.amount;
-        acc[cat].subs[sub][key] = (acc[cat].subs[sub][key] || 0) + e.amount;
+        acc[cat].subs[sub].total += amt;
+        acc[cat].subs[sub][key] = (acc[cat].subs[sub][key] || 0) + amt;
       }
       return acc;
     }, {});
@@ -4832,9 +4834,9 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
   const _anCats = Object.fromEntries(
     Object.entries(anGrouped).map(([c, v]) => [c, v.total]),
   );
-  const allCats = Object.keys(grouped).sort(
-    (a, b) => grouped[b].total - grouped[a].total,
-  );
+  const allCats = Object.keys(grouped)
+    .filter((cat) => grouped[cat].total > 0)
+    .sort((a, b) => grouped[b].total - grouped[a].total);
   // Combined flat map for BudgetRuleSection (includes shared trips)
   const hhExpByCategory = Object.fromEntries(
     Object.entries(grouped).map(([c, v]) => [c, v.total]),
@@ -4998,7 +5000,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   >
                     🤝 Shared Trips
                   </div>
-                  {sharedTrips.map((t) => (
+                  {filteredSharedTrips.map((t) => (
                     <div
                       key={t.id}
                       style={{
@@ -5085,7 +5087,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
         {allCats.map((cat) => {
           const { total, abhav: av, aanya: anv, subs } = grouped[cat];
           const subEntries = Object.entries(subs)
-            .filter(([k]) => k !== "")
+            .filter(([k, sv]) => k !== "" && sv.total > 0)
             .sort((a, b) => b[1].total - a[1].total);
           return (
             <div key={cat} style={{ marginBottom: 14 }}>
