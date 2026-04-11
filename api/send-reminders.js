@@ -42,8 +42,8 @@ function buildReminders(data) {
   const now = new Date();
   const reminders = [];
 
-  // Check both persons' insurance renewals
-  for (const personKey of ["person1", "person2"]) {
+  // Check all persons' insurance renewals (abhav/aanya are the real Firestore keys)
+  for (const personKey of ["abhav", "aanya", "person1", "person2"]) {
     const person = data[personKey];
     if (!person) continue;
     for (const ins of person.insurances || []) {
@@ -107,7 +107,75 @@ function buildReminders(data) {
     }
   }
 
-  return reminders.slice(0, 10);
+  // Upcoming recurring payments due in the next 3 days (SIPs, EMIs, subscriptions)
+  const upcomingDays = 3;
+  const todayDate = now.getDate();
+  const daysInMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+  ).getDate();
+  const seenUpcoming = new Set();
+  for (const personKey of ["abhav", "aanya", "person1", "person2"]) {
+    const person = data[personKey];
+    if (!person) continue;
+    // SIP investments
+    for (const inv of person.investments || []) {
+      if (inv.type === "FD" || inv.frequency === "onetime" || inv.paused)
+        continue;
+      const day = inv.deductionDate || 15;
+      const diff =
+        day >= todayDate ? day - todayDate : daysInMonth - todayDate + day;
+      if (diff > 0 && diff <= upcomingDays) {
+        const key = `sip-${inv.id || inv.name}`;
+        if (!seenUpcoming.has(key)) {
+          seenUpcoming.add(key);
+          reminders.push({
+            title: `SIP due in ${diff} day${diff !== 1 ? "s" : ""}`,
+            body: `${inv.name} — ₹${Math.round(Math.abs(inv.amount)).toLocaleString()} on the ${day}${["st", "nd", "rd"][(day % 10) - 1] || "th"}.`,
+            tag: `sip-${inv.id}`,
+          });
+        }
+      }
+    }
+    // Debt EMIs
+    for (const debt of person.debts || []) {
+      const day = debt.emiDate || 5;
+      const diff =
+        day >= todayDate ? day - todayDate : daysInMonth - todayDate + day;
+      if (diff > 0 && diff <= upcomingDays) {
+        const key = `emi-${debt.id || debt.name}`;
+        if (!seenUpcoming.has(key)) {
+          seenUpcoming.add(key);
+          reminders.push({
+            title: `EMI due in ${diff} day${diff !== 1 ? "s" : ""}`,
+            body: `${debt.name} — ₹${Math.round(debt.emi || 0).toLocaleString()} on the ${day}${["st", "nd", "rd"][(day % 10) - 1] || "th"}.`,
+            tag: `emi-${debt.id}`,
+          });
+        }
+      }
+    }
+    // Subscriptions
+    for (const sub of person.subscriptions || []) {
+      if (sub.active === false || sub.frequency === "onetime") continue;
+      const day = sub.startDate ? parseInt(sub.startDate.slice(8, 10), 10) : 1;
+      const diff =
+        day >= todayDate ? day - todayDate : daysInMonth - todayDate + day;
+      if (diff > 0 && diff <= upcomingDays) {
+        const key = `sub-${sub.id || sub.name}`;
+        if (!seenUpcoming.has(key)) {
+          seenUpcoming.add(key);
+          reminders.push({
+            title: `Subscription due in ${diff} day${diff !== 1 ? "s" : ""}`,
+            body: `${sub.name} — ₹${Math.round(sub.amount || 0).toLocaleString()}.`,
+            tag: `sub-${sub.id}`,
+          });
+        }
+      }
+    }
+  }
+
+  return reminders.slice(0, 12);
 }
 
 // ── Expense summary for the current period ────────────────────────────────
@@ -274,6 +342,88 @@ function buildSnapshot(data) {
   return { savings, investments, netWorth, fmtINR };
 }
 
+// ── Plain-text email body (required for deliverability — missing text = spam) ──
+function buildPlainText(
+  reminders,
+  householdName,
+  { expenseSummary, includeSnapshot, data } = {},
+) {
+  const fmtINR =
+    expenseSummary?.fmtINR ||
+    ((n) => `Rs.${Math.round(n).toLocaleString("en-IN")}`);
+
+  const lines = [];
+  const line = (s = "") => lines.push(s);
+
+  line(`WealthOS — ${householdName || "Your Household"}`);
+  line(
+    `Sent: ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`,
+  );
+  line("━".repeat(48));
+
+  // Reminders
+  if (reminders.length > 0) {
+    line();
+    line("REMINDERS");
+    for (const r of reminders) {
+      line(`• ${r.title}`);
+      line(`  ${r.body}`);
+    }
+  } else {
+    line();
+    line("No active reminders — all clear!");
+  }
+
+  // Spending
+  if (expenseSummary && expenseSummary.totalExpenses > 0) {
+    line();
+    line("━".repeat(48));
+    line(`SPENDING — ${expenseSummary.periodLabel}`);
+    line();
+    for (const [cat, amt] of expenseSummary.topCats) {
+      line(`  ${cat.padEnd(22)} ${fmtINR(amt)}`);
+    }
+    line(
+      `  ${"Total Spent".padEnd(22)} ${fmtINR(expenseSummary.totalExpenses)}`,
+    );
+    if (expenseSummary.totalIncome > 0)
+      line(`  ${"Income".padEnd(22)} ${fmtINR(expenseSummary.totalIncome)}`);
+    if (expenseSummary.totalInvestments > 0)
+      line(
+        `  ${"Invested".padEnd(22)} ${fmtINR(expenseSummary.totalInvestments)}`,
+      );
+    if (expenseSummary.savingsRate !== null)
+      line(`  ${"Savings Rate".padEnd(22)} ${expenseSummary.savingsRate}%`);
+    if (expenseSummary.personSummary?.length > 1) {
+      line();
+      line("Per Person:");
+      for (const p of expenseSummary.personSummary) {
+        const earned = p.income > 0 ? ` | Earned: ${fmtINR(p.income)}` : "";
+        line(`  ${p.name}: Spent ${fmtINR(p.expenses)}${earned}`);
+      }
+    }
+  }
+
+  // Net worth snapshot
+  if (includeSnapshot && data) {
+    const s = buildSnapshot(data);
+    if (s) {
+      line();
+      line("━".repeat(48));
+      line("NET WORTH SNAPSHOT");
+      line(`  ${"Liquid Savings".padEnd(22)} ${s.fmtINR(s.savings)}`);
+      line(`  ${"Investments".padEnd(22)} ${s.fmtINR(s.investments)}`);
+      line(`  ${"Net Worth".padEnd(22)} ${s.fmtINR(s.netWorth)}`);
+    }
+  }
+
+  line();
+  line("━".repeat(48));
+  line("Sent by WealthOS. Open the app to take action.");
+
+  return lines.join("\n");
+}
+
 // ── Build HTML email body ──────────────────────────────────────────────────
 function buildEmailHtml(
   reminders,
@@ -412,6 +562,14 @@ function buildEmailHtml(
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#0c0c0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <!-- Preheader: visible as inbox preview text, hidden in email body -->
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${
+    expenseSummary && expenseSummary.totalExpenses > 0
+      ? `${expenseSummary.fmtINR(expenseSummary.totalExpenses)} spent${expenseSummary.savingsRate !== null ? ` · Savings rate ${expenseSummary.savingsRate}%` : ""} — ${expenseSummary.periodLabel}`
+      : reminders.length > 0
+        ? `${reminders.length} reminder${reminders.length !== 1 ? "s" : ""} — ${reminders.map((r) => r.title).join(", ")}`
+        : "All clear! No active reminders."
+  }&zwnj;&nbsp;&#847; &zwnj;&nbsp;&#847; &zwnj;&nbsp;&#847; &zwnj;&nbsp;&#847; &zwnj;&nbsp;&#847; &zwnj;&nbsp;&#847;</div>
   <div style="max-width:520px;margin:32px auto;background:#18181c;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a;">
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#1a1a1f,#18181c);padding:24px 28px;border-bottom:1px solid #2a2a2a;">
@@ -562,17 +720,31 @@ export default async function handler(req, res) {
               : `WealthOS: ${reminders.length} reminders for ${householdName}`;
 
       try {
+        const fromAddress =
+          process.env.RESEND_FROM || "WealthOS <onboarding@resend.dev>";
+        const emailOpts = {
+          includeSnapshot: showSnapshot,
+          expenseSummary: expSummary,
+          isForced,
+          frequency,
+          data,
+        };
         await resend.emails.send({
-          from: "WealthOS <onboarding@resend.dev>",
+          from: fromAddress,
           to: toEmail,
+          reply_to: toEmail, // Reply-To = recipient so replies don't bounce
           subject,
-          html: buildEmailHtml(displayReminders, householdName, {
-            includeSnapshot: showSnapshot,
-            expenseSummary: expSummary,
-            isForced,
-            frequency,
-            data,
-          }),
+          // Plain-text version — critical for spam filters (HTML-only = spam signal)
+          text: buildPlainText(displayReminders, householdName, emailOpts),
+          html: buildEmailHtml(displayReminders, householdName, emailOpts),
+          headers: {
+            // List-Unsubscribe: required by Gmail/Yahoo bulk sender policy (Feb 2024)
+            // Points to Settings page so users can disable reminders in-app
+            "List-Unsubscribe": `<https://wealthos.app/settings#notifications>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            // Unique per-send ID prevents Gmail from thread-collapsing all emails
+            "X-Entity-Ref-ID": `${householdDoc.id}-${Date.now()}`,
+          },
         });
         sent++;
       } catch (err) {
