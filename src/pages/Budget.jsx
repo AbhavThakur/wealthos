@@ -903,6 +903,8 @@ export default function Budget({
   // expense entries (dated purchase log)
   const [expandedExp, setExpandedExp] = useState({});
   const [entryForm, setEntryForm] = useState({}); // expId → { date, amount, note }
+  const [addingSubCat, setAddingSubCat] = useState(null); // { expId, category } | null
+  const [newSubCatText, setNewSubCatText] = useState("");
   const todayStr = () => new Date().toISOString().slice(0, 10);
   const toggleExpandExp = (id) =>
     setExpandedExp((s) => ({ ...s, [id]: !s[id] }));
@@ -980,6 +982,30 @@ export default function Budget({
       ),
     );
     cancelEditEntry(exp, { id: entryId });
+  };
+
+  // ── Custom subcategory helpers ──────────────────────────────────────────
+  const customSubCategories = shared?.customSubCategories || {};
+  const getSubcats = (category) => [
+    ...(EXPENSE_SUBCATEGORIES[category] || []),
+    ...(customSubCategories[category] || []),
+  ];
+  const saveCustomSubCat = (category, rawValue, expId) => {
+    const val = rawValue.trim();
+    setAddingSubCat(null);
+    setNewSubCatText("");
+    if (!val) return;
+    const existing = customSubCategories[category] || [];
+    if (!existing.includes(val)) {
+      updateShared("customSubCategories", {
+        ...customSubCategories,
+        [category]: [...existing, val],
+      });
+    }
+    updatePerson(
+      "expenses",
+      expenses.map((x) => (x.id === expId ? { ...x, subCategory: val } : x)),
+    );
   };
 
   // ── Variable income entries (bonus, freelance, dividend, etc.) ─────────
@@ -1889,7 +1915,7 @@ export default function Budget({
                         >
                           <span>{e.name}</span>
                           <span style={{ fontWeight: 600 }}>
-                            {fmt(e.amount)}
+                            {fmt(onetimeEffective(e))}
                           </span>
                         </div>
                       ))}
@@ -3127,27 +3153,93 @@ export default function Budget({
                           <option key={c}>{c}</option>
                         ))}
                       </select>
-                      {EXPENSE_SUBCATEGORIES[exp.category] && (
-                        <select
-                          value={exp.subCategory || ""}
-                          onChange={(e) =>
-                            updatePerson(
-                              "expenses",
-                              expenses.map((x) =>
-                                x.id === exp.id
-                                  ? { ...x, subCategory: e.target.value }
-                                  : x,
-                              ),
-                            )
-                          }
-                          style={{ flex: "0 1 130px", fontSize: 12 }}
-                        >
-                          <option value="">— sub —</option>
-                          {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
-                            <option key={s}>{s}</option>
-                          ))}
-                        </select>
-                      )}
+                      {(() => {
+                        const subs = getSubcats(exp.category);
+                        const isAdding = addingSubCat?.expId === exp.id;
+                        return (
+                          <>
+                            {subs.length > 0 && (
+                              <select
+                                value={exp.subCategory || ""}
+                                onChange={(e) =>
+                                  updatePerson(
+                                    "expenses",
+                                    expenses.map((x) =>
+                                      x.id === exp.id
+                                        ? { ...x, subCategory: e.target.value }
+                                        : x,
+                                    ),
+                                  )
+                                }
+                                style={{ flex: "0 1 130px", fontSize: 12 }}
+                              >
+                                <option value="">— sub —</option>
+                                {subs.map((s) => (
+                                  <option key={s}>{s}</option>
+                                ))}
+                              </select>
+                            )}
+                            {isAdding ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={newSubCatText}
+                                onChange={(e) =>
+                                  setNewSubCatText(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter")
+                                    saveCustomSubCat(
+                                      exp.category,
+                                      newSubCatText,
+                                      exp.id,
+                                    );
+                                  if (e.key === "Escape") {
+                                    setAddingSubCat(null);
+                                    setNewSubCatText("");
+                                  }
+                                }}
+                                onBlur={() =>
+                                  saveCustomSubCat(
+                                    exp.category,
+                                    newSubCatText,
+                                    exp.id,
+                                  )
+                                }
+                                placeholder="New subcategory…"
+                                style={{
+                                  flex: "0 1 120px",
+                                  fontSize: 12,
+                                  padding: "3px 6px",
+                                }}
+                              />
+                            ) : (
+                              <button
+                                title="Add custom subcategory"
+                                onClick={() => {
+                                  setAddingSubCat({
+                                    expId: exp.id,
+                                    category: exp.category,
+                                  });
+                                  setNewSubCatText("");
+                                }}
+                                style={{
+                                  background: "none",
+                                  border: "1px dashed var(--border)",
+                                  color: "var(--text-muted)",
+                                  borderRadius: 4,
+                                  padding: "2px 7px",
+                                  fontSize: 11,
+                                  cursor: "pointer",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                + sub
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                       <select
                         value={exp.recurrence || "monthly"}
                         onChange={(e) =>
@@ -4234,27 +4326,93 @@ export default function Budget({
                           <option key={c}>{c}</option>
                         ))}
                       </select>
-                      {EXPENSE_SUBCATEGORIES[exp.category] && (
-                        <select
-                          value={exp.subCategory || ""}
-                          onChange={(e) =>
-                            updatePerson(
-                              "expenses",
-                              expenses.map((x) =>
-                                x.id === exp.id
-                                  ? { ...x, subCategory: e.target.value }
-                                  : x,
-                              ),
-                            )
-                          }
-                          style={{ flex: "0 1 130px", fontSize: 12 }}
-                        >
-                          <option value="">— sub —</option>
-                          {EXPENSE_SUBCATEGORIES[exp.category].map((s) => (
-                            <option key={s}>{s}</option>
-                          ))}
-                        </select>
-                      )}
+                      {(() => {
+                        const subs = getSubcats(exp.category);
+                        const isAdding = addingSubCat?.expId === exp.id;
+                        return (
+                          <>
+                            {subs.length > 0 && (
+                              <select
+                                value={exp.subCategory || ""}
+                                onChange={(e) =>
+                                  updatePerson(
+                                    "expenses",
+                                    expenses.map((x) =>
+                                      x.id === exp.id
+                                        ? { ...x, subCategory: e.target.value }
+                                        : x,
+                                    ),
+                                  )
+                                }
+                                style={{ flex: "0 1 130px", fontSize: 12 }}
+                              >
+                                <option value="">— sub —</option>
+                                {subs.map((s) => (
+                                  <option key={s}>{s}</option>
+                                ))}
+                              </select>
+                            )}
+                            {isAdding ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={newSubCatText}
+                                onChange={(e) =>
+                                  setNewSubCatText(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter")
+                                    saveCustomSubCat(
+                                      exp.category,
+                                      newSubCatText,
+                                      exp.id,
+                                    );
+                                  if (e.key === "Escape") {
+                                    setAddingSubCat(null);
+                                    setNewSubCatText("");
+                                  }
+                                }}
+                                onBlur={() =>
+                                  saveCustomSubCat(
+                                    exp.category,
+                                    newSubCatText,
+                                    exp.id,
+                                  )
+                                }
+                                placeholder="New subcategory…"
+                                style={{
+                                  flex: "0 1 120px",
+                                  fontSize: 12,
+                                  padding: "3px 6px",
+                                }}
+                              />
+                            ) : (
+                              <button
+                                title="Add custom subcategory"
+                                onClick={() => {
+                                  setAddingSubCat({
+                                    expId: exp.id,
+                                    category: exp.category,
+                                  });
+                                  setNewSubCatText("");
+                                }}
+                                style={{
+                                  background: "none",
+                                  border: "1px dashed var(--border)",
+                                  color: "var(--text-muted)",
+                                  borderRadius: 4,
+                                  padding: "2px 7px",
+                                  fontSize: 11,
+                                  cursor: "pointer",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                + sub
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     {/* Row 3: Log button */}
                     <div style={{ marginBottom: 4 }}>

@@ -4,6 +4,12 @@ service cloud.firestore {
     match /households/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // GrowthOS sync — users can read/write their own growthOS data
+    // WealthOS writes wealthSnapshot here; GrowthOS reads it.
+    match /users/{userId}/growthOS/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
     
     // Feedback collection - users can create and read their own, admin can read/write all
     match /feedback/{feedbackId} {

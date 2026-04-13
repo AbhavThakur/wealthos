@@ -60,6 +60,7 @@ const EMPTY_SHARED = {
     person2Name: "",
   },
   netWorthHistory: [],
+  customSubCategories: {},
 };
 
 const DEFAULTS = {
@@ -667,6 +668,105 @@ export function DataProvider({ children }) {
       autoSnappedRef.current = true;
     }
   }, [loading, abhav, aanya, shared, takeSnapshot]);
+
+  // ── Auto-sync wealth snapshot → GrowthOS (users/{uid}/growthOS/wealthSnapshot) ──────
+  // Debounced 5s after any data change; skipped in dev mode.
+  // GrowthOS WealthCard reads netWorth, sip, savingsRate from this path.
+  const growthSyncTimerRef = useRef(null);
+  useEffect(() => {
+    if (loading || !user || !abhav || !aanya || IS_DEV) return;
+    if (growthSyncTimerRef.current) clearTimeout(growthSyncTimerRef.current);
+    growthSyncTimerRef.current = setTimeout(async () => {
+      const now = new Date();
+      const computeNW = (data) => {
+        const invTotal = (data.investments || []).reduce((s, inv) => {
+          if (inv.type === "FD") {
+            const start = inv.startDate ? new Date(inv.startDate) : now;
+            const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+            return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
+          }
+          if (inv.frequency === "onetime") {
+            const start = inv.startDate ? new Date(inv.startDate) : now;
+            const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
+            return (
+              s +
+              lumpCorpus(
+                (inv.existingCorpus || 0) + (inv.amount || 0),
+                inv.returnPct || 0,
+                elapsed,
+              )
+            );
+          }
+          return s + (inv.existingCorpus || 0);
+        }, 0);
+        const manualAssets = (data.assets || []).reduce(
+          (s, a) => s + (a.value || 0),
+          0,
+        );
+        const savingsTotal = (data.savingsAccounts || []).reduce(
+          (s, a) => s + (a.balance || 0),
+          0,
+        );
+        const debtTotal = (data.debts || []).reduce(
+          (s, d) => s + (d.outstanding || 0),
+          0,
+        );
+        const manualLiab = (data.liabilities || []).reduce(
+          (s, l) => s + (l.value || 0),
+          0,
+        );
+        return (
+          invTotal + manualAssets + savingsTotal - (debtTotal + manualLiab)
+        );
+      };
+      const netWorth = Math.round(computeNW(abhav) + computeNW(aanya));
+      const sip = Math.round(
+        (abhav.investments || []).reduce(
+          (s, x) => s + freqToMonthly(x.amount, x.frequency),
+          0,
+        ) +
+          (aanya.investments || []).reduce(
+            (s, x) => s + freqToMonthly(x.amount, x.frequency),
+            0,
+          ),
+      );
+      const abhavIncome = (abhav.incomes || []).reduce(
+        (s, x) => s + (x.amount || 0),
+        0,
+      );
+      const aanyaIncome = (aanya.incomes || []).reduce(
+        (s, x) => s + (x.amount || 0),
+        0,
+      );
+      const totalIncome = abhavIncome + aanyaIncome;
+      const abhavExp = (abhav.expenses || []).reduce(
+        (s, x) => s + (x.expenseType === "onetime" ? 0 : x.amount || 0),
+        0,
+      );
+      const aanyaExp = (aanya.expenses || []).reduce(
+        (s, x) => s + (x.expenseType === "onetime" ? 0 : x.amount || 0),
+        0,
+      );
+      const savings = totalIncome - abhavExp - aanyaExp - sip;
+      const savingsRate =
+        totalIncome > 0
+          ? Math.round(((sip + Math.max(0, savings)) / totalIncome) * 100)
+          : 0;
+      try {
+        await setDoc(doc(db, "users", user.uid, "growthOS", "wealthSnapshot"), {
+          netWorth,
+          sip,
+          savingsRate,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn("[GrowthOS Sync] Failed:", err);
+      }
+    }, 5_000);
+    return () => {
+      if (growthSyncTimerRef.current) clearTimeout(growthSyncTimerRef.current);
+    };
+  }, [loading, user, abhav, aanya]);
 
   // ── One-time deferred persist: write pruned/migrated data back ──────────
   // Runs once after initial load. Separated from watch() so the first render
