@@ -79,6 +79,7 @@ const HouseholdInvestments = lazy(() =>
 const Goals = lazy(() => import("./pages/Goals"));
 const NetWorth = lazy(() => import("./pages/NetWorth"));
 const AIAdvisorPage = lazy(() => import("./pages/AIAdvisorPage"));
+const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const BudgetAlerts = lazy(() =>
   import("./pages/Recurring").then((m) => ({ default: m.BudgetAlerts })),
 );
@@ -126,6 +127,7 @@ const PAGE_TITLES = {
   goals: "Goals",
   networth: "Net Worth",
   advisor: "AI Advisor",
+  marketpulse: "Market Pulse",
   debts: "Debts & EMIs",
   cashflow: "Cash Flow",
   insurance: "Insurance",
@@ -559,6 +561,8 @@ function AppInner() {
             profile={profile}
           />
         );
+      case "marketpulse":
+        return <MarketPulse />;
       case "feedback":
         return <FeedbackAdmin />;
       default:

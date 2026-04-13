@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   ArrowLeftRight,
   Plus,
+  BarChart2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ADMIN_EMAILS from "../utils/adminEmails";
@@ -57,6 +58,7 @@ const NAV_GROUPS = [
       { id: "alerts", icon: Bell, label: "Alerts" },
       { id: "tax", icon: Calculator, label: "Tax Planner" },
       { id: "advisor", icon: MessageSquare, label: "AI Advisor" },
+      { id: "marketpulse", icon: BarChart2, label: "Market Pulse" },
     ],
   },
 ];
@@ -78,6 +80,7 @@ const ALL_NAV_ITEMS = {
   alerts: { icon: Bell, label: "Alerts" },
   tax: { icon: Calculator, label: "Tax Planner" },
   advisor: { icon: MessageSquare, label: "AI" },
+  marketpulse: { icon: BarChart2, label: "Markets" },
   settings: { icon: Settings, label: "Settings" },
 };
 
