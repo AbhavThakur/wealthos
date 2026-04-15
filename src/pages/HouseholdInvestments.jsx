@@ -33,14 +33,14 @@ import {
   ordinalSuffix,
 } from "./investmentHelpers";
 
-export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
+export function HouseholdInvestments({ p1, p2, updatePerson }) {
   const { personNames } = useData() || {};
   const [filterPerson, setFilterPerson] = useState("All");
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
   const [filterType, setFilterType] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
-  const [addFor, setAddFor] = useState("abhav");
+  const [addFor, setAddFor] = useState("p1");
   const emptyNew = {
     name: "",
     amount: "",
@@ -60,15 +60,15 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
   };
   const [newInv, setNewInv] = useState(emptyNew);
 
-  const abhavInvs = (abhav?.investments || []).map((x) => ({
+  const p1Invs = (p1?.investments || []).map((x) => ({
     ...x,
-    _owner: "abhav",
+    _owner: "p1",
   }));
-  const aanyaInvs = (aanya?.investments || []).map((x) => ({
+  const p2Invs = (p2?.investments || []).map((x) => ({
     ...x,
-    _owner: "aanya",
+    _owner: "p2",
   }));
-  const allInvestments = [...abhavInvs, ...aanyaInvs];
+  const allInvestments = [...p1Invs, ...p2Invs];
   const allApps = [
     ...new Set(allInvestments.map((x) => x.appName).filter(Boolean)),
   ];
@@ -79,9 +79,9 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
   let filtered =
     filterPerson === "All"
       ? allInvestments
-      : filterPerson === "abhav"
-        ? abhavInvs
-        : aanyaInvs;
+      : filterPerson === "p1"
+        ? p1Invs
+        : p2Invs;
   if (filterApp !== "All")
     filtered = filtered.filter((x) => x.appName === filterApp);
   if (filterBank !== "All")
@@ -208,12 +208,12 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
     };
   };
   const m = calcM(filtered);
-  const mA = calcM(abhavInvs);
-  const mAn = calcM(aanyaInvs);
+  const mA = calcM(p1Invs);
+  const mAn = calcM(p2Invs);
 
   const add = () => {
     if (!newInv.name || !newInv.amount) return;
-    const ownerData = addFor === "abhav" ? abhav : aanya;
+    const ownerData = addFor === "p1" ? p1 : p2;
     const existing = ownerData?.investments || [];
     updatePerson(addFor, "investments", [
       ...existing,
@@ -231,7 +231,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
     setShowAdd(false);
   };
 
-  const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
+  const pColor = (o) => (o === "p1" ? "var(--p1)" : "var(--p2)");
   const pLabel = (o) => personNames?.[o] || o;
 
   // Per-investment rows used in info modals (household)
@@ -273,7 +273,8 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 </strong>
                 <span style={{ color: "#666", fontSize: 12 }}>
                   {" "}
-                  (Abhav {fmt(mA.monthly)} + Aanya {fmt(mAn.monthly)})
+                  ({personNames?.p1 || "Person 1"} {fmt(mA.monthly)} +{" "}
+                  {personNames?.p2 || "Person 2"} {fmt(mAn.monthly)})
                 </span>
               </div>
               {hhInvRows.filter((r) => r.monthly > 0).length === 0 ? (
@@ -318,10 +319,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                         <span
                           style={{
                             width: 50,
-                            color:
-                              r.owner === "abhav"
-                                ? "var(--abhav)"
-                                : "var(--aanya)",
+                            color: r.owner === "p1" ? "var(--p1)" : "var(--p2)",
                             fontSize: 11,
                           }}
                         >
@@ -347,12 +345,12 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
             {fmt(m.monthly)}
           </div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>
-              Abhav {fmt(mA.monthly)}
+            <span style={{ color: "var(--p1)" }}>
+              {personNames?.p1 || "Person 1"} {fmt(mA.monthly)}
             </span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>
-              Aanya {fmt(mAn.monthly)}
+            <span style={{ color: "var(--p2)" }}>
+              {personNames?.p2 || "Person 2"} {fmt(mAn.monthly)}
             </span>
           </div>
         </div>
@@ -366,7 +364,8 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                 </strong>
                 <span style={{ color: "#666", fontSize: 12 }}>
                   {" "}
-                  (Abhav {fmtCr(mA.current)} + Aanya {fmtCr(mAn.current)})
+                  ({personNames?.p1 || "Person 1"} {fmtCr(mA.current)} +{" "}
+                  {personNames?.p2 || "Person 2"} {fmtCr(mAn.current)})
                 </span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -400,8 +399,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                     <span
                       style={{
                         width: 50,
-                        color:
-                          r.owner === "abhav" ? "var(--abhav)" : "var(--aanya)",
+                        color: r.owner === "p1" ? "var(--p1)" : "var(--p2)",
                         fontSize: 11,
                       }}
                     >
@@ -426,11 +424,11 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
             {fmt(Math.round(m.current))}
           </div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>
+            <span style={{ color: "var(--p1)" }}>
               {fmt(Math.round(mA.current))}
             </span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>
+            <span style={{ color: "var(--p2)" }}>
               {fmt(Math.round(mAn.current))}
             </span>
           </div>
@@ -492,10 +490,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                       <span
                         style={{
                           width: 50,
-                          color:
-                            r.owner === "abhav"
-                              ? "var(--abhav)"
-                              : "var(--aanya)",
+                          color: r.owner === "p1" ? "var(--p1)" : "var(--p2)",
                           fontSize: 11,
                         }}
                       >
@@ -521,9 +516,9 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           </div>
           <div className="metric-value green-text">{fmtCr(m.yr20)}</div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>{fmtCr(mA.yr20)}</span>
+            <span style={{ color: "var(--p1)" }}>{fmtCr(mA.yr20)}</span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>{fmtCr(mAn.yr20)}</span>
+            <span style={{ color: "var(--p2)" }}>{fmtCr(mAn.yr20)}</span>
           </div>
         </div>
         <div className="metric-card">
@@ -637,10 +632,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                       <span
                         style={{
                           width: 40,
-                          color:
-                            r.owner === "abhav"
-                              ? "var(--abhav)"
-                              : "var(--aanya)",
+                          color: r.owner === "p1" ? "var(--p1)" : "var(--p2)",
                           fontSize: 11,
                         }}
                       >
@@ -720,12 +712,12 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
                   <>
                     {" "}
                     ·{" "}
-                    <span style={{ color: "var(--abhav)" }}>
+                    <span style={{ color: "var(--p1)" }}>
                       {mA.gainPct >= 0 ? "+" : ""}
                       {mA.gainPct.toFixed(1)}%
                     </span>
                     {" / "}
-                    <span style={{ color: "var(--aanya)" }}>
+                    <span style={{ color: "var(--p2)" }}>
                       {mAn.gainPct >= 0 ? "+" : ""}
                       {mAn.gainPct.toFixed(1)}%
                     </span>
@@ -758,14 +750,14 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           {[
             { id: "All", label: "All", color: "var(--gold)" },
             {
-              id: "abhav",
-              label: personNames?.abhav || "Person 1",
-              color: "var(--abhav)",
+              id: "p1",
+              label: personNames?.p1 || "Person 1",
+              color: "var(--p1)",
             },
             {
-              id: "aanya",
-              label: personNames?.aanya || "Person 2",
-              color: "var(--aanya)",
+              id: "p2",
+              label: personNames?.p2 || "Person 2",
+              color: "var(--p2)",
             },
           ].map((p) => (
             <button
@@ -920,7 +912,7 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
       {/* Cards */}
       {filtered.map((inv) => {
         const owner = inv._owner;
-        const ownerData = owner === "abhav" ? abhav : aanya;
+        const ownerData = owner === "p1" ? p1 : p2;
         const { _owner, ...cleanInv } = inv;
         return (
           <div key={`${owner}-${inv.id}`} style={{ position: "relative" }}>
@@ -973,14 +965,14 @@ export function HouseholdInvestments({ abhav, aanya, updatePerson }) {
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
             {[
               {
-                id: "abhav",
-                label: personNames?.abhav || "Person 1",
-                color: "var(--abhav)",
+                id: "p1",
+                label: personNames?.p1 || "Person 1",
+                color: "var(--p1)",
               },
               {
-                id: "aanya",
-                label: personNames?.aanya || "Person 2",
-                color: "var(--aanya)",
+                id: "p2",
+                label: personNames?.p2 || "Person 2",
+                color: "var(--p2)",
               },
             ].map((p) => (
               <button

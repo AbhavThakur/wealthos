@@ -117,12 +117,12 @@ function statsFromTxns(txns, exps, incomes, ym, subs) {
 }
 
 // Collect all YYYY-MM keys that have any transaction or expense entry
-function allAvailableMonths(abhav, aanya) {
+function allAvailableMonths(p1, p2) {
   const set = new Set();
   const today = new Date();
   const curYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   set.add(curYm);
-  for (const p of [abhav, aanya]) {
+  for (const p of [p1, p2]) {
     for (const t of p?.transactions || []) {
       if (t.date) set.add(t.date.slice(0, 7));
     }
@@ -385,12 +385,12 @@ const MONTH_NAMES = [
 ];
 
 function buildCashFlow(
-  abhavTxns,
-  aanyaTxns,
-  abhavExps,
-  aanyaExps,
-  abhavIncs,
-  aanyaIncs,
+  p1Txns,
+  p2Txns,
+  p1Exps,
+  p2Exps,
+  p1Incs,
+  p2Incs,
   sharedTrips,
 ) {
   const map = {}; // key: "2026-03" → { income, expenses, investments, emis, detail }
@@ -403,7 +403,7 @@ function buildCashFlow(
   // Months where an expense already has granular entries tracked —
   // skip the auto-transaction for those to avoid duplication in the schedule
   const entriesCovered = new Set();
-  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+  for (const exp of [...(p1Exps || []), ...(p2Exps || [])]) {
     for (const e of exp.entries || []) {
       if (e.date) entriesCovered.add(`${exp.name}::${e.date.slice(0, 7)}`);
     }
@@ -509,12 +509,12 @@ function buildCashFlow(
     }
   };
 
-  process(abhavTxns);
-  process(aanyaTxns);
-  processExps(abhavExps);
-  processExps(aanyaExps);
-  processIncs(abhavIncs);
-  processIncs(aanyaIncs);
+  process(p1Txns);
+  process(p2Txns);
+  processExps(p1Exps);
+  processExps(p2Exps);
+  processIncs(p1Incs);
+  processIncs(p2Incs);
 
   // ── Include standing amounts for current month (fallback) ──────────────
   const curYm = new Date().toISOString().slice(0, 7);
@@ -527,7 +527,7 @@ function buildCashFlow(
       if (d.isIncome) incomeCovered.add(`${d.expName}::${ym}`);
     }
   }
-  for (const inc of [...(abhavIncs || []), ...(aanyaIncs || [])]) {
+  for (const inc of [...(p1Incs || []), ...(p2Incs || [])]) {
     if (incomeCovered.has(`${inc.name}::${curYm}`)) continue;
     if (inc.amount > 0) {
       ensure(curYm);
@@ -544,7 +544,7 @@ function buildCashFlow(
   }
 
   // Standing expenses — for expenses without entries/transactions this month
-  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+  for (const exp of [...(p1Exps || []), ...(p2Exps || [])]) {
     if (exp.expenseType === "trip" || exp.expenseType === "onetime") continue;
     // Check recurrence: skip if expense doesn't apply to current month
     if (exp.recurrence === "yearly" && (exp.recurrenceMonth ?? 0) !== curMonth)
@@ -572,7 +572,7 @@ function buildCashFlow(
 
   // ── Include trip expenses ──────────────────────────────────────────────
   // Personal trip expenses
-  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+  for (const exp of [...(p1Exps || []), ...(p2Exps || [])]) {
     if (exp.expenseType !== "trip") continue;
     const tripDate = exp.startDate || exp.date || `${curYm}-01`;
     const ym = tripDate.slice(0, 7);
@@ -590,7 +590,7 @@ function buildCashFlow(
   }
   // Personal one-time expenses — add entry details to schedule
   // (totals already handled by processExps via entry sums)
-  for (const exp of [...(abhavExps || []), ...(aanyaExps || [])]) {
+  for (const exp of [...(p1Exps || []), ...(p2Exps || [])]) {
     if (exp.expenseType !== "onetime") continue;
     // One-time expenses without entries have nothing to show
     if (!exp.entries?.length) continue;
@@ -647,14 +647,14 @@ function buildCashFlow(
     });
 }
 
-function MonthlyCashFlow({ abhav, aanya, shared, selectedMonth }) {
+function MonthlyCashFlow({ p1, p2, shared, selectedMonth }) {
   const data = buildCashFlow(
-    abhav?.transactions,
-    aanya?.transactions,
-    abhav?.expenses,
-    aanya?.expenses,
-    abhav?.incomes,
-    aanya?.incomes,
+    p1?.transactions,
+    p2?.transactions,
+    p1?.expenses,
+    p2?.expenses,
+    p1?.incomes,
+    p2?.incomes,
     shared?.trips,
   );
   const [expandedMonth, setExpandedMonth] = useState(null);
@@ -1145,10 +1145,10 @@ function latestRaise(personData, name, color) {
   return best;
 }
 
-function RaiseNudge({ abhav, aanya, personNames }) {
+function RaiseNudge({ p1, p2, personNames }) {
   const candidates = [
-    latestRaise(abhav, personNames?.abhav || "Person 1", "var(--abhav)"),
-    latestRaise(aanya, personNames?.aanya || "Person 2", "var(--aanya)"),
+    latestRaise(p1, personNames?.p1 || "Person 1", "var(--p1)"),
+    latestRaise(p2, personNames?.p2 || "Person 2", "var(--p2)"),
   ].filter(Boolean);
 
   if (candidates.length === 0) return null;
@@ -1284,14 +1284,14 @@ function RaiseNudge({ abhav, aanya, personNames }) {
   );
 }
 
-export default function Dashboard({ abhav, aanya, shared, personNames }) {
+export default function Dashboard({ p1, p2, shared, personNames }) {
   // ── Month picker ────────────────────────────────────────────────────────
   const todayYm = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   })();
   const [selectedMonth, setSelectedMonth] = useState(todayYm);
-  const months = allAvailableMonths(abhav, aanya);
+  const months = allAvailableMonths(p1, p2);
   const selIdx = months.indexOf(selectedMonth);
   const isCurrentMonth = selectedMonth === todayYm;
 
@@ -1306,18 +1306,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   // ── Stats: for the selected month use transaction-based stats ──────────
   // For the current month fall back to standing config when no transactions yet
   const aTxStats = statsFromTxns(
-    abhav?.transactions,
-    abhav?.expenses,
-    abhav?.incomes,
+    p1?.transactions,
+    p1?.expenses,
+    p1?.incomes,
     selectedMonth,
-    abhav?.subscriptions,
+    p1?.subscriptions,
   );
   const bTxStats = statsFromTxns(
-    aanya?.transactions,
-    aanya?.expenses,
-    aanya?.incomes,
+    p2?.transactions,
+    p2?.expenses,
+    p2?.incomes,
     selectedMonth,
-    aanya?.subscriptions,
+    p2?.subscriptions,
   );
   // Previous month stats for month-over-month comparison
   const prevYm = (() => {
@@ -1326,18 +1326,18 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   })();
   const aPrevTx = statsFromTxns(
-    abhav?.transactions,
-    abhav?.expenses,
-    abhav?.incomes,
+    p1?.transactions,
+    p1?.expenses,
+    p1?.incomes,
     prevYm,
-    abhav?.subscriptions,
+    p1?.subscriptions,
   );
   const bPrevTx = statsFromTxns(
-    aanya?.transactions,
-    aanya?.expenses,
-    aanya?.incomes,
+    p2?.transactions,
+    p2?.expenses,
+    p2?.incomes,
     prevYm,
-    aanya?.subscriptions,
+    p2?.subscriptions,
   );
   const prevHasData =
     aPrevTx.income > 0 ||
@@ -1345,8 +1345,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     bPrevTx.income > 0 ||
     bPrevTx.expenses > 0;
 
-  const aStanding = personStats(abhav, selectedMonth); // standing config (for corpus20)
-  const bStanding = personStats(aanya, selectedMonth);
+  const aStanding = personStats(p1, selectedMonth); // standing config (for corpus20)
+  const bStanding = personStats(p2, selectedMonth);
 
   // Always use standing expenses (matches Budget page totals) so per-person
   // cards are consistent with the Budget page. Income uses actual entries
@@ -1380,40 +1380,40 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     }
     return true;
   };
-  const abhavMonthly = (abhav?.expenses || [])
+  const p1Monthly = (p1?.expenses || [])
     .filter(
       (e) =>
         (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
     )
     .reduce((s, x) => s + x.amount, 0);
-  const abhavTrips = (abhav?.expenses || [])
+  const p1Trips = (p1?.expenses || [])
     .filter(
       (e) =>
         e.expenseType === "trip" &&
         (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
     )
     .reduce((s, x) => s + x.amount, 0);
-  const abhavOnetime = (abhav?.expenses || [])
+  const p1Onetime = (p1?.expenses || [])
     .filter(
       (e) =>
         e.expenseType === "onetime" &&
         (e.date || "").slice(0, 7) === selectedMonth,
     )
     .reduce((s, x) => s + onetimeEffective(x), 0);
-  const aanyaMonthly = (aanya?.expenses || [])
+  const p2Monthly = (p2?.expenses || [])
     .filter(
       (e) =>
         (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
     )
     .reduce((s, x) => s + x.amount, 0);
-  const aanyaTrips = (aanya?.expenses || [])
+  const p2Trips = (p2?.expenses || [])
     .filter(
       (e) =>
         e.expenseType === "trip" &&
         (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
     )
     .reduce((s, x) => s + x.amount, 0);
-  const aanyaOnetime = (aanya?.expenses || [])
+  const p2Onetime = (p2?.expenses || [])
     .filter(
       (e) =>
         e.expenseType === "onetime" &&
@@ -1440,7 +1440,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   const hCorpus20 = a.corpus20 + b.corpus20;
 
   // ── Live market data ────────────────────────────────────────────────────
-  const allInv = [...(abhav?.investments || []), ...(aanya?.investments || [])];
+  const allInv = [...(p1?.investments || []), ...(p2?.investments || [])];
   const {
     navMap,
     goldPrice,
@@ -1453,11 +1453,11 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
   // ── Health score inputs ────────────────────────────────────────────────
   const hLiquidCash =
-    (abhav?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0) +
-    (aanya?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0);
+    (p1?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0) +
+    (p2?.savingsAccounts || []).reduce((s, x) => s + (x.balance || 0), 0);
   const hEmergencyMonths = hExpenses > 0 ? hLiquidCash / hExpenses : 0;
   const hInsAdequacy = insuranceAdequacy(
-    [...(abhav?.insurances || []), ...(aanya?.insurances || [])],
+    [...(p1?.insurances || []), ...(p2?.insurances || [])],
     hIncome * 12,
   );
 
@@ -1487,24 +1487,24 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
   // Comparison bar data
   const compareData = [
-    { label: "Income", abhav: a.income, aanya: b.income },
-    { label: "Expenses", abhav: aStanding.expenses, aanya: bStanding.expenses },
+    { label: "Income", p1: a.income, p2: b.income },
+    { label: "Expenses", p1: aStanding.expenses, p2: bStanding.expenses },
     ...(sharedTripTotal > 0
       ? [
           {
             label: "Shared Trips",
-            abhav: sharedTripTotal / 2,
-            aanya: sharedTripTotal / 2,
+            p1: sharedTripTotal / 2,
+            p2: sharedTripTotal / 2,
           },
         ]
       : []),
-    { label: "Investments", abhav: a.investments, aanya: b.investments },
+    { label: "Investments", p1: a.investments, p2: b.investments },
   ];
 
   // Spending pie — use this month's expense entries + transactions
   const spendMap = {};
   // From expense entries for selected month
-  for (const p of [abhav, aanya]) {
+  for (const p of [p1, p2]) {
     for (const exp of p?.expenses || []) {
       for (const e of exp.entries || []) {
         if (e.date?.slice(0, 7) !== selectedMonth) continue;
@@ -1513,7 +1513,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     }
   }
   // From transactions for selected month
-  for (const p of [abhav, aanya]) {
+  for (const p of [p1, p2]) {
     for (const t of p?.transactions || []) {
       if (!t.date || t.date.slice(0, 7) !== selectedMonth || t.amount >= 0)
         continue;
@@ -1524,7 +1524,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   }
   // Fall back to standing config when no transaction data at all
   if (!aHasData && !bHasData) {
-    [...(abhav?.expenses || []), ...(aanya?.expenses || [])].forEach((e) => {
+    [...(p1?.expenses || []), ...(p2?.expenses || [])].forEach((e) => {
       if (e.expenseType === "trip") {
         for (const item of e.items || []) {
           const cat = item.category || "Others";
@@ -1585,21 +1585,21 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   const sparkMonths = months.slice(-6);
   const sparkData = sparkMonths.map((m) => {
     const aS = statsFromTxns(
-      abhav?.transactions,
-      abhav?.expenses,
-      abhav?.incomes,
+      p1?.transactions,
+      p1?.expenses,
+      p1?.incomes,
       m,
-      abhav?.subscriptions,
+      p1?.subscriptions,
     );
     const bS = statsFromTxns(
-      aanya?.transactions,
-      aanya?.expenses,
-      aanya?.incomes,
+      p2?.transactions,
+      p2?.expenses,
+      p2?.incomes,
       m,
-      aanya?.subscriptions,
+      p2?.subscriptions,
     );
-    const aSt = personStats(abhav, m);
-    const bSt = personStats(aanya, m);
+    const aSt = personStats(p1, m);
+    const bSt = personStats(p2, m);
     const inc = (aS.income || aSt.income) + (bS.income || bSt.income);
     const exp = (aS.expenses || aSt.expenses) + (bS.expenses || bSt.expenses);
     return { income: inc, expenses: exp, savings: inc - exp };
@@ -1636,8 +1636,16 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             <div className="metric-label">
               Combined Income
               <InfoModal title="Combined Income">
-                {_infoRow("Abhav's income", aStanding.income, "var(--abhav)")}
-                {_infoRow("Aanya's income", bStanding.income, "var(--aanya)")}
+                {_infoRow(
+                  `${personNames?.p1 || "Person 1"}'s income`,
+                  aStanding.income,
+                  "var(--p1)",
+                )}
+                {_infoRow(
+                  `${personNames?.p2 || "Person 2"}'s income`,
+                  bStanding.income,
+                  "var(--p2)",
+                )}
                 <div
                   style={{
                     borderTop: "1px solid rgba(255,255,255,0.12)",
@@ -1697,28 +1705,28 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                 <div
                   style={{
                     fontWeight: 600,
-                    color: "var(--abhav)",
+                    color: "var(--p1)",
                     marginBottom: 4,
                   }}
                 >
-                  Abhav — {fmt(aStanding.expenses)}
+                  {personNames?.p1 || "Person 1"} — {fmt(aStanding.expenses)}
                 </div>
-                {_infoRow("  Monthly", abhavMonthly)}
-                {abhavTrips > 0 && _infoRow("  Trips (personal)", abhavTrips)}
-                {abhavOnetime > 0 && _infoRow("  One-time", abhavOnetime)}
+                {_infoRow("  Monthly", p1Monthly)}
+                {p1Trips > 0 && _infoRow("  Trips (personal)", p1Trips)}
+                {p1Onetime > 0 && _infoRow("  One-time", p1Onetime)}
                 <div
                   style={{
                     fontWeight: 600,
-                    color: "var(--aanya)",
+                    color: "var(--p2)",
                     marginTop: 8,
                     marginBottom: 4,
                   }}
                 >
-                  Aanya — {fmt(bStanding.expenses)}
+                  {personNames?.p2 || "Person 2"} — {fmt(bStanding.expenses)}
                 </div>
-                {_infoRow("  Monthly", aanyaMonthly)}
-                {aanyaTrips > 0 && _infoRow("  Trips (personal)", aanyaTrips)}
-                {aanyaOnetime > 0 && _infoRow("  One-time", aanyaOnetime)}
+                {_infoRow("  Monthly", p2Monthly)}
+                {p2Trips > 0 && _infoRow("  Trips (personal)", p2Trips)}
+                {p2Onetime > 0 && _infoRow("  One-time", p2Onetime)}
                 {sharedTripTotal > 0 && (
                   <>
                     <div
@@ -1801,8 +1809,16 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             <div className="metric-label">
               Investing / month
               <InfoModal title="Monthly Investments">
-                {_infoRow("Abhav's investments", a.investments, "var(--abhav)")}
-                {_infoRow("Aanya's investments", b.investments, "var(--aanya)")}
+                {_infoRow(
+                  `${personNames?.p1 || "Person 1"}'s investments`,
+                  a.investments,
+                  "var(--p1)",
+                )}
+                {_infoRow(
+                  `${personNames?.p2 || "Person 2"}'s investments`,
+                  b.investments,
+                  "var(--p2)",
+                )}
                 <div
                   style={{
                     borderTop: "1px solid rgba(255,255,255,0.12)",
@@ -2052,14 +2068,11 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
     moneyplan: (() => {
       const allInvestments = [
-        ...(abhav?.investments || []),
-        ...(aanya?.investments || []),
+        ...(p1?.investments || []),
+        ...(p2?.investments || []),
       ];
-      const allDebts = [...(abhav?.debts || []), ...(aanya?.debts || [])];
-      const allIns = [
-        ...(abhav?.insurances || []),
-        ...(aanya?.insurances || []),
-      ];
+      const allDebts = [...(p1?.debts || []), ...(p2?.debts || [])];
+      const allIns = [...(p1?.insurances || []), ...(p2?.insurances || [])];
       const corpus = currentCorpus(allInvestments);
       const allInv80c = allInvestments;
       const unused80c = unused80C(allInv80c, allIns);
@@ -2250,12 +2263,12 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
     wealthinsights: (() => {
       // ── Wealth Intelligence Calculations ──
       const allInvestments = [
-        ...(abhav?.investments || []),
-        ...(aanya?.investments || []),
+        ...(p1?.investments || []),
+        ...(p2?.investments || []),
       ];
       const allInsurances = [
-        ...(abhav?.insurances || []),
-        ...(aanya?.insurances || []),
+        ...(p1?.insurances || []),
+        ...(p2?.insurances || []),
       ];
       const corpus = currentCorpus(allInvestments);
       const annualExpenses = hExpenses * 12;
@@ -2276,13 +2289,10 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
       // Unused 80C tax savings
       const allInv80c = [
-        ...(abhav?.investments || []),
-        ...(aanya?.investments || []),
+        ...(p1?.investments || []),
+        ...(p2?.investments || []),
       ];
-      const allIns80c = [
-        ...(abhav?.insurances || []),
-        ...(aanya?.insurances || []),
-      ];
+      const allIns80c = [...(p1?.insurances || []), ...(p2?.insurances || [])];
       const unused80c = unused80C(allInv80c, allIns80c);
       const taxSavable = Math.round(unused80c * 0.3); // 30% slab assumed
 
@@ -2291,14 +2301,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
       // Idle cash detection
       const liquidCash =
-        (abhav?.savingsAccounts || []).reduce(
-          (s, a) => s + (a.balance || 0),
-          0,
-        ) +
-        (aanya?.savingsAccounts || []).reduce(
-          (s, a) => s + (a.balance || 0),
-          0,
-        );
+        (p1?.savingsAccounts || []).reduce((s, a) => s + (a.balance || 0), 0) +
+        (p2?.savingsAccounts || []).reduce((s, a) => s + (a.balance || 0), 0);
       const emergencyNeed = hExpenses * 6;
       const excessCash = Math.max(0, liquidCash - emergencyNeed);
 
@@ -3080,8 +3084,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
     cashflow: (
       <MonthlyCashFlow
-        abhav={abhav}
-        aanya={aanya}
+        p1={p1}
+        p2={p2}
         shared={shared}
         selectedMonth={selectedMonth}
       />
@@ -3089,22 +3093,22 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
 
     persons: (
       <>
-        <RaiseNudge abhav={abhav} aanya={aanya} personNames={personNames} />
+        <RaiseNudge p1={p1} p2={p2} personNames={personNames} />
         <div className="grid-2 section-gap">
           {[
             {
-              name: personNames?.abhav || "Person 1",
+              name: personNames?.p1 || "Person 1",
               stats: a,
               score: aScore,
-              color: "var(--abhav)",
-              dim: "var(--abhav-dim)",
+              color: "var(--p1)",
+              dim: "var(--p1-dim)",
             },
             {
-              name: personNames?.aanya || "Person 2",
+              name: personNames?.p2 || "Person 2",
               stats: b,
               score: bScore,
-              color: "var(--aanya)",
-              dim: "var(--aanya-dim)",
+              color: "var(--p2)",
+              dim: "var(--p2-dim)",
             },
           ].map((p) => (
             <div
@@ -3220,13 +3224,13 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   style={{
                     color:
                       a.savingsRate >= b.savingsRate
-                        ? "var(--abhav)"
-                        : "var(--aanya)",
+                        ? "var(--p1)"
+                        : "var(--p2)",
                   }}
                 >
                   {a.savingsRate >= b.savingsRate
-                    ? personNames?.abhav || "Person 1"
-                    : personNames?.aanya || "Person 2"}
+                    ? personNames?.p1 || "Person 1"
+                    : personNames?.p2 || "Person 2"}
                 </span>{" "}
                 is saving more this month!
               </div>
@@ -3237,14 +3241,10 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   marginTop: 2,
                 }}
               >
-                {personNames?.abhav || "Person 1"}:{" "}
-                <strong style={{ color: "var(--abhav)" }}>
-                  {a.savingsRate}%
-                </strong>{" "}
-                &nbsp;·&nbsp; {personNames?.aanya || "Person 2"}:{" "}
-                <strong style={{ color: "var(--aanya)" }}>
-                  {b.savingsRate}%
-                </strong>{" "}
+                {personNames?.p1 || "Person 1"}:{" "}
+                <strong style={{ color: "var(--p1)" }}>{a.savingsRate}%</strong>{" "}
+                &nbsp;·&nbsp; {personNames?.p2 || "Person 2"}:{" "}
+                <strong style={{ color: "var(--p2)" }}>{b.savingsRate}%</strong>{" "}
                 &nbsp;·&nbsp; Household target:{" "}
                 <strong style={{ color: "var(--gold)" }}>
                   {shared?.profile?.savingsTarget ?? 25}%
@@ -3261,8 +3261,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         {/* Comparison bars */}
         <div className="card">
           <div className="card-title">
-            {personNames?.abhav || "Person 1"} vs{" "}
-            {personNames?.aanya || "Person 2"}
+            {personNames?.p1 || "Person 1"} vs {personNames?.p2 || "Person 2"}
           </div>
           <div
             style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 12 }}
@@ -3273,11 +3272,11 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   width: 10,
                   height: 10,
                   borderRadius: 2,
-                  background: "var(--abhav)",
+                  background: "var(--p1)",
                   display: "inline-block",
                 }}
               />
-              {personNames?.abhav || "Person 1"}
+              {personNames?.p1 || "Person 1"}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span
@@ -3285,11 +3284,11 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                   width: 10,
                   height: 10,
                   borderRadius: 2,
-                  background: "var(--aanya)",
+                  background: "var(--p2)",
                   display: "inline-block",
                 }}
               />
-              {personNames?.aanya || "Person 2"}
+              {personNames?.p2 || "Person 2"}
             </span>
           </div>
           <div style={{ height: 180 }}>
@@ -3297,15 +3296,15 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
               categories={compareData.map((d) => d.label)}
               series={[
                 {
-                  name: personNames?.abhav || "Person 1",
+                  name: personNames?.p1 || "Person 1",
                   type: "bar",
-                  data: compareData.map((d) => d.abhav),
+                  data: compareData.map((d) => d.p1),
                   color: "#5b9cf6",
                 },
                 {
-                  name: personNames?.aanya || "Person 2",
+                  name: personNames?.p2 || "Person 2",
                   type: "bar",
-                  data: compareData.map((d) => d.aanya),
+                  data: compareData.map((d) => d.p2),
                   color: "#d46eb3",
                 },
               ]}
@@ -3372,17 +3371,17 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
       <div className="grid-2 section-gap">
         {[
           {
-            key: "abhav",
+            key: "p1",
             stats: a,
             standing: aStanding,
-            color: "var(--abhav)",
+            color: "var(--p1)",
             score: aScore,
           },
           {
-            key: "aanya",
+            key: "p2",
             stats: b,
             standing: bStanding,
-            color: "var(--aanya)",
+            color: "var(--p2)",
             score: bScore,
           },
         ].map(({ key, stats, standing, color, score }) => (
@@ -3598,7 +3597,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
         <div className="card section-gap">
           <div className="card-title">🏠 Shared Goals</div>
           {sharedGoals.map((g) => {
-            const totalSaved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+            const totalSaved = (g.p1Saved || 0) + (g.p2Saved || 0);
             const pct = Math.min(
               100,
               Math.round((totalSaved / g.target) * 100),
@@ -3627,13 +3626,13 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
                           color: "var(--text-secondary)",
                         }}
                       >
-                        Abhav:{" "}
-                        <span style={{ color: "var(--abhav)" }}>
-                          {fmt(g.abhavSaved)}
+                        {personNames?.p1 || "Person 1"}:{" "}
+                        <span style={{ color: "var(--p1)" }}>
+                          {fmt(g.p1Saved)}
                         </span>
-                        &nbsp;·&nbsp; Aanya:{" "}
-                        <span style={{ color: "var(--aanya)" }}>
-                          {fmt(g.aanyaSaved)}
+                        &nbsp;·&nbsp; {personNames?.p2 || "Person 2"}:{" "}
+                        <span style={{ color: "var(--p2)" }}>
+                          {fmt(g.p2Saved)}
                         </span>
                       </div>
                     </div>
@@ -3735,7 +3734,7 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
       </div>
     ),
 
-    emergency: <EmergencyFundCard abhav={abhav} aanya={aanya} />,
+    emergency: <EmergencyFundCard p1={p1} p2={p2} />,
 
     cashforecast: (() => {
       const hInc = aStanding.income + bStanding.income;
@@ -3744,20 +3743,14 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
       const hDebt = aStanding.debts + bStanding.debts;
       const monthlyNet = hInc - hExp - hInv - hDebt;
       const liquid =
-        (abhav?.assets || [])
+        (p1?.assets || [])
           .filter((a) => a.type === "cash" || a.type === "savings")
           .reduce((s, a) => s + (a.value || 0), 0) +
-        (aanya?.assets || [])
+        (p2?.assets || [])
           .filter((a) => a.type === "cash" || a.type === "savings")
           .reduce((s, a) => s + (a.value || 0), 0) +
-        (abhav?.savingsAccounts || []).reduce(
-          (s, a) => s + (a.balance || 0),
-          0,
-        ) +
-        (aanya?.savingsAccounts || []).reduce(
-          (s, a) => s + (a.balance || 0),
-          0,
-        );
+        (p1?.savingsAccounts || []).reduce((s, a) => s + (a.balance || 0), 0) +
+        (p2?.savingsAccounts || []).reduce((s, a) => s + (a.balance || 0), 0);
       const MONTHS = [
         "Jan",
         "Feb",
@@ -3927,8 +3920,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   // ── Fund Fee Drain Calculator ──────────────────────────────────────────────
   const feeDrainSection = (() => {
     const allInvestments = [
-      ...(abhav?.investments || []),
-      ...(aanya?.investments || []),
+      ...(p1?.investments || []),
+      ...(p2?.investments || []),
     ];
     const DEFAULT_ER = {
       "Mutual Fund": 1.2,
@@ -4127,8 +4120,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
   // ── Retirement Scenario Planner ───────────────────────────────────────────
   const retirementScenarioSection = (() => {
     const allInvestments = [
-      ...(abhav?.investments || []),
-      ...(aanya?.investments || []),
+      ...(p1?.investments || []),
+      ...(p2?.investments || []),
     ];
     const corp = currentCorpus(allInvestments);
     const retireAge = shared?.profile?.retireAge || 60;
@@ -4386,8 +4379,8 @@ export default function Dashboard({ abhav, aanya, shared, personNames }) {
             Combined household overview
           </span>
           <MonthlySummary
-            abhav={abhav}
-            aanya={aanya}
+            p1={p1}
+            p2={p2}
             shared={shared}
             personNames={personNames}
           />

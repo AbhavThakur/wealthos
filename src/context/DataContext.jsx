@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   useCallback,
+  useMemo,
 } from "react";
 import { autoRecurringRules } from "../utils/autoRecurringRules";
 import {
@@ -58,33 +59,32 @@ const EMPTY_SHARED = {
     savingsTarget: 25,
     person1Name: "",
     person2Name: "",
+    householdMode: "couple", // "solo" | "couple"
   },
   netWorthHistory: [],
   customSubCategories: {},
 };
 
 const DEFAULTS = {
-  abhav: { ...EMPTY_PERSON },
-  aanya: { ...EMPTY_PERSON },
+  p1: { ...EMPTY_PERSON },
+  p2: { ...EMPTY_PERSON },
   shared: { ...EMPTY_SHARED },
 };
 
 // ── Firestore document ID mapping ─────────────────────────────────────────
-// Internal code uses "abhav"/"aanya" as state keys (kept to avoid 100+ file changes).
+// Internal code uses "p1"/"p2" as state keys (kept to avoid 100+ file changes).
 // Firestore uses generic "person1"/"person2" so every household looks the same.
 const DOC_P1 = "person1";
 const DOC_P2 = "person2";
-const toDocId = (id) =>
-  id === "abhav" ? DOC_P1 : id === "aanya" ? DOC_P2 : id;
-const fromDocId = (id) =>
-  id === DOC_P1 ? "abhav" : id === DOC_P2 ? "aanya" : id;
+const toDocId = (id) => (id === "p1" ? DOC_P1 : id === "p2" ? DOC_P2 : id);
+const fromDocId = (id) => (id === DOC_P1 ? "p1" : id === DOC_P2 ? "p2" : id);
 
-// One-time migration: copy legacy "abhav"/"aanya" docs → "person1"/"person2".
+// One-time migration: copy legacy "p1"/"p2" docs → "person1"/"person2".
 // After a verified copy, the old doc is deleted to save Firestore storage.
 async function migrateDocNames(uid, subcol) {
   const pairs = [
-    { old: "abhav", new: DOC_P1 },
-    { old: "aanya", new: DOC_P2 },
+    { old: "p1", new: DOC_P1 },
+    { old: "p2", new: DOC_P2 },
   ];
   for (const { old: oldId, new: newId } of pairs) {
     const newRef = doc(db, COL_HOUSEHOLDS, uid, subcol, newId);
@@ -241,10 +241,10 @@ function applyRecurring(data) {
 
 export function DataProvider({ children }) {
   const { user } = useAuth();
-  const [abhav, setAbhav] = useState(null);
-  const [aanya, setAanya] = useState(null);
+  const [p1, setP1] = useState(null);
+  const [p2, setP2] = useState(null);
   const [shared, setShared] = useState(null);
-  const loading = !!(user && (!abhav || !aanya || !shared));
+  const loading = !!(user && (!p1 || !p2 || !shared));
 
   useEffect(() => {
     if (!user) return;
@@ -253,11 +253,27 @@ export function DataProvider({ children }) {
 
     const watch = (docId, setter, defaultData) => {
       const ref = doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, docId);
+      let cacheTimeout = null;
       const unsub = onSnapshot(ref, (snap) => {
         // On a new device the local cache is empty. If this snapshot is from
         // cache and the doc appears missing, do NOT write defaults — wait for
         // the server round-trip to confirm the doc truly doesn't exist.
-        if (!snap.exists() && snap.metadata.fromCache) return;
+        // But set a timeout so we don't hang forever if the network is slow.
+        if (!snap.exists() && snap.metadata.fromCache) {
+          if (!cacheTimeout) {
+            cacheTimeout = setTimeout(() => {
+              // Timed out waiting for server — treat as genuinely new user
+              setDoc(ref, defaultData);
+            }, 4000);
+          }
+          return;
+        }
+
+        // Server confirmed — cancel any pending fallback
+        if (cacheTimeout) {
+          clearTimeout(cacheTimeout);
+          cacheTimeout = null;
+        }
 
         if (!snap.exists()) {
           // Genuinely new user — doc doesn't exist on server. Create it once.
@@ -290,18 +306,27 @@ export function DataProvider({ children }) {
       unsubs.push(unsub);
     };
 
-    // Migrate old "abhav"/"aanya" doc names → "person1"/"person2", then watch
-    let cancelled = false;
+    // Migrate old "p1"/"p2" doc names → "person1"/"person2", then watch.
+    // Race with a 5s timeout so new users aren't blocked by slow migration checks.
+    let unmounted = false;
+    let started = false;
+    const startWatching = () => {
+      if (unmounted || started) return;
+      started = true;
+      watch(DOC_P1, setP1, DEFAULTS.p1);
+      watch(DOC_P2, setP2, DEFAULTS.p2);
+      watch("shared", setShared, DEFAULTS.shared);
+    };
+    const migrationTimeout = setTimeout(startWatching, 5000);
     migrateDocNames(uid, SUBCOL_DATA)
       .catch((err) => console.warn("[Migration] Failed:", err))
       .finally(() => {
-        if (cancelled) return;
-        watch(DOC_P1, setAbhav, DEFAULTS.abhav);
-        watch(DOC_P2, setAanya, DEFAULTS.aanya);
-        watch("shared", setShared, DEFAULTS.shared);
+        clearTimeout(migrationTimeout);
+        startWatching();
       });
     return () => {
-      cancelled = true;
+      unmounted = true;
+      clearTimeout(migrationTimeout);
       unsubs.forEach((u) => u());
     };
   }, [user]);
@@ -359,8 +384,7 @@ export function DataProvider({ children }) {
   // Returns true if the write looks safe; false if suspicious.
   const isWriteSafe = useCallback(
     (docId, newData) => {
-      const current =
-        docId === "abhav" ? abhav : docId === "aanya" ? aanya : shared;
+      const current = docId === "p1" ? p1 : docId === "p2" ? p2 : shared;
       if (!current) return true; // first write, allow
       // Reject if newData is missing most expected keys (spread of null)
       const expectedKeys =
@@ -411,7 +435,7 @@ export function DataProvider({ children }) {
       }
       return true;
     },
-    [abhav, aanya, shared],
+    [p1, p2, shared],
   );
 
   // Debounce backup: only backup once every 30s per docId
@@ -447,7 +471,7 @@ export function DataProvider({ children }) {
 
   const updatePerson = useCallback(
     (person, key, value) => {
-      const current = person === "abhav" ? abhav : aanya;
+      const current = person === "p1" ? p1 : p2;
       if (!current) {
         console.error(
           `[DataGuard] updatePerson("${person}") skipped — data not loaded yet.`,
@@ -468,16 +492,16 @@ export function DataProvider({ children }) {
         updated = { ...updated, transactions: applyRecurring(updated) };
       }
 
-      if (person === "abhav") setAbhav(updated);
-      else setAanya(updated);
+      if (person === "p1") setP1(updated);
+      else setP2(updated);
       save(person, updated);
     },
-    [abhav, aanya, save],
+    [p1, p2, save],
   );
 
   const batchUpdatePerson = useCallback(
     (person, fields) => {
-      const current = person === "abhav" ? abhav : aanya;
+      const current = person === "p1" ? p1 : p2;
       if (!current) {
         console.error(
           `[DataGuard] batchUpdatePerson("${person}") skipped — data not loaded yet.`,
@@ -495,11 +519,11 @@ export function DataProvider({ children }) {
         updated = { ...updated, transactions: withoutAutoThisMonth };
         updated = { ...updated, transactions: applyRecurring(updated) };
       }
-      if (person === "abhav") setAbhav(updated);
-      else setAanya(updated);
+      if (person === "p1") setP1(updated);
+      else setP2(updated);
       save(person, updated);
     },
-    [abhav, aanya, save],
+    [p1, p2, save],
   );
 
   const updateShared = useCallback(
@@ -520,12 +544,12 @@ export function DataProvider({ children }) {
   const resetData = useCallback(async () => {
     if (!user) return;
     const uid = user.uid;
-    const emptyAbhav = { ...EMPTY_PERSON };
-    const emptyAanya = { ...EMPTY_PERSON };
+    const emptyP1 = { ...EMPTY_PERSON };
+    const emptyP2 = { ...EMPTY_PERSON };
     const emptyShared = { ...EMPTY_SHARED };
     await Promise.all([
-      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P1), emptyAbhav),
-      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P2), emptyAanya),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P1), emptyP1),
+      setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, DOC_P2), emptyP2),
       setDoc(doc(db, COL_HOUSEHOLDS, uid, SUBCOL_DATA, "shared"), emptyShared),
     ]);
   }, [user]);
@@ -533,23 +557,23 @@ export function DataProvider({ children }) {
   // Need onboarding when both persons have zero incomes (fresh state)
   const needsOnboarding =
     !loading &&
-    abhav &&
-    aanya &&
+    p1 &&
+    p2 &&
     shared &&
-    abhav.incomes?.length === 0 &&
-    aanya.incomes?.length === 0 &&
+    p1.incomes?.length === 0 &&
+    p2.incomes?.length === 0 &&
     !shared.profile?.householdName;
 
   const takeSnapshot = useCallback(() => {
-    if (!abhav || !aanya) return;
+    if (!p1 || !p2) return;
     // Don't take a snapshot if data is still empty / loading
     const hasData =
-      (abhav.investments?.length || 0) > 0 ||
-      (abhav.assets?.length || 0) > 0 ||
-      (abhav.savingsAccounts?.length || 0) > 0 ||
-      (aanya.investments?.length || 0) > 0 ||
-      (aanya.assets?.length || 0) > 0 ||
-      (aanya.savingsAccounts?.length || 0) > 0;
+      (p1.investments?.length || 0) > 0 ||
+      (p1.assets?.length || 0) > 0 ||
+      (p1.savingsAccounts?.length || 0) > 0 ||
+      (p2.investments?.length || 0) > 0 ||
+      (p2.assets?.length || 0) > 0 ||
+      (p2.savingsAccounts?.length || 0) > 0;
     if (!hasData) return;
     const now = new Date();
     const label = `${now.toLocaleString("default", { month: "short" })} ${now.getFullYear()}`;
@@ -607,8 +631,8 @@ export function DataProvider({ children }) {
       month: now.getMonth() + 1,
       year: now.getFullYear(),
       timestamp: now.toISOString(),
-      abhavIncome: (abhav.incomes || []).reduce((s, x) => s + x.amount, 0),
-      abhavExpenses: (abhav.expenses || []).reduce(
+      p1Income: (p1.incomes || []).reduce((s, x) => s + x.amount, 0),
+      p1Expenses: (p1.expenses || []).reduce(
         (s, x) =>
           s +
           (x.expenseType === "onetime"
@@ -616,12 +640,12 @@ export function DataProvider({ children }) {
             : x.amount),
         0,
       ),
-      abhavInvestments: (abhav.investments || []).reduce(
+      p1Investments: (p1.investments || []).reduce(
         (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
       ),
-      aanyaIncome: (aanya.incomes || []).reduce((s, x) => s + x.amount, 0),
-      aanyaExpenses: (aanya.expenses || []).reduce(
+      p2Income: (p2.incomes || []).reduce((s, x) => s + x.amount, 0),
+      p2Expenses: (p2.expenses || []).reduce(
         (s, x) =>
           s +
           (x.expenseType === "onetime"
@@ -629,7 +653,7 @@ export function DataProvider({ children }) {
             : x.amount),
         0,
       ),
-      aanyaInvestments: (aanya.investments || []).reduce(
+      p2Investments: (p2.investments || []).reduce(
         (s, x) => s + freqToMonthly(x.amount, x.frequency),
         0,
       ),
@@ -637,8 +661,8 @@ export function DataProvider({ children }) {
         (s, x) => s + (x.amount || 0),
         0,
       ),
-      abhavNetWorth: Math.round(computeNW(abhav)),
-      aanyaNetWorth: Math.round(computeNW(aanya)),
+      p1NetWorth: Math.round(computeNW(p1)),
+      p2NetWorth: Math.round(computeNW(p2)),
     };
     const history = (shared?.netWorthHistory || []).filter(
       (s) => !(s.month === snap.month && s.year === snap.year),
@@ -648,13 +672,13 @@ export function DataProvider({ children }) {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
       .slice(-MAX_HISTORY_MONTHS);
     updateShared("netWorthHistory", merged);
-  }, [abhav, aanya, shared, updateShared]);
+  }, [p1, p2, shared, updateShared]);
 
   // ── Auto-snapshot once per month on app load ────────────────────────────
   const autoSnappedRef = useRef(false);
   useEffect(() => {
     if (loading || autoSnappedRef.current) return;
-    if (!abhav || !aanya || !shared) return;
+    if (!p1 || !p2 || !shared) return;
     const now = new Date();
     const curMonth = now.getMonth() + 1;
     const curYear = now.getFullYear();
@@ -667,14 +691,14 @@ export function DataProvider({ children }) {
     } else {
       autoSnappedRef.current = true;
     }
-  }, [loading, abhav, aanya, shared, takeSnapshot]);
+  }, [loading, p1, p2, shared, takeSnapshot]);
 
   // ── Auto-sync wealth snapshot → GrowthOS (users/{uid}/growthOS/wealthSnapshot) ──────
   // Debounced 5s after any data change; skipped in dev mode.
   // GrowthOS WealthCard reads netWorth, sip, savingsRate from this path.
   const growthSyncTimerRef = useRef(null);
   useEffect(() => {
-    if (loading || !user || !abhav || !aanya || IS_DEV) return;
+    if (loading || !user || !p1 || !p2 || IS_DEV) return;
     if (growthSyncTimerRef.current) clearTimeout(growthSyncTimerRef.current);
     growthSyncTimerRef.current = setTimeout(async () => {
       const now = new Date();
@@ -719,35 +743,35 @@ export function DataProvider({ children }) {
           invTotal + manualAssets + savingsTotal - (debtTotal + manualLiab)
         );
       };
-      const netWorth = Math.round(computeNW(abhav) + computeNW(aanya));
+      const netWorth = Math.round(computeNW(p1) + computeNW(p2));
       const sip = Math.round(
-        (abhav.investments || []).reduce(
+        (p1.investments || []).reduce(
           (s, x) => s + freqToMonthly(x.amount, x.frequency),
           0,
         ) +
-          (aanya.investments || []).reduce(
+          (p2.investments || []).reduce(
             (s, x) => s + freqToMonthly(x.amount, x.frequency),
             0,
           ),
       );
-      const abhavIncome = (abhav.incomes || []).reduce(
+      const p1Income = (p1.incomes || []).reduce(
         (s, x) => s + (x.amount || 0),
         0,
       );
-      const aanyaIncome = (aanya.incomes || []).reduce(
+      const p2Income = (p2.incomes || []).reduce(
         (s, x) => s + (x.amount || 0),
         0,
       );
-      const totalIncome = abhavIncome + aanyaIncome;
-      const abhavExp = (abhav.expenses || []).reduce(
+      const totalIncome = p1Income + p2Income;
+      const p1Exp = (p1.expenses || []).reduce(
         (s, x) => s + (x.expenseType === "onetime" ? 0 : x.amount || 0),
         0,
       );
-      const aanyaExp = (aanya.expenses || []).reduce(
+      const p2Exp = (p2.expenses || []).reduce(
         (s, x) => s + (x.expenseType === "onetime" ? 0 : x.amount || 0),
         0,
       );
-      const savings = totalIncome - abhavExp - aanyaExp - sip;
+      const savings = totalIncome - p1Exp - p2Exp - sip;
       const savingsRate =
         totalIncome > 0
           ? Math.round(((sip + Math.max(0, savings)) / totalIncome) * 100)
@@ -766,7 +790,7 @@ export function DataProvider({ children }) {
     return () => {
       if (growthSyncTimerRef.current) clearTimeout(growthSyncTimerRef.current);
     };
-  }, [loading, user, abhav, aanya]);
+  }, [loading, user, p1, p2]);
 
   // ── One-time deferred persist: write pruned/migrated data back ──────────
   // Runs once after initial load. Separated from watch() so the first render
@@ -774,13 +798,13 @@ export function DataProvider({ children }) {
   const persistedRef = useRef(false);
   useEffect(() => {
     if (loading || persistedRef.current || !user) return;
-    if (!abhav || !aanya || !shared) return;
+    if (!p1 || !p2 || !shared) return;
     persistedRef.current = true;
     const uid = user.uid;
     const persist = async () => {
       for (const [internalId, data] of [
-        ["abhav", abhav],
-        ["aanya", aanya],
+        ["p1", p1],
+        ["p2", p2],
       ]) {
         const ref = doc(
           db,
@@ -812,7 +836,7 @@ export function DataProvider({ children }) {
     // Defer 2s so all charts are mounted and stable
     const timer = setTimeout(persist, 2000);
     return () => clearTimeout(timer);
-  }, [loading, user, abhav, aanya, shared]);
+  }, [loading, user, p1, p2, shared]);
 
   // ── Backup listing & restore ────────────────────────────────────────────
   const listBackups = useCallback(
@@ -836,7 +860,7 @@ export function DataProvider({ children }) {
       const snap = await getDoc(backupRef);
       if (!snap.exists()) throw new Error("Backup not found");
       const { docId: rawDocId, data } = snap.data();
-      // Handle both legacy ("abhav"/"aanya") and new ("person1"/"person2") backup IDs
+      // Handle both legacy ("p1"/"p2") and new ("person1"/"person2") backup IDs
       const internalId = fromDocId(rawDocId);
       // Backup current state BEFORE restoring (so restore is itself reversible)
       await backupBeforeSave(internalId);
@@ -850,8 +874,8 @@ export function DataProvider({ children }) {
       );
       await setDoc(ref, data);
       // Update local state
-      if (internalId === "abhav") setAbhav(data);
-      else if (internalId === "aanya") setAanya(data);
+      if (internalId === "p1") setP1(data);
+      else if (internalId === "p2") setP2(data);
       else if (internalId === "shared") setShared(data);
     },
     [user, backupBeforeSave],
@@ -863,7 +887,7 @@ export function DataProvider({ children }) {
   const createManualBackup = useCallback(
     async (note = "manual backup") => {
       if (!user) return;
-      const DOCS = ["abhav", "aanya", "shared"];
+      const DOCS = ["p1", "p2", "shared"];
       const results = [];
       const backupsCol = collection(db, COL_HOUSEHOLDS, user.uid, "backups");
       for (const docId of DOCS) {
@@ -910,7 +934,7 @@ export function DataProvider({ children }) {
     if (!user) return;
     // Ensure prod docs are migrated to new names before reading
     await migrateDocNames(user.uid, "data").catch(() => {});
-    const DOCS = ["abhav", "aanya", "shared"];
+    const DOCS = ["p1", "p2", "shared"];
     const results = [];
     for (const docId of DOCS) {
       const fsId = toDocId(docId);
@@ -930,7 +954,7 @@ export function DataProvider({ children }) {
   // Push dev data into production (dev_data → data). Backs up prod first.
   const pushDevToProd = useCallback(async () => {
     if (!user) return;
-    const DOCS = ["abhav", "aanya", "shared"];
+    const DOCS = ["p1", "p2", "shared"];
     const results = [];
     for (const docId of DOCS) {
       const fsId = toDocId(docId);
@@ -960,34 +984,57 @@ export function DataProvider({ children }) {
   }, [user]);
 
   // Configurable person display names (fallback to "Person 1"/"Person 2")
-  const personNames = {
-    abhav: shared?.profile?.person1Name || "Person 1",
-    aanya: shared?.profile?.person2Name || "Person 2",
-  };
+  const p1Name = shared?.profile?.person1Name || "Person 1";
+  const p2Name = shared?.profile?.person2Name || "Person 2";
+  const personNames = useMemo(
+    () => ({ p1: p1Name, p2: p2Name }),
+    [p1Name, p2Name],
+  );
+  const isSolo = shared?.profile?.householdMode === "solo";
+
+  const ctxValue = useMemo(
+    () => ({
+      p1,
+      p2,
+      shared,
+      loading,
+      needsOnboarding,
+      personNames,
+      isSolo,
+      updatePerson,
+      batchUpdatePerson,
+      updateShared,
+      takeSnapshot,
+      resetData,
+      listBackups,
+      restoreBackup,
+      createManualBackup,
+      seedDevFromProd,
+      pushDevToProd,
+    }),
+    [
+      p1,
+      p2,
+      shared,
+      loading,
+      needsOnboarding,
+      personNames,
+      isSolo,
+      updatePerson,
+      batchUpdatePerson,
+      updateShared,
+      takeSnapshot,
+      resetData,
+      listBackups,
+      restoreBackup,
+      createManualBackup,
+      seedDevFromProd,
+      pushDevToProd,
+    ],
+  );
 
   return (
-    <DataContext.Provider
-      value={{
-        abhav,
-        aanya,
-        shared,
-        loading,
-        needsOnboarding,
-        personNames,
-        updatePerson,
-        batchUpdatePerson,
-        updateShared,
-        takeSnapshot,
-        resetData,
-        listBackups,
-        restoreBackup,
-        createManualBackup,
-        seedDevFromProd,
-        pushDevToProd,
-      }}
-    >
-      {children}
-    </DataContext.Provider>
+    <DataContext.Provider value={ctxValue}>{children}</DataContext.Provider>
   );
 }
 
@@ -996,25 +1043,26 @@ export const useData = () => useContext(DataContext);
 
 // ── Demo mode provider (read-only, no Firebase) ─────────────────────────
 export function DemoDataProvider({ children }) {
-  const [abhav, setAbhav] = useState(null);
-  const [aanya, setAanya] = useState(null);
+  const [p1, setP1] = useState(null);
+  const [p2, setP2] = useState(null);
   const [shared, setShared] = useState(null);
 
   useEffect(() => {
     // Lazy-load demo data to keep main bundle lean
     import("../data/demoData.js").then((mod) => {
-      setAbhav({ ...mod.DEMO_PERSON1 });
-      setAanya({ ...mod.DEMO_PERSON2 });
+      setP1({ ...mod.DEMO_PERSON1 });
+      setP2({ ...mod.DEMO_PERSON2 });
       setShared({ ...mod.DEMO_SHARED });
     });
   }, []);
 
-  const loading = !abhav || !aanya || !shared;
+  const loading = !p1 || !p2 || !shared;
 
   const personNames = {
-    abhav: shared?.profile?.person1Name || "Rahul",
-    aanya: shared?.profile?.person2Name || "Priya",
+    p1: shared?.profile?.person1Name || "Rahul",
+    p2: shared?.profile?.person2Name || "Priya",
   };
+  const isSolo = shared?.profile?.householdMode === "solo";
 
   const noop = () => {};
   const noopAsync = async () => {};
@@ -1022,12 +1070,13 @@ export function DemoDataProvider({ children }) {
   return (
     <DataContext.Provider
       value={{
-        abhav,
-        aanya,
+        p1,
+        p2,
         shared,
         loading,
         needsOnboarding: false,
         personNames,
+        isSolo,
         updatePerson: noop,
         batchUpdatePerson: noop,
         updateShared: noop,

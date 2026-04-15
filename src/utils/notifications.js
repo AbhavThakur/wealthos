@@ -61,7 +61,7 @@ export async function showNotification(title, options = {}) {
  * Check and fire reminders based on data.
  * Call this once on app load after data is ready.
  */
-export function checkReminders(abhav, aanya, shared, _PersonNames) {
+export function checkReminders(p1, p2, shared, _PersonNames) {
   if (!isNotificationEnabled()) return;
   if (getNotificationPermission() !== "granted") return;
 
@@ -76,7 +76,7 @@ export function checkReminders(abhav, aanya, shared, _PersonNames) {
   const reminders = [];
 
   // Insurance renewals within 7 days
-  for (const p of [abhav, aanya]) {
+  for (const p of [p1, p2]) {
     for (const ins of p?.insurances || []) {
       if (!ins.renewalDate) continue;
       const days = Math.ceil((new Date(ins.renewalDate) - now) / 86400000);
@@ -95,7 +95,7 @@ export function checkReminders(abhav, aanya, shared, _PersonNames) {
     if (!g.deadline) continue;
     const deadline = new Date(g.deadline + "-28"); // month deadline
     const days = Math.ceil((deadline - now) / 86400000);
-    const saved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+    const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
     if (days >= 0 && days <= 14 && saved < g.target) {
       reminders.push({
         title: `Goal "${g.name}" deadline approaching`,

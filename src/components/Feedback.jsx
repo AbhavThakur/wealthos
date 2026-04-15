@@ -3,6 +3,7 @@
  * Floating button + modal UI.
  */
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   MessageSquare,
   X,
@@ -218,7 +219,7 @@ function FeedbackModal({ onClose, feedbackList, isAdmin, user, loading }) {
       }, 1500);
     } catch (err) {
       console.error("Submit feedback error:", err);
-      alert("Failed to submit feedback. Please try again.");
+      toast.error("Failed to submit feedback. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -576,7 +577,7 @@ function FeedbackItem({ item, isAdmin, userId: _userId }) {
       await deleteDoc(doc(db, "feedback", item.id));
     } catch (err) {
       console.error("Delete error:", err);
-      alert("Failed to delete. Please try again.");
+      toast.error("Failed to delete. Please try again.");
     }
   };
 
@@ -896,7 +897,7 @@ export function FeedbackAdmin() {
   const handleDeleteAllResolved = async () => {
     const resolvedItems = feedbackList.filter((f) => f.status === "resolved");
     if (resolvedItems.length === 0) {
-      alert("No resolved feedback to delete.");
+      toast.warning("No resolved feedback to delete.");
       return;
     }
     if (
@@ -914,7 +915,7 @@ export function FeedbackAdmin() {
       await batch.commit();
     } catch (err) {
       console.error("Bulk delete error:", err);
-      alert("Failed to delete. Please try again.");
+      toast.error("Failed to delete. Please try again.");
     }
   };
 

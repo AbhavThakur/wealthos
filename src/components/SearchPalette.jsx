@@ -28,7 +28,7 @@ const PAGES = [
   { id: "settings", label: "Settings", keywords: "profile pin export backup" },
 ];
 
-function buildIndex(abhav, aanya, shared, personNames) {
+function buildIndex(p1, p2, shared, personNames) {
   const items = [];
   const addPerson = (data, name, key) => {
     for (const exp of data?.expenses || []) {
@@ -86,8 +86,8 @@ function buildIndex(abhav, aanya, shared, personNames) {
       });
     }
   };
-  addPerson(abhav, personNames?.abhav || "Person 1", "abhav");
-  addPerson(aanya, personNames?.aanya || "Person 2", "aanya");
+  addPerson(p1, personNames?.p1 || "Person 1", "p1");
+  addPerson(p2, personNames?.p2 || "Person 2", "p2");
 
   for (const g of shared?.goals || []) {
     items.push({
@@ -102,8 +102,8 @@ function buildIndex(abhav, aanya, shared, personNames) {
 }
 
 export default function SearchPalette({
-  abhav,
-  aanya,
+  p1,
+  p2,
   shared,
   personNames,
   setPage,
@@ -116,8 +116,8 @@ export default function SearchPalette({
   const listRef = useRef(null);
 
   const dataItems = useMemo(
-    () => buildIndex(abhav, aanya, shared, personNames),
-    [abhav, aanya, shared, personNames],
+    () => buildIndex(p1, p2, shared, personNames),
+    [p1, p2, shared, personNames],
   );
 
   const results = useMemo(() => {

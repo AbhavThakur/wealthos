@@ -148,7 +148,7 @@ export async function askGroq(userMessage, financialContext) {
 }
 
 // ── Generate a copy-paste report for use in ChatGPT / Claude web ─────────────
-export function buildReport(abhav, aanya, shared) {
+export function buildReport(p1, p2, shared) {
   const fmt = (n) =>
     n == null
       ? "—"
@@ -246,8 +246,8 @@ export function buildReport(abhav, aanya, shared) {
     }
   };
 
-  summarisePerson(abhav, shared?.personNames?.abhav || "Person 1");
-  summarisePerson(aanya, shared?.personNames?.aanya || "Person 2");
+  summarisePerson(p1, shared?.personNames?.p1 || "Person 1");
+  summarisePerson(p2, shared?.personNames?.p2 || "Person 2");
 
   // Net worth history
   const nwHist = shared?.netWorthHistory || [];
@@ -256,7 +256,7 @@ export function buildReport(abhav, aanya, shared) {
       `\n── NET WORTH HISTORY (last ${Math.min(6, nwHist.length)} snapshots) ──`,
     );
     nwHist.slice(-6).forEach((s) => {
-      const hh = (s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0);
+      const hh = (s.p1NetWorth || 0) + (s.p2NetWorth || 0);
       out.push(`  ${s.label || `${s.month}/${s.year}`}: ${fmt(hh)} household`);
     });
   }
@@ -266,7 +266,7 @@ export function buildReport(abhav, aanya, shared) {
   if (goals.length > 0) {
     out.push(`\n── SHARED GOALS ──`);
     for (const g of goals) {
-      const saved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+      const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
       const pct = g.target > 0 ? Math.round((saved / g.target) * 100) : 0;
       out.push(
         `  • ${g.emoji || ""} ${g.name} — target ${fmt(g.target)}, saved ${fmt(saved)} (${pct}%), deadline ${g.deadline || "—"}`,
@@ -290,7 +290,7 @@ export function buildReport(abhav, aanya, shared) {
   return out.join("\n");
 }
 
-export function buildContext(abhav, aanya, shared, profile) {
+export function buildContext(p1, p2, shared, profile) {
   const summarizePerson = (d, name) => {
     if (!d) return null;
     const inc = (d.incomes || []).reduce((s, x) => s + (x.amount || 0), 0);
@@ -432,21 +432,19 @@ export function buildContext(abhav, aanya, shared, profile) {
   // Net worth history (last 6 snapshots for trend)
   const nwHistory = (shared?.netWorthHistory || []).slice(-6).map((s) => ({
     month: s.label || `${s.month}/${s.year}`,
-    abhav: s.abhavNetWorth || 0,
-    aanya: s.aanyaNetWorth || 0,
-    household: (s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0),
+    p1: s.p1NetWorth || 0,
+    p2: s.p2NetWorth || 0,
+    household: (s.p1NetWorth || 0) + (s.p2NetWorth || 0),
   }));
 
   const sharedGoals = (shared?.goals || []).map((g) => ({
     name: g.name,
     target: g.target,
-    saved: (g.abhavSaved || 0) + (g.aanyaSaved || 0),
+    saved: (g.p1Saved || 0) + (g.p2Saved || 0),
     deadline: g.deadline,
     pct:
       g.target > 0
-        ? Math.round(
-            (((g.abhavSaved || 0) + (g.aanyaSaved || 0)) / g.target) * 100,
-          )
+        ? Math.round((((g.p1Saved || 0) + (g.p2Saved || 0)) / g.target) * 100)
         : 0,
   }));
 
@@ -454,18 +452,24 @@ export function buildContext(abhav, aanya, shared, profile) {
   const currentAge = shared?.profile?.currentAge || 30;
 
   if (profile === "household") {
-    const p1 = summarizePerson(abhav, "Abhav");
-    const p2 = summarizePerson(aanya, "Aanya");
+    const p1Sum = summarizePerson(
+      p1,
+      shared?.profile?.person1Name || "Person 1",
+    );
+    const p2Sum = summarizePerson(
+      p2,
+      shared?.profile?.person2Name || "Person 2",
+    );
     const combinedIncome =
-      (p1?.monthlyIncome_INR || 0) + (p2?.monthlyIncome_INR || 0);
+      (p1Sum?.monthlyIncome_INR || 0) + (p2Sum?.monthlyIncome_INR || 0);
     const combinedSIP =
-      (p1?.monthlySIPTotal_INR || 0) + (p2?.monthlySIPTotal_INR || 0);
+      (p1Sum?.monthlySIPTotal_INR || 0) + (p2Sum?.monthlySIPTotal_INR || 0);
     const combinedLiquid =
-      (p1?.liquidSavingsBalance || 0) + (p2?.liquidSavingsBalance || 0);
+      (p1Sum?.liquidSavingsBalance || 0) + (p2Sum?.liquidSavingsBalance || 0);
     return {
       view: "Household",
-      person1: p1,
-      person2: p2,
+      person1: p1Sum,
+      person2: p2Sum,
       sharedGoals,
       household_combined: {
         combinedMonthlyIncome_INR: combinedIncome,
@@ -482,8 +486,11 @@ export function buildContext(abhav, aanya, shared, profile) {
     };
   }
 
-  const person = profile === "abhav" ? abhav : aanya;
-  const name = profile === "abhav" ? "Abhav" : "Aanya";
+  const person = profile === "p1" ? p1 : p2;
+  const name =
+    profile === "p1"
+      ? shared?.profile?.person1Name || "Person 1"
+      : shared?.profile?.person2Name || "Person 2";
   return {
     view: name,
     ...summarizePerson(person, name),

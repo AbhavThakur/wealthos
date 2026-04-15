@@ -36,6 +36,7 @@ import {
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
+import { useData } from "../context/DataContext";
 
 // ── Mobile-friendly input modal ──────────────────────────────────────────────
 // On small screens, inputs get cropped. Tapping opens a full-width bottom sheet
@@ -4825,7 +4826,8 @@ export default function Budget({
   );
 }
 
-export function HouseholdBudget({ abhav, aanya, shared }) {
+export function HouseholdBudget({ p1, p2, shared }) {
+  const { personNames } = useData() || {};
   // ── Month selector ─────────────────────────────────────────────────────
   const _hhNow = new Date();
   const _hhCurYm = `${_hhNow.getFullYear()}-${String(_hhNow.getMonth() + 1).padStart(2, "0")}`;
@@ -4872,12 +4874,12 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
       return _hhIsActive(x);
     });
 
-  const abhavFiltered = filterPersonExpenses(abhav);
-  const aanyaFiltered = filterPersonExpenses(aanya);
+  const p1Filtered = filterPersonExpenses(p1);
+  const p2Filtered = filterPersonExpenses(p2);
 
-  const abhavIncome = (abhav?.incomes || []).reduce((s, x) => s + x.amount, 0);
-  const aanyaIncome = (aanya?.incomes || []).reduce((s, x) => s + x.amount, 0);
-  const totalIncome = abhavIncome + aanyaIncome;
+  const p1Income = (p1?.incomes || []).reduce((s, x) => s + x.amount, 0);
+  const p2Income = (p2?.incomes || []).reduce((s, x) => s + x.amount, 0);
+  const totalIncome = p1Income + p2Income;
 
   const sharedTrips = shared?.trips || [];
   const filteredSharedTrips = sharedTrips.filter(
@@ -4888,35 +4890,35 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
     0,
   );
 
-  const abhavExpenses = abhavFiltered.reduce(
+  const p1Expenses = p1Filtered.reduce(
     (s, x) =>
       s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
     0,
   );
-  const aanyaExpenses = aanyaFiltered.reduce(
+  const p2Expenses = p2Filtered.reduce(
     (s, x) =>
       s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
     0,
   );
-  const totalExpenses = abhavExpenses + aanyaExpenses + sharedTripTotal;
+  const totalExpenses = p1Expenses + p2Expenses + sharedTripTotal;
 
   const surplus = totalIncome - totalExpenses;
   const savingsRate =
     totalIncome > 0 ? Math.round((surplus / totalIncome) * 100) : 0;
 
-  // { cat: { total, abhav, aanya, subs: { sub: { total, abhav, aanya } } } }
+  // { cat: { total, p1, p2, subs: { sub: { total, p1, p2 } } } }
   const mergeGrouped = (exps, key) =>
     exps.reduce((acc, e) => {
       if (e.expenseType === "trip") {
         // Expand trip items into categories
         for (const item of e.items || []) {
           const cat = item.category || "Others";
-          if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+          if (!acc[cat]) acc[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
           acc[cat].total += item.amount || 0;
           acc[cat][key] = (acc[cat][key] || 0) + (item.amount || 0);
           const sub = e.name || "";
           if (!acc[cat].subs[sub])
-            acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+            acc[cat].subs[sub] = { total: 0, p1: 0, p2: 0 };
           acc[cat].subs[sub].total += item.amount || 0;
           acc[cat].subs[sub][key] =
             (acc[cat].subs[sub][key] || 0) + (item.amount || 0);
@@ -4925,61 +4927,58 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
         const cat = e.category;
         const amt =
           e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
-        if (!acc[cat]) acc[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+        if (!acc[cat]) acc[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
         acc[cat].total += amt;
         acc[cat][key] = (acc[cat][key] || 0) + amt;
         const sub = e.subCategory || "";
         if (!acc[cat].subs[sub])
-          acc[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+          acc[cat].subs[sub] = { total: 0, p1: 0, p2: 0 };
         acc[cat].subs[sub].total += amt;
         acc[cat].subs[sub][key] = (acc[cat].subs[sub][key] || 0) + amt;
       }
       return acc;
     }, {});
 
-  const aGrouped = mergeGrouped(abhavFiltered, "abhav");
-  const anGrouped = mergeGrouped(aanyaFiltered, "aanya");
+  const aGrouped = mergeGrouped(p1Filtered, "p1");
+  const anGrouped = mergeGrouped(p2Filtered, "p2");
 
   // Merge both into a single map for display
   const grouped = {};
   for (const [cat, vals] of Object.entries(aGrouped)) {
-    if (!grouped[cat])
-      grouped[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+    if (!grouped[cat]) grouped[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
     grouped[cat].total += vals.total;
-    grouped[cat].abhav += vals.abhav || 0;
+    grouped[cat].p1 += vals.p1 || 0;
     Object.entries(vals.subs).forEach(([sub, sv]) => {
       if (!grouped[cat].subs[sub])
-        grouped[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+        grouped[cat].subs[sub] = { total: 0, p1: 0, p2: 0 };
       grouped[cat].subs[sub].total += sv.total;
-      grouped[cat].subs[sub].abhav += sv.abhav || 0;
+      grouped[cat].subs[sub].p1 += sv.p1 || 0;
     });
   }
   for (const [cat, vals] of Object.entries(anGrouped)) {
-    if (!grouped[cat])
-      grouped[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+    if (!grouped[cat]) grouped[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
     grouped[cat].total += vals.total;
-    grouped[cat].aanya += vals.aanya || 0;
+    grouped[cat].p2 += vals.p2 || 0;
     Object.entries(vals.subs).forEach(([sub, sv]) => {
       if (!grouped[cat].subs[sub])
-        grouped[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+        grouped[cat].subs[sub] = { total: 0, p1: 0, p2: 0 };
       grouped[cat].subs[sub].total += sv.total;
-      grouped[cat].subs[sub].aanya += sv.aanya || 0;
+      grouped[cat].subs[sub].p2 += sv.p2 || 0;
     });
   }
   // Merge shared trips into grouped (attribute by addedBy)
   for (const trip of filteredSharedTrips) {
     for (const item of trip.items || []) {
       const cat = item.category || "Others";
-      if (!grouped[cat])
-        grouped[cat] = { total: 0, abhav: 0, aanya: 0, subs: {} };
+      if (!grouped[cat]) grouped[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
       grouped[cat].total += item.amount || 0;
-      const personKey = (item.addedBy || "").toLowerCase().includes("aanya")
-        ? "aanya"
-        : "abhav";
+      const personKey = (item.addedBy || "").toLowerCase().includes("p2")
+        ? "p2"
+        : "p1";
       grouped[cat][personKey] += item.amount || 0;
       const sub = trip.name || "";
       if (!grouped[cat].subs[sub])
-        grouped[cat].subs[sub] = { total: 0, abhav: 0, aanya: 0 };
+        grouped[cat].subs[sub] = { total: 0, p1: 0, p2: 0 };
       grouped[cat].subs[sub].total += item.amount || 0;
       grouped[cat].subs[sub][personKey] += item.amount || 0;
     }
@@ -5059,7 +5058,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
           <div className="metric-label">
             Combined income
             <InfoModal title="Combined Income">
-              {(abhav?.incomes || []).map((inc) => (
+              {(p1?.incomes || []).map((inc) => (
                 <div
                   key={inc.id}
                   style={{
@@ -5070,12 +5069,12 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   }}
                 >
                   <span>
-                    <span style={{ color: "var(--abhav)" }}>●</span> {inc.name}
+                    <span style={{ color: "var(--p1)" }}>●</span> {inc.name}
                   </span>
                   <span style={{ fontWeight: 600 }}>{fmt(inc.amount)}</span>
                 </div>
               ))}
-              {(aanya?.incomes || []).map((inc) => (
+              {(p2?.incomes || []).map((inc) => (
                 <div
                   key={inc.id}
                   style={{
@@ -5086,7 +5085,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   }}
                 >
                   <span>
-                    <span style={{ color: "var(--aanya)" }}>●</span> {inc.name}
+                    <span style={{ color: "var(--p2)" }}>●</span> {inc.name}
                   </span>
                   <span style={{ fontWeight: 600 }}>{fmt(inc.amount)}</span>
                 </div>
@@ -5109,9 +5108,9 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
           </div>
           <div className="metric-value green-text">{fmt(totalIncome)}</div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>{fmt(abhavIncome)}</span>
+            <span style={{ color: "var(--p1)" }}>{fmt(p1Income)}</span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>{fmt(aanyaIncome)}</span>
+            <span style={{ color: "var(--p2)" }}>{fmt(p2Income)}</span>
           </div>
         </div>
         <div className="metric-card">
@@ -5127,10 +5126,10 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                 }}
               >
                 <span>
-                  <span style={{ color: "var(--abhav)" }}>●</span> Abhav's
-                  expenses
+                  <span style={{ color: "var(--p1)" }}>●</span>{" "}
+                  {personNames?.p1 || "Person 1"}'s expenses
                 </span>
-                <span style={{ fontWeight: 600 }}>{fmt(abhavExpenses)}</span>
+                <span style={{ fontWeight: 600 }}>{fmt(p1Expenses)}</span>
               </div>
               <div
                 style={{
@@ -5141,10 +5140,10 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                 }}
               >
                 <span>
-                  <span style={{ color: "var(--aanya)" }}>●</span> Aanya's
-                  expenses
+                  <span style={{ color: "var(--p2)" }}>●</span>{" "}
+                  {personNames?.p2 || "Person 2"}'s expenses
                 </span>
-                <span style={{ fontWeight: 600 }}>{fmt(aanyaExpenses)}</span>
+                <span style={{ fontWeight: 600 }}>{fmt(p2Expenses)}</span>
               </div>
               {sharedTripTotal > 0 && (
                 <>
@@ -5205,9 +5204,9 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
           </div>
           <div className="metric-value red-text">{fmt(totalExpenses)}</div>
           <div className="metric-sub">
-            <span style={{ color: "var(--abhav)" }}>{fmt(abhavExpenses)}</span>
+            <span style={{ color: "var(--p1)" }}>{fmt(p1Expenses)}</span>
             {" · "}
-            <span style={{ color: "var(--aanya)" }}>{fmt(aanyaExpenses)}</span>
+            <span style={{ color: "var(--p2)" }}>{fmt(p2Expenses)}</span>
             {sharedTripTotal > 0 && (
               <>
                 {" · "}
@@ -5243,7 +5242,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
       <div className="card">
         <div className="card-title">Expenses by category</div>
         {allCats.map((cat) => {
-          const { total, abhav: av, aanya: anv, subs } = grouped[cat];
+          const { total, p1: av, p2: anv, subs } = grouped[cat];
           const subEntries = Object.entries(subs)
             .filter(([k, sv]) => k !== "" && sv.total > 0)
             .sort((a, b) => b[1].total - a[1].total);
@@ -5275,7 +5274,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   <div
                     style={{
                       width: `${((av || 0) / totalExpenses) * 100}%`,
-                      background: "var(--abhav)",
+                      background: "var(--p1)",
                       borderRadius: "3px 0 0 3px",
                     }}
                   />
@@ -5284,7 +5283,7 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   <div
                     style={{
                       width: `${((anv || 0) / totalExpenses) * 100}%`,
-                      background: "var(--aanya)",
+                      background: "var(--p2)",
                       borderRadius: (av || 0) > 0 ? "0 3px 3px 0" : 3,
                     }}
                   />
@@ -5302,14 +5301,14 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
               >
                 {(av || 0) > 0 && (
                   <span>
-                    <span style={{ color: "var(--abhav)" }}>●</span> Abhav{" "}
-                    {fmt(av || 0)}
+                    <span style={{ color: "var(--p1)" }}>●</span>{" "}
+                    {personNames?.p1 || "Person 1"} {fmt(av || 0)}
                   </span>
                 )}
                 {(anv || 0) > 0 && (
                   <span>
-                    <span style={{ color: "var(--aanya)" }}>●</span> Aanya{" "}
-                    {fmt(anv || 0)}
+                    <span style={{ color: "var(--p2)" }}>●</span>{" "}
+                    {personNames?.p2 || "Person 2"} {fmt(anv || 0)}
                   </span>
                 )}
               </div>
@@ -5336,22 +5335,22 @@ export function HouseholdBudget({ abhav, aanya, shared }) {
                   <span
                     style={{
                       fontSize: 11,
-                      color: "var(--abhav)",
+                      color: "var(--p1)",
                       minWidth: 60,
                       textAlign: "right",
                     }}
                   >
-                    {(sv.abhav || 0) > 0 ? fmt(sv.abhav) : ""}
+                    {(sv.p1 || 0) > 0 ? fmt(sv.p1) : ""}
                   </span>
                   <span
                     style={{
                       fontSize: 11,
-                      color: "var(--aanya)",
+                      color: "var(--p2)",
                       minWidth: 60,
                       textAlign: "right",
                     }}
                   >
-                    {(sv.aanya || 0) > 0 ? fmt(sv.aanya) : ""}
+                    {(sv.p2 || 0) > 0 ? fmt(sv.p2) : ""}
                   </span>
                   <span
                     style={{

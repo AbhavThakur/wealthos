@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Camera, X, Image } from "lucide-react";
+import { toast } from "sonner";
 import {
   getStorage,
   ref,
@@ -36,7 +37,7 @@ export default function ReceiptAttach({
     // Validate
     if (!file.type.startsWith("image/")) return;
     if (file.size > 5 * 1024 * 1024) {
-      alert("Image must be under 5MB");
+      toast.error("Image must be under 5MB");
       return;
     }
 

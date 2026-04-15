@@ -1,5 +1,5 @@
 // WealthOS Service Worker — Cache-first for assets, network-first for API
-const CACHE_NAME = "wealthos-v3";
+const CACHE_NAME = "wealthos-v4";
 const STATIC_ASSETS = [
   "/",
   "/index.html",

@@ -298,21 +298,21 @@ export function Insurance({ data, personName, personColor, updatePerson }) {
   );
 }
 
-export function HouseholdInsurance({ abhav, aanya, updatePerson }) {
+export function HouseholdInsurance({ p1, p2, updatePerson }) {
   const { personNames } = useData();
   return (
     <div className="grid-2" style={{ gap: "1.5rem" }}>
       <Insurance
-        data={abhav}
-        personName={personNames?.abhav || "Person 1"}
-        personColor="var(--abhav)"
-        updatePerson={(k, v) => updatePerson("abhav", k, v)}
+        data={p1}
+        personName={personNames?.p1 || "Person 1"}
+        personColor="var(--p1)"
+        updatePerson={(k, v) => updatePerson("p1", k, v)}
       />
       <Insurance
-        data={aanya}
-        personName={personNames?.aanya || "Person 2"}
-        personColor="var(--aanya)"
-        updatePerson={(k, v) => updatePerson("aanya", k, v)}
+        data={p2}
+        personName={personNames?.p2 || "Person 2"}
+        personColor="var(--p2)"
+        updatePerson={(k, v) => updatePerson("p2", k, v)}
       />
     </div>
   );
@@ -629,21 +629,21 @@ export function Subscriptions({ data, personName, personColor, updatePerson }) {
   );
 }
 
-export function HouseholdSubscriptions({ abhav, aanya, updatePerson }) {
+export function HouseholdSubscriptions({ p1, p2, updatePerson }) {
   const { personNames } = useData();
   return (
     <div className="grid-2" style={{ gap: "1.5rem" }}>
       <Subscriptions
-        data={abhav}
-        personName={personNames?.abhav || "Person 1"}
-        personColor="var(--abhav)"
-        updatePerson={(k, v) => updatePerson("abhav", k, v)}
+        data={p1}
+        personName={personNames?.p1 || "Person 1"}
+        personColor="var(--p1)"
+        updatePerson={(k, v) => updatePerson("p1", k, v)}
       />
       <Subscriptions
-        data={aanya}
-        personName={personNames?.aanya || "Person 2"}
-        personColor="var(--aanya)"
-        updatePerson={(k, v) => updatePerson("aanya", k, v)}
+        data={p2}
+        personName={personNames?.p2 || "Person 2"}
+        personColor="var(--p2)"
+        updatePerson={(k, v) => updatePerson("p2", k, v)}
       />
     </div>
   );
@@ -652,7 +652,7 @@ export function HouseholdSubscriptions({ abhav, aanya, updatePerson }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // EMERGENCY FUND TRACKER (standalone card, used on Dashboard)
 // ─────────────────────────────────────────────────────────────────────────────
-export function EmergencyFundCard({ abhav, aanya }) {
+export function EmergencyFundCard({ p1, p2 }) {
   // Monthly essential expenses (both persons)
   const essentialCategories = [
     "Housing",
@@ -673,11 +673,11 @@ export function EmergencyFundCard({ abhav, aanya }) {
       .reduce((s, e) => s + (e.amount || 0), 0);
 
   const monthlyEssentials =
-    calcMonthlyEssentials(abhav) + calcMonthlyEssentials(aanya);
+    calcMonthlyEssentials(p1) + calcMonthlyEssentials(p2);
 
   // EMI payments
   const monthlyEMI =
-    (abhav?.debts || []).reduce((s, d) => {
+    (p1?.debts || []).reduce((s, d) => {
       const mr = (d.rate || 0) / 100 / 12;
       const n = d.tenure || 1;
       return (
@@ -690,7 +690,7 @@ export function EmergencyFundCard({ abhav, aanya }) {
           : Math.round(d.outstanding / n))
       );
     }, 0) +
-    (aanya?.debts || []).reduce((s, d) => {
+    (p2?.debts || []).reduce((s, d) => {
       const mr = (d.rate || 0) / 100 / 12;
       const n = d.tenure || 1;
       return (
@@ -706,14 +706,14 @@ export function EmergencyFundCard({ abhav, aanya }) {
 
   // Insurance premiums (monthly equivalent)
   const monthlyInsurance =
-    (abhav?.insurances || [])
+    (p1?.insurances || [])
       .filter((i) => i.active !== false)
       .reduce((s, i) => {
         if (i.premiumFreq === "monthly") return s + i.premium;
         if (i.premiumFreq === "quarterly") return s + i.premium / 3;
         return s + i.premium / 12;
       }, 0) +
-    (aanya?.insurances || [])
+    (p2?.insurances || [])
       .filter((i) => i.active !== false)
       .reduce((s, i) => {
         if (i.premiumFreq === "monthly") return s + i.premium;
@@ -729,7 +729,7 @@ export function EmergencyFundCard({ abhav, aanya }) {
     (data?.assets || [])
       .filter((a) => a.type === "cash" || a.type === "savings")
       .reduce((s, a) => s + (a.value || 0), 0);
-  const totalLiquid = liquidAssets(abhav) + liquidAssets(aanya);
+  const totalLiquid = liquidAssets(p1) + liquidAssets(p2);
 
   const monthsCovered = monthlyNeed > 0 ? totalLiquid / monthlyNeed : 0;
   const target = 6; // 6 months is the standard recommendation

@@ -1,7 +1,7 @@
 {
   "name": "WealthOS",
   "short_name": "WealthOS",
-  "description": "Household finance tracker for two-person households",
+  "description": "Personal & household finance tracker PWA",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0c0c0f",

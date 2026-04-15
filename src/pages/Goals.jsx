@@ -27,7 +27,7 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
   const { confirm, dialog } = useConfirm();
 
   const saved = isShared
-    ? (goal.abhavSaved || 0) + (goal.aanyaSaved || 0)
+    ? (goal.p1Saved || 0) + (goal.p2Saved || 0)
     : goal.saved;
   const target = goal.target;
   const pct = Math.min(100, Math.round((saved / target) * 100));
@@ -38,8 +38,8 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
       ...form,
       target: Number(form.target),
       saved: Number(form.saved || 0),
-      abhavSaved: Number(form.abhavSaved || 0),
-      aanyaSaved: Number(form.aanyaSaved || 0),
+      p1Saved: Number(form.p1Saved || 0),
+      p2Saved: Number(form.p2Saved || 0),
     });
     setEditing(false);
   };
@@ -96,13 +96,13 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
                       marginBottom: 4,
                     }}
                   >
-                    {personNames?.abhav || "Person 1"} saved (₹)
+                    {personNames?.p1 || "Person 1"} saved (₹)
                   </label>
                   <input
                     type="number"
-                    value={form.abhavSaved || 0}
+                    value={form.p1Saved || 0}
                     onChange={(e) =>
-                      setForm({ ...form, abhavSaved: e.target.value })
+                      setForm({ ...form, p1Saved: e.target.value })
                     }
                   />
                 </div>
@@ -115,13 +115,13 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
                       marginBottom: 4,
                     }}
                   >
-                    {personNames?.aanya || "Person 2"} saved (₹)
+                    {personNames?.p2 || "Person 2"} saved (₹)
                   </label>
                   <input
                     type="number"
-                    value={form.aanyaSaved || 0}
+                    value={form.p2Saved || 0}
                     onChange={(e) =>
-                      setForm({ ...form, aanyaSaved: e.target.value })
+                      setForm({ ...form, p2Saved: e.target.value })
                     }
                   />
                 </div>
@@ -247,13 +247,13 @@ function GoalCard({ goal, onUpdate, onDelete, isShared, personNames }) {
                     <div
                       style={{ fontSize: 12, color: "var(--text-secondary)" }}
                     >
-                      {personNames?.abhav || "Person 1"}:{" "}
-                      <span style={{ color: "var(--abhav)" }}>
-                        {fmt(goal.abhavSaved || 0)}
+                      {personNames?.p1 || "Person 1"}:{" "}
+                      <span style={{ color: "var(--p1)" }}>
+                        {fmt(goal.p1Saved || 0)}
                       </span>{" "}
-                      · {personNames?.aanya || "Person 2"}:{" "}
-                      <span style={{ color: "var(--aanya)" }}>
-                        {fmt(goal.aanyaSaved || 0)}
+                      · {personNames?.p2 || "Person 2"}:{" "}
+                      <span style={{ color: "var(--p2)" }}>
+                        {fmt(goal.p2Saved || 0)}
                       </span>
                     </div>
                   ) : (
@@ -413,8 +413,8 @@ export default function Goals({
     name: "",
     target: "",
     saved: 0,
-    abhavSaved: 0,
-    aanyaSaved: 0,
+    p1Saved: 0,
+    p2Saved: 0,
     emoji: "🎯",
     color: "#c9a84c",
     deadline: "",
@@ -440,8 +440,8 @@ export default function Goals({
           ...newGoal,
           id: nextId(sharedGoals),
           target: Number(newGoal.target),
-          abhavSaved: Number(newGoal.abhavSaved),
-          aanyaSaved: Number(newGoal.aanyaSaved),
+          p1Saved: Number(newGoal.p1Saved),
+          p2Saved: Number(newGoal.p2Saved),
         },
       ]);
     }
@@ -449,8 +449,8 @@ export default function Goals({
       name: "",
       target: "",
       saved: 0,
-      abhavSaved: 0,
-      aanyaSaved: 0,
+      p1Saved: 0,
+      p2Saved: 0,
       emoji: "🎯",
       color: "#c9a84c",
       deadline: "",
@@ -684,13 +684,13 @@ function AddGoalForm({
                   marginBottom: 4,
                 }}
               >
-                {personNames?.abhav || "Person 1"} saved (₹)
+                {personNames?.p1 || "Person 1"} saved (₹)
               </label>
               <input
                 type="number"
-                value={form.abhavSaved}
+                value={form.p1Saved}
                 onChange={(e) =>
-                  setForm({ ...form, abhavSaved: e.target.value })
+                  setForm({ ...form, p1Saved: e.target.value })
                 }
               />
             </div>
@@ -703,13 +703,13 @@ function AddGoalForm({
                   marginBottom: 4,
                 }}
               >
-                {personNames?.aanya || "Person 2"} saved (₹)
+                {personNames?.p2 || "Person 2"} saved (₹)
               </label>
               <input
                 type="number"
-                value={form.aanyaSaved}
+                value={form.p2Saved}
                 onChange={(e) =>
-                  setForm({ ...form, aanyaSaved: e.target.value })
+                  setForm({ ...form, p2Saved: e.target.value })
                 }
               />
             </div>

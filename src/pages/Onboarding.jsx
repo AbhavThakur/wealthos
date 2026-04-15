@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useData } from "../context/DataContext";
-import { EXPENSE_CATEGORIES, INCOME_TYPES } from "../utils/finance";
+import { INCOME_TYPES } from "../utils/finance";
 
-const STEPS = [
+const ALL_STEPS = [
   { key: "welcome", label: "Welcome" },
-  { key: "household", label: "Household" },
-  { key: "person1", label: "Person 1" },
-  { key: "person2", label: "Person 2" },
+  { key: "household", label: "Setup" },
+  { key: "person1", label: "You" },
+  { key: "person2", label: "Partner" }, // skipped in solo mode
   { key: "expenses", label: "Expenses" },
   { key: "done", label: "Done" },
 ];
@@ -26,6 +26,17 @@ export default function Onboarding() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  // Mode: "solo" (just me) | "couple" (two people)
+  const [mode, setMode] = useState(""); // empty until chosen
+  const isSolo = mode === "solo";
+
+  // Build active steps based on mode
+  const STEPS = isSolo
+    ? ALL_STEPS.filter((s) => s.key !== "person2")
+    : ALL_STEPS;
+
+  const current = STEPS[step];
+
   // Form state
   const [householdName, setHouseholdName] = useState("");
   const [city, setCity] = useState("");
@@ -34,29 +45,27 @@ export default function Onboarding() {
   const [person1Name, setPerson1Name] = useState("");
   const [person2Name, setPerson2Name] = useState("");
 
-  const [abhavIncome, setAbhavIncome] = useState("");
-  const [abhavIncomeType, setAbhavIncomeType] = useState("salary");
-  const [abhavSavings, setAbhavSavings] = useState("");
+  const [p1Income, setP1Income] = useState("");
+  const [p1IncomeType, setP1IncomeType] = useState("salary");
+  const [p1Savings, setP1Savings] = useState("");
 
-  const [aanyaIncome, setAanyaIncome] = useState("");
-  const [aanyaIncomeType, setAanyaIncomeType] = useState("salary");
-  const [aanyaSavings, setAanyaSavings] = useState("");
+  const [p2Income, setP2Income] = useState("");
+  const [p2IncomeType, setP2IncomeType] = useState("salary");
+  const [p2Savings, setP2Savings] = useState("");
 
-  const [abhavExpenses, setAbhavExpenses] = useState(
+  const [p1Expenses, setP1Expenses] = useState(
     QUICK_EXPENSES.map((e) => ({ ...e, amount: "" })),
   );
-  const [aanyaExpenses, setAanyaExpenses] = useState(
+  const [p2Expenses, setP2Expenses] = useState(
     QUICK_EXPENSES.map((e) => ({ ...e, amount: "" })),
   );
-
-  const current = STEPS[step];
 
   const canNext = () => {
     if (current.key === "household") return householdName.trim().length > 0;
     if (current.key === "person1")
-      return person1Name.trim().length > 0 && Number(abhavIncome) > 0;
+      return person1Name.trim().length > 0 && Number(p1Income) > 0;
     if (current.key === "person2")
-      return person2Name.trim().length > 0 && Number(aanyaIncome) > 0;
+      return person2Name.trim().length > 0 && Number(p2Income) > 0;
     return true;
   };
 
@@ -66,83 +75,86 @@ export default function Onboarding() {
   const finish = async () => {
     setSaving(true);
 
-    // Build Abhav data
-    const abhavIncomes = [
+    // Person 1 data
+    const p1Incomes = [
       {
         id: 1,
-        name: abhavIncomeType === "salary" ? "Salary" : "Income",
-        amount: Number(abhavIncome),
-        type: abhavIncomeType,
+        name: p1IncomeType === "salary" ? "Salary" : "Income",
+        amount: Number(p1Income),
+        type: p1IncomeType,
       },
     ];
-    const abhavExp = abhavExpenses
+    const p1Exp = p1Expenses
       .filter((e) => Number(e.amount) > 0)
       .map((e, i) => ({
         id: i + 1,
         name: e.label,
         amount: Number(e.amount),
         category: e.category,
+        expenseType: "monthly",
       }));
-    const abhavAssets =
-      Number(abhavSavings) > 0
+    const p1Assets =
+      Number(p1Savings) > 0
         ? [
             {
               id: 1,
               name: "Savings Account",
-              value: Number(abhavSavings),
+              value: Number(p1Savings),
               type: "cash",
             },
           ]
         : [];
 
-    // Build Aanya data
-    const aanyaIncomes = [
-      {
-        id: 1,
-        name: aanyaIncomeType === "salary" ? "Salary" : "Income",
-        amount: Number(aanyaIncome),
-        type: aanyaIncomeType,
-      },
-    ];
-    const aanyaExp = aanyaExpenses
-      .filter((e) => Number(e.amount) > 0)
-      .map((e, i) => ({
-        id: i + 1,
-        name: e.label,
-        amount: Number(e.amount),
-        category: e.category,
-      }));
-    const aanyaAssets =
-      Number(aanyaSavings) > 0
-        ? [
-            {
-              id: 1,
-              name: "Savings Account",
-              value: Number(aanyaSavings),
-              type: "cash",
-            },
-          ]
-        : [];
-
-    // Save all — use batchUpdatePerson so all fields go in one write per person
-    batchUpdatePerson("abhav", {
-      incomes: abhavIncomes,
-      expenses: abhavExp,
-      assets: abhavAssets,
+    batchUpdatePerson("p1", {
+      incomes: p1Incomes,
+      expenses: p1Exp,
+      assets: p1Assets,
     });
 
-    batchUpdatePerson("aanya", {
-      incomes: aanyaIncomes,
-      expenses: aanyaExp,
-      assets: aanyaAssets,
-    });
+    // Person 2 data — only in couple mode
+    if (!isSolo) {
+      const p2Incomes = [
+        {
+          id: 1,
+          name: p2IncomeType === "salary" ? "Salary" : "Income",
+          amount: Number(p2Income),
+          type: p2IncomeType,
+        },
+      ];
+      const p2Exp = p2Expenses
+        .filter((e) => Number(e.amount) > 0)
+        .map((e, i) => ({
+          id: i + 1,
+          name: e.label,
+          amount: Number(e.amount),
+          category: e.category,
+          expenseType: "monthly",
+        }));
+      const p2Assets =
+        Number(p2Savings) > 0
+          ? [
+              {
+                id: 1,
+                name: "Savings Account",
+                value: Number(p2Savings),
+                type: "cash",
+              },
+            ]
+          : [];
+      batchUpdatePerson("p2", {
+        incomes: p2Incomes,
+        expenses: p2Exp,
+        assets: p2Assets,
+      });
+    }
 
     updateShared("profile", {
       householdName: householdName.trim(),
       city: city.trim(),
       savingsTarget: Number(savingsTarget) || 25,
       person1Name: person1Name.trim(),
-      person2Name: person2Name.trim(),
+      person2Name: isSolo ? "" : person2Name.trim(),
+      householdMode: mode || "couple",
     });
   };
 
@@ -186,37 +198,121 @@ export default function Onboarding() {
                 margin: "0 auto 1.5rem",
               }}
             >
-              Your family finance tracker. Let's set things up in a couple
+              Your personal finance tracker. Let's set things up in a couple of
               minutes — you can always edit everything later.
             </p>
+
+            {/* Mode selector */}
+            <p
+              style={{
+                fontWeight: 600,
+                fontSize: 14,
+                marginBottom: 12,
+                color: "var(--text-primary)",
+              }}
+            >
+              Who's tracking finances?
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                justifyContent: "center",
+                flexWrap: "wrap",
+                marginBottom: 24,
+              }}
+            >
+              {[
+                {
+                  id: "solo",
+                  emoji: "🧑",
+                  label: "Just me",
+                  sub: "Solo tracking",
+                },
+                {
+                  id: "couple",
+                  emoji: "👫",
+                  label: "Two people",
+                  sub: "Couple / partner",
+                },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
+                  style={{
+                    background:
+                      mode === m.id ? "var(--gold-dim)" : "var(--bg-card2)",
+                    border:
+                      mode === m.id
+                        ? "2px solid var(--gold)"
+                        : "2px solid var(--border)",
+                    borderRadius: 12,
+                    padding: "16px 24px",
+                    cursor: "pointer",
+                    textAlign: "center",
+                    minWidth: 130,
+                    transition: "all .15s",
+                  }}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 4 }}>{m.emoji}</div>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 14,
+                      color:
+                        mode === m.id ? "var(--gold)" : "var(--text-primary)",
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {m.sub}
+                  </div>
+                </button>
+              ))}
+            </div>
+
             <button
               className="btn-primary"
               onClick={next}
-              style={{ padding: "10px 32px" }}
+              disabled={!mode}
+              style={{ padding: "10px 32px", opacity: mode ? 1 : 0.45 }}
             >
               Let's go →
             </button>
           </div>
         )}
 
-        {/* Household */}
+        {/* Household / setup */}
         {current.key === "household" && (
           <div className="onboarding-step">
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🏠</div>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>
+              {isSolo ? "🧑" : "🏠"}
+            </div>
             <h2 style={{ fontFamily: "var(--font-serif)", marginBottom: 4 }}>
-              Household
+              {isSolo ? "Your Setup" : "Household"}
             </h2>
             <p className="onboarding-hint">
-              Name your household and add basic details.
+              {isSolo
+                ? "Give your account a name so everything feels personal."
+                : "Name your household and add basic details."}
             </p>
 
             <div className="onboarding-fields">
               <label className="onboarding-label">
-                Household Name *
+                {isSolo ? "Your name / account label *" : "Household Name *"}
                 <input
                   value={householdName}
                   onChange={(e) => setHouseholdName(e.target.value)}
-                  placeholder="e.g. The Sharmas"
+                  placeholder={
+                    isSolo ? "e.g. Rahul's Finances" : "e.g. The Sharmas"
+                  }
                   autoFocus
                 />
               </label>
@@ -247,13 +343,13 @@ export default function Onboarding() {
           <div className="onboarding-step">
             <div style={{ fontSize: 32, marginBottom: 8 }}>💰</div>
             <h2 style={{ fontFamily: "var(--font-serif)", marginBottom: 4 }}>
-              {person1Name || "Person 1"}'s Income
+              {isSolo ? "Your Income" : `${person1Name || "Person 1"}'s Income`}
             </h2>
             <p className="onboarding-hint">Name and primary monthly income.</p>
 
             <div className="onboarding-fields">
               <label className="onboarding-label">
-                Name *
+                {isSolo ? "Your name *" : "Name *"}
                 <input
                   value={person1Name}
                   onChange={(e) => setPerson1Name(e.target.value)}
@@ -264,8 +360,8 @@ export default function Onboarding() {
               <label className="onboarding-label">
                 Income Type
                 <select
-                  value={abhavIncomeType}
-                  onChange={(e) => setAbhavIncomeType(e.target.value)}
+                  value={p1IncomeType}
+                  onChange={(e) => setP1IncomeType(e.target.value)}
                 >
                   {INCOME_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -279,8 +375,8 @@ export default function Onboarding() {
                 <input
                   type="number"
                   min={0}
-                  value={abhavIncome}
-                  onChange={(e) => setAbhavIncome(e.target.value)}
+                  value={p1Income}
+                  onChange={(e) => setP1Income(e.target.value)}
                   placeholder="e.g. 80000"
                 />
               </label>
@@ -289,26 +385,26 @@ export default function Onboarding() {
                 <input
                   type="number"
                   min={0}
-                  value={abhavSavings}
-                  onChange={(e) => setAbhavSavings(e.target.value)}
+                  value={p1Savings}
+                  onChange={(e) => setP1Savings(e.target.value)}
                   placeholder="Bank balance (optional)"
                 />
               </label>
-              {abhavIncome > 0 && (
+              {p1Income > 0 && (
                 <div className="onboarding-preview">
-                  Take-home: <strong>{fmt(abhavIncome)}</strong>/mo
+                  Take-home: <strong>{fmt(p1Income)}</strong>/mo
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Person 2 income */}
+        {/* Person 2 income — couple mode only */}
         {current.key === "person2" && (
           <div className="onboarding-step">
             <div style={{ fontSize: 32, marginBottom: 8 }}>💰</div>
             <h2 style={{ fontFamily: "var(--font-serif)", marginBottom: 4 }}>
-              {person2Name || "Person 2"}'s Income
+              {person2Name || "Person 2"}&apos;s Income
             </h2>
             <p className="onboarding-hint">Name and primary monthly income.</p>
 
@@ -325,8 +421,8 @@ export default function Onboarding() {
               <label className="onboarding-label">
                 Income Type
                 <select
-                  value={aanyaIncomeType}
-                  onChange={(e) => setAanyaIncomeType(e.target.value)}
+                  value={p2IncomeType}
+                  onChange={(e) => setP2IncomeType(e.target.value)}
                 >
                   {INCOME_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -340,8 +436,8 @@ export default function Onboarding() {
                 <input
                   type="number"
                   min={0}
-                  value={aanyaIncome}
-                  onChange={(e) => setAanyaIncome(e.target.value)}
+                  value={p2Income}
+                  onChange={(e) => setP2Income(e.target.value)}
                   placeholder="e.g. 65000"
                 />
               </label>
@@ -350,14 +446,14 @@ export default function Onboarding() {
                 <input
                   type="number"
                   min={0}
-                  value={aanyaSavings}
-                  onChange={(e) => setAanyaSavings(e.target.value)}
+                  value={p2Savings}
+                  onChange={(e) => setP2Savings(e.target.value)}
                   placeholder="Bank balance (optional)"
                 />
               </label>
-              {aanyaIncome > 0 && (
+              {p2Income > 0 && (
                 <div className="onboarding-preview">
-                  Take-home: <strong>{fmt(aanyaIncome)}</strong>/mo
+                  Take-home: <strong>{fmt(p2Income)}</strong>/mo
                 </div>
               )}
             </div>
@@ -375,19 +471,10 @@ export default function Onboarding() {
               Fill in the ones that apply — skip the rest.
             </p>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1.5rem",
-              }}
-            >
-              {/* Person 1 expenses */}
-              <div>
-                <div className="onboarding-sublabel">
-                  {person1Name || "Person 1"}
-                </div>
-                {abhavExpenses.map((e, i) => (
+            {isSolo ? (
+              /* Single column for solo mode */
+              <div style={{ maxWidth: 320, margin: "0 auto" }}>
+                {p1Expenses.map((e, i) => (
                   <label
                     key={e.category}
                     className="onboarding-label"
@@ -403,57 +490,106 @@ export default function Onboarding() {
                       min={0}
                       value={e.amount}
                       onChange={(ev) => {
-                        const copy = [...abhavExpenses];
+                        const copy = [...p1Expenses];
                         copy[i] = { ...copy[i], amount: ev.target.value };
-                        setAbhavExpenses(copy);
+                        setP1Expenses(copy);
                       }}
                       placeholder="₹"
                     />
                   </label>
                 ))}
-                {totalExp(abhavExpenses) > 0 && (
+                {totalExp(p1Expenses) > 0 && (
                   <div className="onboarding-preview" style={{ marginTop: 8 }}>
-                    Total: <strong>{fmt(totalExp(abhavExpenses))}</strong>/mo
+                    Total: <strong>{fmt(totalExp(p1Expenses))}</strong>/mo
                   </div>
                 )}
               </div>
+            ) : (
+              /* Two-column grid for couple mode */
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "1.5rem",
+                }}
+              >
+                <div>
+                  <div className="onboarding-sublabel">
+                    {person1Name || "Person 1"}
+                  </div>
+                  {p1Expenses.map((e, i) => (
+                    <label
+                      key={e.category}
+                      className="onboarding-label"
+                      style={{ marginBottom: 6 }}
+                    >
+                      <span
+                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
+                      >
+                        {e.label}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={e.amount}
+                        onChange={(ev) => {
+                          const copy = [...p1Expenses];
+                          copy[i] = { ...copy[i], amount: ev.target.value };
+                          setP1Expenses(copy);
+                        }}
+                        placeholder="₹"
+                      />
+                    </label>
+                  ))}
+                  {totalExp(p1Expenses) > 0 && (
+                    <div
+                      className="onboarding-preview"
+                      style={{ marginTop: 8 }}
+                    >
+                      Total: <strong>{fmt(totalExp(p1Expenses))}</strong>/mo
+                    </div>
+                  )}
+                </div>
 
-              {/* Person 2 expenses */}
-              <div>
-                <div className="onboarding-sublabel">
-                  {person2Name || "Person 2"}
-                </div>
-                {aanyaExpenses.map((e, i) => (
-                  <label
-                    key={e.category}
-                    className="onboarding-label"
-                    style={{ marginBottom: 6 }}
-                  >
-                    <span
-                      style={{ fontSize: 12, color: "var(--text-secondary)" }}
-                    >
-                      {e.label}
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={e.amount}
-                      onChange={(ev) => {
-                        const copy = [...aanyaExpenses];
-                        copy[i] = { ...copy[i], amount: ev.target.value };
-                        setAanyaExpenses(copy);
-                      }}
-                      placeholder="₹"
-                    />
-                  </label>
-                ))}
-                {totalExp(aanyaExpenses) > 0 && (
-                  <div className="onboarding-preview" style={{ marginTop: 8 }}>
-                    Total: <strong>{fmt(totalExp(aanyaExpenses))}</strong>/mo
+                <div>
+                  <div className="onboarding-sublabel">
+                    {person2Name || "Person 2"}
                   </div>
-                )}
+                  {p2Expenses.map((e, i) => (
+                    <label
+                      key={e.category}
+                      className="onboarding-label"
+                      style={{ marginBottom: 6 }}
+                    >
+                      <span
+                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
+                      >
+                        {e.label}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={e.amount}
+                        onChange={(ev) => {
+                          const copy = [...p2Expenses];
+                          copy[i] = { ...copy[i], amount: ev.target.value };
+                          setP2Expenses(copy);
+                        }}
+                        placeholder="₹"
+                      />
+                    </label>
+                  ))}
+                  {totalExp(p2Expenses) > 0 && (
+                    <div
+                      className="onboarding-preview"
+                      style={{ marginTop: 8 }}
+                    >
+                      Total: <strong>{fmt(totalExp(p2Expenses))}</strong>/mo
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -471,68 +607,74 @@ export default function Onboarding() {
               All Set!
             </h2>
             <p className="onboarding-hint">
-              Here's a quick summary. You can always edit everything from within
-              the app.
+              Here&apos;s a quick summary. You can always edit everything from
+              within the app.
             </p>
 
             <div className="onboarding-summary">
               <div className="onboarding-summary-row">
-                <span>Household</span>
+                <span>{isSolo ? "Account" : "Household"}</span>
                 <strong>{householdName || "—"}</strong>
               </div>
-              <div className="onboarding-summary-row">
-                <span>City</span>
-                <strong>{city || "—"}</strong>
-              </div>
-              <div className="onboarding-summary-row">
-                <span>{person1Name || "Person 1"} Income</span>
-                <strong>{fmt(abhavIncome) || "—"}/mo</strong>
-              </div>
-              <div className="onboarding-summary-row">
-                <span>{person1Name || "Person 1"} Expenses</span>
-                <strong>
-                  {totalExp(abhavExpenses) > 0
-                    ? `${fmt(totalExp(abhavExpenses))}/mo`
-                    : "—"}
-                </strong>
-              </div>
-              {Number(abhavSavings) > 0 && (
+              {city && (
                 <div className="onboarding-summary-row">
-                  <span>{person1Name || "Person 1"} Savings</span>
-                  <strong>{fmt(abhavSavings)}</strong>
+                  <span>City</span>
+                  <strong>{city}</strong>
                 </div>
               )}
               <div className="onboarding-summary-row">
-                <span>{person2Name || "Person 2"} Income</span>
-                <strong>{fmt(aanyaIncome) || "—"}/mo</strong>
+                <span>{person1Name || "Your"} Income</span>
+                <strong>{fmt(p1Income) || "—"}/mo</strong>
               </div>
               <div className="onboarding-summary-row">
-                <span>{person2Name || "Person 2"} Expenses</span>
+                <span>{person1Name || "Your"} Expenses</span>
                 <strong>
-                  {totalExp(aanyaExpenses) > 0
-                    ? `${fmt(totalExp(aanyaExpenses))}/mo`
+                  {totalExp(p1Expenses) > 0
+                    ? `${fmt(totalExp(p1Expenses))}/mo`
                     : "—"}
                 </strong>
               </div>
-              {Number(aanyaSavings) > 0 && (
+              {Number(p1Savings) > 0 && (
                 <div className="onboarding-summary-row">
-                  <span>{person2Name || "Person 2"} Savings</span>
-                  <strong>{fmt(aanyaSavings)}</strong>
+                  <span>Savings</span>
+                  <strong>{fmt(p1Savings)}</strong>
                 </div>
               )}
-              <div
-                className="onboarding-summary-row"
-                style={{
-                  borderTop: "1px solid var(--border)",
-                  paddingTop: 10,
-                  marginTop: 6,
-                }}
-              >
-                <span>Household Income</span>
-                <strong style={{ color: "var(--green)" }}>
-                  {fmt(Number(abhavIncome) + Number(aanyaIncome))}/mo
-                </strong>
-              </div>
+              {!isSolo && (
+                <>
+                  <div className="onboarding-summary-row">
+                    <span>{person2Name || "Person 2"} Income</span>
+                    <strong>{fmt(p2Income) || "—"}/mo</strong>
+                  </div>
+                  <div className="onboarding-summary-row">
+                    <span>{person2Name || "Person 2"} Expenses</span>
+                    <strong>
+                      {totalExp(p2Expenses) > 0
+                        ? `${fmt(totalExp(p2Expenses))}/mo`
+                        : "—"}
+                    </strong>
+                  </div>
+                  {Number(p2Savings) > 0 && (
+                    <div className="onboarding-summary-row">
+                      <span>{person2Name || "Person 2"} Savings</span>
+                      <strong>{fmt(p2Savings)}</strong>
+                    </div>
+                  )}
+                  <div
+                    className="onboarding-summary-row"
+                    style={{
+                      borderTop: "1px solid var(--border)",
+                      paddingTop: 10,
+                      marginTop: 6,
+                    }}
+                  >
+                    <span>Combined Income</span>
+                    <strong style={{ color: "var(--green)" }}>
+                      {fmt(Number(p1Income) + Number(p2Income))}/mo
+                    </strong>
+                  </div>
+                </>
+              )}
             </div>
 
             <button
@@ -541,7 +683,7 @@ export default function Onboarding() {
               disabled={saving}
               style={{ padding: "10px 32px", marginTop: "1rem" }}
             >
-              {saving ? "Saving…" : "Launch WealthOS 🚀"}
+              {saving ? "Saving\u2026" : "Launch WealthOS 🚀"}
             </button>
           </div>
         )}

@@ -22,10 +22,12 @@
   --blue-dim: rgba(91, 156, 246, 0.1);
   --purple: #9b7fe8;
   --purple-dim: rgba(155, 127, 232, 0.1);
-  --abhav: #5b9cf6;
-  --abhav-dim: rgba(91, 156, 246, 0.1);
-  --aanya: #d46eb3;
-  --aanya-dim: rgba(212, 110, 179, 0.1);
+  --p1-color: #5b9cf6;
+  --p1: var(--p1-color);
+  --p1-dim: rgba(91, 156, 246, 0.1);
+  --p2-color: #d46eb3;
+  --p2: var(--p2-color);
+  --p2-dim: rgba(212, 110, 179, 0.1);
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
@@ -54,10 +56,12 @@
   --blue-dim: rgba(45, 111, 214, 0.08);
   --purple: #7c5cc4;
   --purple-dim: rgba(124, 92, 196, 0.08);
-  --abhav: #2d6fd6;
-  --abhav-dim: rgba(45, 111, 214, 0.08);
-  --aanya: #b84a90;
-  --aanya-dim: rgba(184, 74, 144, 0.08);
+  --p1-color: #2d6fd6;
+  --p1: var(--p1-color);
+  --p1-dim: rgba(45, 111, 214, 0.08);
+  --p2-color: #b84a90;
+  --p2: var(--p2-color);
+  --p2-dim: rgba(184, 74, 144, 0.08);
 }
 
 /* System preference auto-switch (only when no explicit data-theme) */
@@ -84,10 +88,12 @@
     --blue-dim: rgba(45, 111, 214, 0.08);
     --purple: #7c5cc4;
     --purple-dim: rgba(124, 92, 196, 0.08);
-    --abhav: #2d6fd6;
-    --abhav-dim: rgba(45, 111, 214, 0.08);
-    --aanya: #b84a90;
-    --aanya-dim: rgba(184, 74, 144, 0.08);
+    --p1-color: #2d6fd6;
+    --p1: var(--p1-color);
+    --p1-dim: rgba(45, 111, 214, 0.08);
+    --p2-color: #b84a90;
+    --p2: var(--p2-color);
+    --p2-dim: rgba(184, 74, 144, 0.08);
   }
 }
 * {
@@ -100,6 +106,7 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -107,6 +114,21 @@ body {
   touch-action: manipulation;
   /* PWA: prevent overscroll bounce (for pull-to-refresh control) */
   overscroll-behavior-y: contain;
+  /* PWA: safe area for notched devices */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 ::-webkit-scrollbar {
   width: 6px;
@@ -292,13 +314,13 @@ select:focus-visible {
   background: var(--blue-dim);
   color: var(--blue);
 }
-.tag-abhav {
-  background: var(--abhav-dim);
-  color: var(--abhav);
+.tag-p1 {
+  background: var(--p1-dim);
+  color: var(--p1-color);
 }
-.tag-aanya {
-  background: var(--aanya-dim);
-  color: var(--aanya);
+.tag-p2 {
+  background: var(--p2-dim);
+  color: var(--p2-color);
 }
 .progress-track {
   height: 4px;

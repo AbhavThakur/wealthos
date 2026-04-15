@@ -122,14 +122,14 @@ function buildMoreItems(customIds) {
 
 const PROFILES = [
   {
-    id: "abhav",
-    color: "var(--abhav)",
-    dim: "var(--abhav-dim)",
+    id: "p1",
+    color: "var(--p1)",
+    dim: "var(--p1-dim)",
   },
   {
-    id: "aanya",
-    color: "var(--aanya)",
-    dim: "var(--aanya-dim)",
+    id: "p2",
+    color: "var(--p2)",
+    dim: "var(--p2-dim)",
   },
   {
     id: "household",
@@ -149,11 +149,15 @@ function SidebarContent({
   badges,
   personNames,
   isAdmin,
+  isSolo,
 }) {
-  const profiles = PROFILES.map((p) => ({
+  const allProfiles = PROFILES.map((p) => ({
     ...p,
     label: p.label || personNames?.[p.id] || p.id,
   }));
+  const profiles = isSolo
+    ? allProfiles.filter((p) => p.id === "p1")
+    : allProfiles;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div
@@ -289,6 +293,7 @@ export default function Sidebar({
   setProfile,
   badges,
   personNames,
+  isSolo,
   onQuickAdd,
 }) {
   const { logout, user } = useAuth();
@@ -336,10 +341,13 @@ export default function Sidebar({
     return () => document.removeEventListener("keydown", handleKey);
   }, [moreOpen]);
 
-  const profiles = PROFILES.map((p) => ({
+  const allMobileProfiles = PROFILES.map((p) => ({
     ...p,
     label: p.label || personNames?.[p.id] || p.id,
   }));
+  const profiles = isSolo
+    ? allMobileProfiles.filter((p) => p.id === "p1")
+    : allMobileProfiles;
 
   // Is current page one of the primary bottom tabs?
   const isBottomTabPage = bottomTabs.some(
@@ -572,6 +580,7 @@ export default function Sidebar({
           badges={badges}
           personNames={personNames}
           isAdmin={isAdmin}
+          isSolo={isSolo}
         />
       </aside>
     </>

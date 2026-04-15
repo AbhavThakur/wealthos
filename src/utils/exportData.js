@@ -23,17 +23,17 @@ function downloadCsv(filename, header, rows) {
   URL.revokeObjectURL(url);
 }
 
-export function exportAllData(abhav, aanya, shared, personNames = {}) {
+export function exportAllData(p1, p2, shared, personNames = {}) {
   const date = new Date().toISOString().slice(0, 10);
-  const p1 = personNames.abhav || "Person 1";
-  const p2 = personNames.aanya || "Person 2";
+  const p1Name = personNames.p1 || "Person 1";
+  const p2Name = personNames.p2 || "Person 2";
 
   // Incomes
   const incH = ["Person", "Name", "Amount", "Type"];
   const incR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const i of d?.incomes || [])
       incR.push([name, i.name, i.amount, i.type || ""]);
@@ -44,8 +44,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const expH = ["Person", "Name", "Amount", "Category", "Type", "SubCategory"];
   const expR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const e of d?.expenses || [])
       expR.push([
@@ -72,8 +72,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   ];
   const invR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const i of d?.investments || [])
       invR.push([
@@ -93,8 +93,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const txH = ["Person", "Date", "Description", "Amount", "Type", "Category"];
   const txR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const t of d?.transactions || [])
       txR.push([name, t.date, t.desc, t.amount, t.type, t.category || ""]);
@@ -105,8 +105,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const dbtH = ["Person", "Name", "Outstanding", "Rate%", "Tenure(months)"];
   const dbtR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const db of d?.debts || [])
       dbtR.push([name, db.name, db.outstanding, db.rate, db.tenure]);
@@ -126,8 +126,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   ];
   const insR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const i of d?.insurances || [])
       insR.push([
@@ -147,8 +147,8 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const subH = ["Person", "Name", "Category", "Amount", "Frequency", "Active"];
   const subR = [];
   for (const [name, d] of [
-    [p1, abhav],
-    [p2, aanya],
+    [p1Name, p1],
+    [p2Name, p2],
   ]) {
     for (const s of d?.subscriptions || [])
       subR.push([name, s.name, s.category, s.amount, s.frequency, s.active]);
@@ -156,19 +156,12 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   downloadCsv(`wealthos-subscriptions-${date}.csv`, subH, subR);
 
   // Goals (shared)
-  const goalH = [
-    "Name",
-    "Target",
-    "AbhavSaved",
-    "AanyaSaved",
-    "Deadline",
-    "Emoji",
-  ];
+  const goalH = ["Name", "Target", "P1Saved", "P2Saved", "Deadline", "Emoji"];
   const goalR = (shared?.goals || []).map((g) => [
     g.name,
     g.target,
-    g.abhavSaved || g.saved || 0,
-    g.aanyaSaved || 0,
+    g.p1Saved || g.saved || 0,
+    g.p2Saved || 0,
     g.deadline || "",
     g.emoji || "",
   ]);
@@ -178,22 +171,22 @@ export function exportAllData(abhav, aanya, shared, personNames = {}) {
   const nwH = [
     "Month",
     "Year",
-    "AbhavNetWorth",
-    "AanyaNetWorth",
-    "AbhavIncome",
-    "AanyaIncome",
-    "AbhavExpenses",
-    "AanyaExpenses",
+    "P1NetWorth",
+    "P2NetWorth",
+    "P1Income",
+    "P2Income",
+    "P1Expenses",
+    "P2Expenses",
   ];
   const nwR = (shared?.netWorthHistory || []).map((s) => [
     s.month,
     s.year,
-    s.abhavNetWorth || 0,
-    s.aanyaNetWorth || 0,
-    s.abhavIncome || 0,
-    s.aanyaIncome || 0,
-    s.abhavExpenses || 0,
-    s.aanyaExpenses || 0,
+    s.p1NetWorth || 0,
+    s.p2NetWorth || 0,
+    s.p1Income || 0,
+    s.p2Income || 0,
+    s.p1Expenses || 0,
+    s.p2Expenses || 0,
   ]);
   downloadCsv(`wealthos-networth-history-${date}.csv`, nwH, nwR);
 

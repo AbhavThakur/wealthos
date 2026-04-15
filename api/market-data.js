@@ -1,20 +1,55 @@
-// Vercel Serverless Function — proxies Yahoo Finance quotes
+// Vercel Serverless Function — fetches live market quotes via Yahoo Finance v8 chart API.
 // No API key needed. Returns Nifty, Sensex, Gold, USD/INR snapshot.
 // Called by MarketPulse page. Cached 5 min at edge.
 //
 // GET /api/market-data
 // Response: { ok: true, data: [...quotes], ts: number }
 
-const SYMBOLS = "^NSEI,^BSESN,GC=F,INR=X";
-const YF_URL = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(SYMBOLS)}&fields=shortName,regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketPreviousClose,currency`;
+const SYMBOLS = [
+  { symbol: "^NSEI", name: "Nifty 50", currency: "INR" },
+  { symbol: "^BSESN", name: "Sensex", currency: "INR" },
+  { symbol: "GC=F", name: "Gold", currency: "USD" },
+  { symbol: "INR=X", name: "USD / INR", currency: "INR" },
+];
 
-// Label map — plain readable names
-const LABELS = {
-  "^NSEI": "Nifty 50",
-  "^BSESN": "Sensex",
-  "GC=F": "Gold",
-  "INR=X": "USD / INR",
-};
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/**
+ * Fetch a single symbol's price via Yahoo Finance v8 chart endpoint.
+ * This endpoint does not require crumb/cookie authentication.
+ */
+async function fetchQuote(sym) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym.symbol)}?range=1d&interval=1d&includePrePost=false`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) return null;
+
+  const json = await res.json();
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta) return null;
+
+  const price = meta.regularMarketPrice ?? null;
+  const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? null;
+  const change = price != null && prevClose != null ? price - prevClose : null;
+  const changePct =
+    change != null && prevClose ? (change / prevClose) * 100 : null;
+
+  return {
+    symbol: sym.symbol,
+    name: sym.name,
+    price,
+    prevClose,
+    change: change != null ? Math.round(change * 100) / 100 : null,
+    changePct: changePct != null ? Math.round(changePct * 100) / 100 : null,
+    currency: sym.currency,
+  };
+}
 
 export default async function handler(req, res) {
   // CORS for local dev
@@ -26,39 +61,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(YF_URL, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: "https://finance.yahoo.com",
-      },
-      // 8 second timeout
-      signal: AbortSignal.timeout(8000),
-    });
+    const results = await Promise.allSettled(SYMBOLS.map(fetchQuote));
+    const data = results
+      .map((r) => (r.status === "fulfilled" ? r.value : null))
+      .filter(Boolean);
 
-    if (!response.ok) {
+    if (!data.length) {
       return res
         .status(502)
-        .json({
-          ok: false,
-          error: `Yahoo Finance returned ${response.status}`,
-        });
+        .json({ ok: false, error: "All Yahoo Finance requests failed" });
     }
-
-    const json = await response.json();
-    const quotes = json?.quoteResponse?.result || [];
-
-    const data = quotes.map((q) => ({
-      symbol: q.symbol,
-      name: LABELS[q.symbol] || q.shortName || q.symbol,
-      price: q.regularMarketPrice ?? null,
-      prevClose: q.regularMarketPreviousClose ?? null,
-      change: q.regularMarketChange ?? null,
-      changePct: q.regularMarketChangePercent ?? null,
-      currency: q.currency ?? "USD",
-    }));
 
     // 5-minute cache at CDN edge
     res.setHeader(

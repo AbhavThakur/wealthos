@@ -1,8 +1,7 @@
 {
   "name": "wealthos",
-  "private": false,
   "version": "1.0.0",
-  "description": "Open-source household finance tracker for two-person households",
+  "description": "Open-source personal & household finance tracker PWA",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -28,6 +27,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "resend": "^6.10.0",
+    "sonner": "^2.0.7",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -53,6 +53,5 @@
       "eslint --fix",
       "vitest related --run"
     ]
-  },
-  "packageManager": "yarn@4.12.0+sha512.f45ab632439a67f8bc759bf32ead036a1f413287b9042726b7cc4818b7b49e14e9423ba49b18f9e06ea4941c1ad062385b1d8760a8d5091a1a31e5f6219afca8"
+  }
 }

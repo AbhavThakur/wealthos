@@ -81,16 +81,16 @@ export default function QuickAdd({
               Add expense for
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {["abhav", "aanya"].map((p) => (
+              {["p1", "p2"].map((p) => (
                 <button
                   key={p}
                   onClick={() => navigate(p)}
                   className={`profile-pill active`}
                   style={{
                     "--pill-color":
-                      p === "abhav" ? "var(--abhav)" : "var(--aanya)",
+                      p === "p1" ? "var(--p1)" : "var(--p2)",
                     "--pill-dim":
-                      p === "abhav" ? "var(--abhav-dim)" : "var(--aanya-dim)",
+                      p === "p1" ? "var(--p1-dim)" : "var(--p2-dim)",
                     flex: 1,
                     justifyContent: "center",
                     padding: "12px 16px",

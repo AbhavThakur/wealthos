@@ -1366,7 +1366,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
       {grossAnnual > 0 && (
         <div
           className="card section-gap"
-          style={{ border: "1px solid var(--abhav)" }}
+          style={{ border: "1px solid var(--p1)" }}
         >
           <div className="card-title">
             🧾 This Year's Tax — New Regime (FY 2025-26)
@@ -1996,7 +1996,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             high: "var(--red)",
             medium: "var(--gold)",
             low: "var(--text-secondary)",
-            info: "var(--abhav)",
+            info: "var(--p1)",
           };
           const icons = { high: "🔴", medium: "🟡", low: "⚪", info: "ℹ️" };
           return tips.map((tip, i) => (
@@ -2042,7 +2042,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             href="https://eportal.incometax.gov.in"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--abhav)" }}
+            style={{ color: "var(--p1)" }}
           >
             incometax.gov.in
           </a>{" "}
@@ -2051,7 +2051,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             href="https://cleartax.in/s/income-tax-calculator"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--abhav)" }}
+            style={{ color: "var(--p1)" }}
           >
             ClearTax Calculator
           </a>{" "}
@@ -2060,7 +2060,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
             href="https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1"
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: "var(--abhav)" }}
+            style={{ color: "var(--p1)" }}
           >
             ITR Filing Guide
           </a>
@@ -2070,22 +2070,22 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
   );
 }
 
-export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
+export function HouseholdTransactions({ p1, p2, updatePerson }) {
   const { personNames } = useData();
-  const abhavTx = (abhav?.transactions || []).map((x) => ({
+  const p1Tx = (p1?.transactions || []).map((x) => ({
     ...x,
-    _owner: "abhav",
+    _owner: "p1",
   }));
-  const aanyaTx = (aanya?.transactions || []).map((x) => ({
+  const p2Tx = (p2?.transactions || []).map((x) => ({
     ...x,
-    _owner: "aanya",
+    _owner: "p2",
   }));
 
   const [search, setSearch] = useState("");
   const [filterPerson, setFilterPerson] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
-  const [addFor, setAddFor] = useState("abhav");
+  const [addFor, setAddFor] = useState("p1");
   const [n, setN] = useState({
     date: new Date().toISOString().slice(0, 10),
     desc: "",
@@ -2095,15 +2095,15 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
   });
   const { confirm, dialog } = useConfirm();
 
-  const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
+  const pColor = (o) => (o === "p1" ? "var(--p1)" : "var(--p2)");
   const pLabel = (o) => personNames?.[o] || o;
 
   const source =
     filterPerson === "all"
-      ? [...abhavTx, ...aanyaTx]
-      : filterPerson === "abhav"
-        ? abhavTx
-        : aanyaTx;
+      ? [...p1Tx, ...p2Tx]
+      : filterPerson === "p1"
+        ? p1Tx
+        : p2Tx;
 
   const filtered = source
     .filter(
@@ -2127,7 +2127,7 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
       n.type === "income"
         ? Math.abs(Number(n.amount))
         : -Math.abs(Number(n.amount));
-    const ownerData = addFor === "abhav" ? abhav : aanya;
+    const ownerData = addFor === "p1" ? p1 : p2;
     const txs = ownerData?.transactions || [];
     updatePerson(addFor, "transactions", [
       { ...n, id: nextId(txs), amount: amt },
@@ -2206,14 +2206,14 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
           {[
             { id: "all", label: "All", color: "var(--gold)" },
             {
-              id: "abhav",
-              label: personNames?.abhav || "Person 1",
-              color: "var(--abhav)",
+              id: "p1",
+              label: personNames?.p1 || "Person 1",
+              color: "var(--p1)",
             },
             {
-              id: "aanya",
-              label: personNames?.aanya || "Person 2",
-              color: "var(--aanya)",
+              id: "p2",
+              label: personNames?.p2 || "Person 2",
+              color: "var(--p2)",
             },
           ].map(({ id, label, color }) => (
             <button
@@ -2285,14 +2285,14 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
               <div style={{ display: "flex", gap: 8 }}>
                 {[
                   {
-                    id: "abhav",
-                    label: personNames?.abhav || "Person 1",
-                    color: "var(--abhav)",
+                    id: "p1",
+                    label: personNames?.p1 || "Person 1",
+                    color: "var(--p1)",
                   },
                   {
-                    id: "aanya",
-                    label: personNames?.aanya || "Person 2",
-                    color: "var(--aanya)",
+                    id: "p2",
+                    label: personNames?.p2 || "Person 2",
+                    color: "var(--p2)",
                   },
                 ].map(({ id, label, color }) => (
                   <button
@@ -2490,7 +2490,7 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
                 if (
                   await confirm("Delete transaction?", `Remove "${tx.desc}"?`)
                 ) {
-                  const ownerData = tx._owner === "abhav" ? abhav : aanya;
+                  const ownerData = tx._owner === "p1" ? p1 : p2;
                   const txs = ownerData?.transactions || [];
                   updatePerson(
                     tx._owner,
@@ -2522,20 +2522,20 @@ export function HouseholdTransactions({ abhav, aanya, updatePerson }) {
   );
 }
 
-export function HouseholdDebts({ abhav, aanya, updatePerson }) {
+export function HouseholdDebts({ p1, p2, updatePerson }) {
   const { personNames } = useData();
-  const abhavDebts = (abhav?.debts || []).map((d) => ({
+  const p1Debts = (p1?.debts || []).map((d) => ({
     ...d,
-    _owner: "abhav",
+    _owner: "p1",
   }));
-  const aanyaDebts = (aanya?.debts || []).map((d) => ({
+  const p2Debts = (p2?.debts || []).map((d) => ({
     ...d,
-    _owner: "aanya",
+    _owner: "p2",
   }));
-  const allDebts = [...abhavDebts, ...aanyaDebts];
+  const allDebts = [...p1Debts, ...p2Debts];
 
   const [showAdd, setShowAdd] = useState(false);
-  const [addFor, setAddFor] = useState("abhav");
+  const [addFor, setAddFor] = useState("p1");
   const [n, setN] = useState({
     name: "",
     outstanding: "",
@@ -2544,14 +2544,14 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
   });
   const { confirm, dialog } = useConfirm();
 
-  const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
+  const pColor = (o) => (o === "p1" ? "var(--p1)" : "var(--p2)");
   const pLabel = (o) => personNames?.[o] || o;
 
   const totalEMI = allDebts.reduce((s, d) => s + d.emi, 0);
   const totalOut = allDebts.reduce((s, d) => s + d.outstanding, 0);
-  const abhavIncome = (abhav?.incomes || []).reduce((s, x) => s + x.amount, 0);
-  const aanyaIncome = (aanya?.incomes || []).reduce((s, x) => s + x.amount, 0);
-  const totalIncome = abhavIncome + aanyaIncome;
+  const p1Income = (p1?.incomes || []).reduce((s, x) => s + x.amount, 0);
+  const p2Income = (p2?.incomes || []).reduce((s, x) => s + x.amount, 0);
+  const totalIncome = p1Income + p2Income;
   const dti = totalIncome > 0 ? Math.round((totalEMI / totalIncome) * 100) : 0;
 
   const add = () => {
@@ -2561,7 +2561,7 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
       Number(n.rate),
       Number(n.tenure),
     );
-    const ownerData = addFor === "abhav" ? abhav : aanya;
+    const ownerData = addFor === "p1" ? p1 : p2;
     const debts = ownerData?.debts || [];
     updatePerson(addFor, "debts", [
       ...debts,
@@ -2671,7 +2671,7 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
                       `Remove "${d.name}" and its EMI?`,
                     )
                   ) {
-                    const ownerData = d._owner === "abhav" ? abhav : aanya;
+                    const ownerData = d._owner === "p1" ? p1 : p2;
                     const debts = ownerData?.debts || [];
                     updatePerson(
                       d._owner,
@@ -2704,14 +2704,14 @@ export function HouseholdDebts({ abhav, aanya, updatePerson }) {
             <div style={{ display: "flex", gap: 8 }}>
               {[
                 {
-                  id: "abhav",
-                  label: personNames?.abhav || "Person 1",
-                  color: "var(--abhav)",
+                  id: "p1",
+                  label: personNames?.p1 || "Person 1",
+                  color: "var(--p1)",
                 },
                 {
-                  id: "aanya",
-                  label: personNames?.aanya || "Person 2",
-                  color: "var(--aanya)",
+                  id: "p2",
+                  label: personNames?.p2 || "Person 2",
+                  color: "var(--p2)",
                 },
               ].map(({ id, label, color }) => (
                 <button
@@ -3598,6 +3598,7 @@ export function Settings({
   const { personNames } = useData();
   const profile = sharedData?.profile || {};
   const [p, setP] = useState(profile);
+  const isSoloMode = p.householdMode === "solo";
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -3657,7 +3658,55 @@ export function Settings({
         )}
       </div>
       <div className="card section-gap">
-        <div className="card-title">Household profile</div>
+        <div className="card-title">Profile</div>
+
+        {/* Mode toggle */}
+        <div style={{ marginBottom: 16 }}>
+          <label
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              display: "block",
+              marginBottom: 6,
+            }}
+          >
+            Tracking mode
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { id: "solo", emoji: "🧑", label: "Just me" },
+              { id: "couple", emoji: "👫", label: "Two people" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setP({ ...p, householdMode: m.id })}
+                style={{
+                  background:
+                    (p.householdMode || "couple") === m.id
+                      ? "var(--gold-dim)"
+                      : "var(--bg-card2)",
+                  border:
+                    (p.householdMode || "couple") === m.id
+                      ? "1px solid var(--gold)"
+                      : "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  color:
+                    (p.householdMode || "couple") === m.id
+                      ? "var(--gold)"
+                      : "var(--text-secondary)",
+                  fontWeight:
+                    (p.householdMode || "couple") === m.id ? 600 : 400,
+                }}
+              >
+                {m.emoji} {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <div>
             <label
@@ -3668,14 +3717,33 @@ export function Settings({
                 marginBottom: 4,
               }}
             >
-              Person 1 name
+              {isSoloMode ? "Your name" : "Person 1 name"}
             </label>
             <input
               value={p.person1Name || ""}
               onChange={(e) => setP({ ...p, person1Name: e.target.value })}
-              placeholder="Person 1"
+              placeholder={isSoloMode ? "Your name" : "Person 1"}
             />
           </div>
+          {!isSoloMode && (
+            <div>
+              <label
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
+                Person 2 name
+              </label>
+              <input
+                value={p.person2Name || ""}
+                onChange={(e) => setP({ ...p, person2Name: e.target.value })}
+                placeholder="Person 2"
+              />
+            </div>
+          )}
           <div>
             <label
               style={{
@@ -3685,24 +3753,7 @@ export function Settings({
                 marginBottom: 4,
               }}
             >
-              Person 2 name
-            </label>
-            <input
-              value={p.person2Name || ""}
-              onChange={(e) => setP({ ...p, person2Name: e.target.value })}
-              placeholder="Person 2"
-            />
-          </div>
-          <div>
-            <label
-              style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Household name
+              {isSoloMode ? "Account label" : "Household name"}
             </label>
             <input
               value={p.householdName || ""}
@@ -3907,9 +3958,9 @@ export function Settings({
               marginBottom: 12,
             }}
           >
-            One-click apply Abhav's full FY 2025-26 salary data (BBY Services).
-            Sets income to ₹1,84,601/mo take-home and fills Tax Planner with all
-            components including incentives.
+            One-click apply Person 1's full FY 2025-26 salary data (BBY
+            Services). Sets income to ₹1,84,601/mo take-home and fills Tax
+            Planner with all components including incentives.
           </p>
           <div
             style={{
@@ -3932,7 +3983,7 @@ export function Settings({
           <button
             className="btn-primary"
             onClick={() => {
-              updatePerson("abhav", "incomes", [
+              updatePerson("p1", "incomes", [
                 {
                   id: 1,
                   name: "BBY Services Salary",
@@ -3940,7 +3991,7 @@ export function Settings({
                   type: "salary",
                 },
               ]);
-              updatePerson("abhav", "taxInfo", {
+              updatePerson("p1", "taxInfo", {
                 basicSalary: 96545,
                 hra: 38618,
                 lta: 8042,
@@ -3948,11 +3999,11 @@ export function Settings({
                 communicationAllowance: 2000,
                 annualIncentives: 240582,
               });
-              setBackupMsg("✓ Abhav's FY 2025-26 salary & tax data applied");
+              setBackupMsg("✓ Person 1's FY 2025-26 salary & tax data applied");
               setTimeout(() => setBackupMsg(""), 4000);
             }}
           >
-            Apply to Abhav's Profile
+            Apply to Person 1's Profile
           </button>
         </div>
       )}
@@ -3996,22 +4047,22 @@ export function Settings({
           }}
         >
           <CSVImport
-            personName={personNames?.abhav || "Person 1"}
+            personName={personNames?.p1 || "Person 1"}
             onImport={(txns) => {
               const existing = [];
-              updatePerson("abhav", "transactions", [...existing, ...txns]);
+              updatePerson("p1", "transactions", [...existing, ...txns]);
               setBackupMsg(
-                `✓ Imported ${txns.length} transactions for ${personNames?.abhav || "Person 1"}`,
+                `✓ Imported ${txns.length} transactions for ${personNames?.p1 || "Person 1"}`,
               );
               setTimeout(() => setBackupMsg(""), 4000);
             }}
           />
           <CSVImport
-            personName={personNames?.aanya || "Person 2"}
+            personName={personNames?.p2 || "Person 2"}
             onImport={(txns) => {
-              updatePerson("aanya", "transactions", [...txns]);
+              updatePerson("p2", "transactions", [...txns]);
               setBackupMsg(
-                `✓ Imported ${txns.length} transactions for ${personNames?.aanya || "Person 2"}`,
+                `✓ Imported ${txns.length} transactions for ${personNames?.p2 || "Person 2"}`,
               );
               setTimeout(() => setBackupMsg(""), 4000);
             }}
@@ -4103,7 +4154,7 @@ export function Settings({
                           margin: "0 0 16px",
                         }}
                       >
-                        This will snapshot all your data (abhav, aanya, shared).
+                        This will snapshot all your data (p1, p2, shared).
                         <br />
                         <br />
                         <strong style={{ color: "var(--gold)" }}>
@@ -4234,9 +4285,9 @@ export function Settings({
                   lineHeight: 1.6,
                 }}
               >
-                Your current dev data will replace all production data (abhav,
-                aanya, shared). A backup of prod will be created automatically
-                before overwriting.
+                Your current dev data will replace all production data (p1, p2,
+                shared). A backup of prod will be created automatically before
+                overwriting.
                 <br />
                 Type <strong>PUSH</strong> to confirm:
               </div>
@@ -4354,10 +4405,10 @@ export function Settings({
                         })
                       : "Unknown time";
                     const docLabel =
-                      b.docId === "abhav"
-                        ? personNames?.abhav || "Person 1"
-                        : b.docId === "aanya"
-                          ? personNames?.aanya || "Person 2"
+                      b.docId === "p1"
+                        ? personNames?.p1 || "Person 1"
+                        : b.docId === "p2"
+                          ? personNames?.p2 || "Person 2"
                           : "Shared";
                     const d = b.data || {};
                     const preview =
@@ -4384,15 +4435,15 @@ export function Settings({
                             background:
                               b.docId === "shared"
                                 ? "var(--green-dim)"
-                                : b.docId === "abhav"
-                                  ? "var(--abhav-dim, rgba(96,165,250,0.12))"
-                                  : "var(--aanya-dim, rgba(244,114,182,0.12))",
+                                : b.docId === "p1"
+                                  ? "var(--p1-dim, rgba(96,165,250,0.12))"
+                                  : "var(--p2-dim, rgba(244,114,182,0.12))",
                             color:
                               b.docId === "shared"
                                 ? "var(--green)"
-                                : b.docId === "abhav"
-                                  ? "var(--abhav, #60a5fa)"
-                                  : "var(--aanya, #f472b6)",
+                                : b.docId === "p1"
+                                  ? "var(--p1, #60a5fa)"
+                                  : "var(--p2, #f472b6)",
                             fontWeight: 600,
                             flexShrink: 0,
                           }}

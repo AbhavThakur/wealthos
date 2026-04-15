@@ -104,8 +104,8 @@ const TOOLTIP = {
 };
 
 const VAR_MAP = {
-  "var(--abhav)": "#5b9cf6",
-  "var(--aanya)": "#d46eb3",
+  "var(--p1)": "#5b9cf6",
+  "var(--p2)": "#d46eb3",
   "var(--gold)": "#c9a84c",
   "var(--green)": "#4caf82",
   "var(--red)": "#ef5350",

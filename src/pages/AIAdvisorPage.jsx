@@ -31,7 +31,7 @@ function renderText(text) {
   );
 }
 
-export default function AIAdvisorPage({ abhav, aanya, shared, profile }) {
+export default function AIAdvisorPage({ p1, p2, shared, profile }) {
   const [messages, setMessages] = useState([{ role: "ai", text: WELCOME }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -85,10 +85,10 @@ export default function AIAdvisorPage({ abhav, aanya, shared, profile }) {
       try {
         let reply;
         if (mode === "groq") {
-          const ctx = buildContext(abhav, aanya, shared, profile);
+          const ctx = buildContext(p1, p2, shared, profile);
           reply = await askGroq(q, ctx);
         } else {
-          reply = askSmart(q, abhav, aanya, shared, profile);
+          reply = askSmart(q, p1, p2, shared, profile);
         }
         setMessages((m) => [...m, { role: "ai", text: reply }]);
       } catch {
@@ -99,13 +99,13 @@ export default function AIAdvisorPage({ abhav, aanya, shared, profile }) {
       }
       setLoading(false);
     },
-    [input, loading, mode, abhav, aanya, shared, profile],
+    [input, loading, mode, p1, p2, shared, profile],
   );
 
   const clear = () => setMessages([{ role: "ai", text: WELCOME }]);
 
   const copyReport = () => {
-    const report = buildReport(abhav, aanya, shared);
+    const report = buildReport(p1, p2, shared);
     navigator.clipboard.writeText(report).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);

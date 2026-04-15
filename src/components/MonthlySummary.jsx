@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { toast } from "sonner";
 import {
   fmt,
   freqToMonthly,
@@ -119,7 +120,7 @@ function Bar({ value, max, color }) {
   );
 }
 
-export default function MonthlySummary({ abhav, aanya, shared, personNames }) {
+export default function MonthlySummary({ p1, p2, shared, personNames }) {
   const [open, setOpen] = useState(false);
   const now = new Date();
   const defaultYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -135,10 +136,10 @@ export default function MonthlySummary({ abhav, aanya, shared, personNames }) {
     year: "numeric",
   });
 
-  const aStats = monthStats(abhav, ym);
-  const bStats = monthStats(aanya, ym);
-  const aPrev = monthStats(abhav, prevYm);
-  const bPrev = monthStats(aanya, prevYm);
+  const aStats = monthStats(p1, ym);
+  const bStats = monthStats(p2, ym);
+  const aPrev = monthStats(p1, prevYm);
+  const bPrev = monthStats(p2, prevYm);
 
   const total = {
     income: aStats.income + bStats.income,
@@ -172,7 +173,7 @@ export default function MonthlySummary({ abhav, aanya, shared, personNames }) {
 
   // Goals progress
   const goals = (shared?.goals || []).map((g) => {
-    const saved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+    const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
     return {
       ...g,
       saved,
@@ -213,7 +214,7 @@ export default function MonthlySummary({ abhav, aanya, shared, personNames }) {
       }
     } else {
       await navigator.clipboard.writeText(text);
-      alert("Summary copied to clipboard!");
+      toast.success("Summary copied to clipboard!");
     }
   };
 
@@ -480,14 +481,14 @@ export default function MonthlySummary({ abhav, aanya, shared, personNames }) {
           >
             {[
               {
-                name: personNames?.abhav || "Person 1",
+                name: personNames?.p1 || "Person 1",
                 stats: aStats,
-                color: "var(--abhav)",
+                color: "var(--p1)",
               },
               {
-                name: personNames?.aanya || "Person 2",
+                name: personNames?.p2 || "Person 2",
                 stats: bStats,
-                color: "var(--aanya)",
+                color: "var(--p2)",
               },
             ].map(({ name, stats, color }) => (
               <div

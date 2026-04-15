@@ -45,6 +45,9 @@ export default defineConfig({
           if (id.includes("node_modules/@dnd-kit")) {
             return "dndkit";
           }
+          if (id.includes("node_modules/sonner")) {
+            return "sonner";
+          }
         },
       },
     },

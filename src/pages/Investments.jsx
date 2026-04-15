@@ -2370,22 +2370,22 @@ export function PortfolioCharts({ rows, isHousehold }) {
       isHousehold
         ? [
             {
-              name: personNames?.abhav || "Person 1",
+              name: personNames?.p1 || "Person 1",
               value: Math.round(
                 rows
-                  .filter((r) => r.owner === "abhav")
+                  .filter((r) => r.owner === "p1")
                   .reduce((s, r) => s + r.cur, 0),
               ),
-              color: "var(--abhav)",
+              color: "var(--p1)",
             },
             {
-              name: personNames?.aanya || "Person 2",
+              name: personNames?.p2 || "Person 2",
               value: Math.round(
                 rows
-                  .filter((r) => r.owner === "aanya")
+                  .filter((r) => r.owner === "p2")
                   .reduce((s, r) => s + r.cur, 0),
               ),
-              color: "var(--aanya)",
+              color: "var(--p2)",
             },
           ].filter((d) => d.value > 0)
         : null,

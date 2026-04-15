@@ -632,8 +632,8 @@ function AssetsEditor({
 }
 
 export default function NetWorth({
-  abhav,
-  aanya,
+  p1,
+  p2,
   shared,
   updatePerson,
   updateShared,
@@ -646,8 +646,8 @@ export default function NetWorth({
 
   const history = shared?.netWorthHistory || [];
 
-  const aStats = calcNetWorth(abhav);
-  const bStats = calcNetWorth(aanya);
+  const aStats = calcNetWorth(p1);
+  const bStats = calcNetWorth(p2);
   const hNet = aStats.net + bStats.net;
   const hAssets = aStats.assets + bStats.assets;
   const hLiabilities = aStats.liabilities + bStats.liabilities;
@@ -660,8 +660,8 @@ export default function NetWorth({
 
   const exportNetWorth = () => {
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const p1 = personNames?.abhav || "Person 1";
-    const p2 = personNames?.aanya || "Person 2";
+    const p1Name = personNames?.p1 || "Person 1";
+    const p2Name = personNames?.p2 || "Person 2";
     const today = new Date().toLocaleDateString("en-IN", {
       day: "numeric",
       month: "long",
@@ -683,8 +683,8 @@ export default function NetWorth({
       ["Person", "Bank", "Balance (₹)", "Interest Rate (%)"].map(esc).join(","),
     );
     [
-      [p1, aStats.savingsAccounts],
-      [p2, bStats.savingsAccounts],
+      [p1Name, aStats.savingsAccounts],
+      [p2Name, bStats.savingsAccounts],
     ].forEach(([name, accounts]) => {
       accounts.forEach((acc) =>
         rows.push(
@@ -701,8 +701,8 @@ export default function NetWorth({
       ["Person", "Name", "Type", "Current Value (₹)"].map(esc).join(","),
     );
     [
-      [p1, aStats.invAssets],
-      [p2, bStats.invAssets],
+      [p1Name, aStats.invAssets],
+      [p2Name, bStats.invAssets],
     ].forEach(([name, assets]) => {
       assets.forEach((a) =>
         rows.push([name, a.name, a.type, a.value].map(esc).join(",")),
@@ -711,8 +711,8 @@ export default function NetWorth({
 
     // ── Manual assets ────────────────────────────────────────────────
     const allManual = [
-      ...aStats.manualAssets.map((a) => ({ ...a, _person: p1 })),
-      ...bStats.manualAssets.map((a) => ({ ...a, _person: p2 })),
+      ...aStats.manualAssets.map((a) => ({ ...a, _person: p1Name })),
+      ...bStats.manualAssets.map((a) => ({ ...a, _person: p2Name })),
     ];
     if (allManual.length > 0) {
       section("MANUAL ASSETS");
@@ -726,7 +726,7 @@ export default function NetWorth({
     const aInvTotal = aStats.invAssets.reduce((s, a) => s + a.value, 0);
     const bInvTotal = bStats.invAssets.reduce((s, a) => s + a.value, 0);
     section("SUMMARY");
-    rows.push(["", p1, p2, "Household"].map(esc).join(","));
+    rows.push(["", p1Name, p2Name, "Household"].map(esc).join(","));
     rows.push(
       [
         "Savings",
@@ -776,8 +776,8 @@ export default function NetWorth({
   };
 
   const exportNetWorthText = () => {
-    const p1 = personNames?.abhav || "Person 1";
-    const p2 = personNames?.aanya || "Person 2";
+    const p1Name = personNames?.p1 || "Person 1";
+    const p2Name = personNames?.p2 || "Person 2";
     const today = new Date().toLocaleDateString("en-IN", {
       day: "numeric",
       month: "long",
@@ -794,8 +794,8 @@ export default function NetWorth({
     lines.push("SAVINGS ACCOUNTS");
     lines.push(divider);
     for (const [name, accounts] of [
-      [p1, aStats.savingsAccounts],
-      [p2, bStats.savingsAccounts],
+      [p1Name, aStats.savingsAccounts],
+      [p2Name, bStats.savingsAccounts],
     ]) {
       for (const acc of accounts) {
         lines.push(
@@ -807,8 +807,8 @@ export default function NetWorth({
     lines.push("INVESTMENT PORTFOLIO");
     lines.push(divider);
     for (const [name, assets] of [
-      [p1, aStats.invAssets],
-      [p2, bStats.invAssets],
+      [p1Name, aStats.invAssets],
+      [p2Name, bStats.invAssets],
     ]) {
       for (const a of assets) {
         lines.push(
@@ -821,8 +821,8 @@ export default function NetWorth({
       lines.push("MANUAL ASSETS");
       lines.push(divider);
       for (const a of [
-        ...aStats.manualAssets.map((x) => ({ ...x, _p: p1 })),
-        ...bStats.manualAssets.map((x) => ({ ...x, _p: p2 })),
+        ...aStats.manualAssets.map((x) => ({ ...x, _p: p1Name })),
+        ...bStats.manualAssets.map((x) => ({ ...x, _p: p2Name })),
       ]) {
         lines.push(
           `  ${pad(a._p + " · " + a.name, 34)} ${rpad("₹" + (a.value || 0).toLocaleString("en-IN"), 16)}`,
@@ -833,7 +833,7 @@ export default function NetWorth({
     lines.push("SUMMARY");
     lines.push(divider);
     lines.push(
-      `  ${pad("", 24)} ${rpad(p1, 14)} ${rpad(p2, 14)} ${rpad("Household", 14)}`,
+      `  ${pad("", 24)} ${rpad(p1Name, 14)} ${rpad(p2Name, 14)} ${rpad("Household", 14)}`,
     );
     lines.push(
       `  ${pad("Savings", 24)} ${rpad("₹" + aStats.savingsTotal.toLocaleString("en-IN"), 14)} ${rpad("₹" + bStats.savingsTotal.toLocaleString("en-IN"), 14)} ${rpad("₹" + (aStats.savingsTotal + bStats.savingsTotal).toLocaleString("en-IN"), 14)}`,
@@ -868,8 +868,8 @@ export default function NetWorth({
   };
 
   const exportNetWorthPDF = () => {
-    const p1 = personNames?.abhav || "Person 1";
-    const p2 = personNames?.aanya || "Person 2";
+    const p1Name = personNames?.p1 || "Person 1";
+    const p2Name = personNames?.p2 || "Person 2";
     const today = new Date().toLocaleDateString("en-IN", {
       day: "numeric",
       month: "long",
@@ -906,7 +906,7 @@ export default function NetWorth({
 <table>
   <thead><tr>
     <th style="text-align:left;"></th>
-    <th>${p1}</th><th>${p2}</th><th>Household</th>
+    <th>${p1Name}</th><th>${p2Name}</th><th>Household</th>
   </tr></thead>
   <tbody>
     ${row("Liquid Savings", aStats.savingsTotal, bStats.savingsTotal, aStats.savingsTotal + bStats.savingsTotal)}
@@ -921,8 +921,8 @@ export default function NetWorth({
 <table>
   <thead><tr><th style="text-align:left;">Person</th><th style="text-align:left;">Bank</th><th>Balance</th><th>Rate</th></tr></thead>
   <tbody>${[
-    ...aStats.savingsAccounts.map((a) => ({ ...a, _p: p1 })),
-    ...bStats.savingsAccounts.map((a) => ({ ...a, _p: p2 })),
+    ...aStats.savingsAccounts.map((a) => ({ ...a, _p: p1Name })),
+    ...bStats.savingsAccounts.map((a) => ({ ...a, _p: p2Name })),
   ]
     .map(
       (a) =>
@@ -940,8 +940,8 @@ export default function NetWorth({
 <table>
   <thead><tr><th style="text-align:left;">Person</th><th style="text-align:left;">Name</th><th style="text-align:left;">Type</th><th>Value</th></tr></thead>
   <tbody>${[
-    ...aStats.invAssets.map((a) => ({ ...a, _p: p1 })),
-    ...bStats.invAssets.map((a) => ({ ...a, _p: p2 })),
+    ...aStats.invAssets.map((a) => ({ ...a, _p: p1Name })),
+    ...bStats.invAssets.map((a) => ({ ...a, _p: p2Name })),
   ]
     .map(
       (a) =>
@@ -967,12 +967,12 @@ export default function NetWorth({
   };
 
   const chartData = history
-    .filter((s) => (s.abhavNetWorth || 0) !== 0 || (s.aanyaNetWorth || 0) !== 0)
+    .filter((s) => (s.p1NetWorth || 0) !== 0 || (s.p2NetWorth || 0) !== 0)
     .map((s) => ({
       label: s.label || `${s.month}/${s.year}`,
-      abhav: Math.round(s.abhavNetWorth || 0),
-      aanya: Math.round(s.aanyaNetWorth || 0),
-      household: Math.round((s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0)),
+      p1: Math.round(s.p1NetWorth || 0),
+      p2: Math.round(s.p2NetWorth || 0),
+      household: Math.round((s.p1NetWorth || 0) + (s.p2NetWorth || 0)),
     }));
 
   return (
@@ -1116,23 +1116,23 @@ export default function NetWorth({
               </div>
               <div className="card section-gap">
                 <div className="card-title">
-                  {personNames?.abhav || "Person 1"} vs{" "}
-                  {personNames?.aanya || "Person 2"} net worth
+                  {personNames?.p1 || "Person 1"} vs{" "}
+                  {personNames?.p2 || "Person 2"} net worth
                 </div>
                 <div style={{ height: 200 }}>
                   <Chart
                     categories={chartData.map((d) => d.label)}
                     series={[
                       {
-                        name: personNames?.abhav || "Person 1",
+                        name: personNames?.p1 || "Person 1",
                         type: "bar",
-                        data: chartData.map((d) => d.abhav),
+                        data: chartData.map((d) => d.p1),
                         color: "#5b9cf6",
                       },
                       {
-                        name: personNames?.aanya || "Person 2",
+                        name: personNames?.p2 || "Person 2",
                         type: "bar",
-                        data: chartData.map((d) => d.aanya),
+                        data: chartData.map((d) => d.p2),
                         color: "#d46eb3",
                       },
                     ]}
@@ -1156,10 +1156,10 @@ export default function NetWorth({
                 >
                   <span style={{ flex: 1 }}>Month</span>
                   <span style={{ flex: 1 }}>
-                    {personNames?.abhav || "Person 1"}
+                    {personNames?.p1 || "Person 1"}
                   </span>
                   <span style={{ flex: 1 }}>
-                    {personNames?.aanya || "Person 2"}
+                    {personNames?.p2 || "Person 2"}
                   </span>
                   <span style={{ flex: 1 }}>Household</span>
                   <span style={{ width: 30 }}></span>
@@ -1177,14 +1177,14 @@ export default function NetWorth({
                     }}
                   >
                     <span style={{ flex: 1, fontWeight: 500 }}>{s.label}</span>
-                    <span style={{ flex: 1, color: "var(--abhav)" }}>
-                      {fmtCr(s.abhavNetWorth || 0)}
+                    <span style={{ flex: 1, color: "var(--p1)" }}>
+                      {fmtCr(s.p1NetWorth || 0)}
                     </span>
-                    <span style={{ flex: 1, color: "var(--aanya)" }}>
-                      {fmtCr(s.aanyaNetWorth || 0)}
+                    <span style={{ flex: 1, color: "var(--p2)" }}>
+                      {fmtCr(s.p2NetWorth || 0)}
                     </span>
                     <span style={{ flex: 1, color: "var(--gold)" }}>
-                      {fmtCr((s.abhavNetWorth || 0) + (s.aanyaNetWorth || 0))}
+                      {fmtCr((s.p1NetWorth || 0) + (s.p2NetWorth || 0))}
                     </span>
                     <button
                       className="btn-danger"
@@ -1218,9 +1218,9 @@ export default function NetWorth({
         <div className="grid-2">
           <div className="card">
             <AssetsEditor
-              person="abhav"
-              data={abhav}
-              color="var(--abhav)"
+              person="p1"
+              data={p1}
+              color="var(--p1)"
               updatePerson={updatePerson}
               confirm={confirm}
               personNames={personNames}
@@ -1228,9 +1228,9 @@ export default function NetWorth({
           </div>
           <div className="card">
             <AssetsEditor
-              person="aanya"
-              data={aanya}
-              color="var(--aanya)"
+              person="p2"
+              data={p2}
+              color="var(--p2)"
               updatePerson={updatePerson}
               confirm={confirm}
               personNames={personNames}

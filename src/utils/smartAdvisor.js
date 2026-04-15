@@ -242,12 +242,12 @@ function goalProgressInsight(goals, sharedGoals) {
     ...(goals || []).map((g) => ({
       name: g.name,
       target: g.target || 0,
-      saved: (g.abhavSaved || 0) + (g.aanyaSaved || 0) + (g.saved || 0),
+      saved: (g.p1Saved || 0) + (g.p2Saved || 0) + (g.saved || 0),
     })),
     ...(sharedGoals || []).map((g) => ({
       name: g.name,
       target: g.target || 0,
-      saved: (g.abhavSaved || 0) + (g.aanyaSaved || 0),
+      saved: (g.p1Saved || 0) + (g.p2Saved || 0),
     })),
   ];
 
@@ -801,30 +801,30 @@ function handleIntent(
       const latest = sorted[0];
       const prev = sorted[1];
       const nw =
-        profile === "aanya"
-          ? latest.aanyaNetWorth || 0
-          : profile === "abhav"
-            ? latest.abhavNetWorth || 0
-            : (latest.abhavNetWorth || 0) + (latest.aanyaNetWorth || 0);
+        profile === "p2"
+          ? latest.p2NetWorth || 0
+          : profile === "p1"
+            ? latest.p1NetWorth || 0
+            : (latest.p1NetWorth || 0) + (latest.p2NetWorth || 0);
       let body = `Latest net worth (${latest.label || latest.month + "/" + latest.year}): ${L(nw)}`;
       if (prev) {
         const prevNW =
-          profile === "aanya"
-            ? prev.aanyaNetWorth || 0
-            : profile === "abhav"
-              ? prev.abhavNetWorth || 0
-              : (prev.abhavNetWorth || 0) + (prev.aanyaNetWorth || 0);
+          profile === "p2"
+            ? prev.p2NetWorth || 0
+            : profile === "p1"
+              ? prev.p1NetWorth || 0
+              : (prev.p1NetWorth || 0) + (prev.p2NetWorth || 0);
         const diff = nw - prevNW;
         body += `\nPrevious month: ${L(prevNW)}\nChange: ${diff >= 0 ? "+" : ""}${L(diff)} (${prevNW > 0 ? (diff >= 0 ? "+" : "") + pct((diff / prevNW) * 100) : "N/A"})`;
       }
       if (sorted.length >= 3) {
         const oldest = sorted[sorted.length - 1];
         const oldNW =
-          profile === "aanya"
-            ? oldest.aanyaNetWorth || 0
-            : profile === "abhav"
-              ? oldest.abhavNetWorth || 0
-              : (oldest.abhavNetWorth || 0) + (oldest.aanyaNetWorth || 0);
+          profile === "p2"
+            ? oldest.p2NetWorth || 0
+            : profile === "p1"
+              ? oldest.p1NetWorth || 0
+              : (oldest.p1NetWorth || 0) + (oldest.p2NetWorth || 0);
         const totalGrowth = nw - oldNW;
         body += `\nSince ${oldest.label || oldest.month + "/" + oldest.year}: ${totalGrowth >= 0 ? "+" : ""}${L(totalGrowth)}`;
       }
@@ -1034,8 +1034,7 @@ function handleIntent(
         addResult("Debt", d.name || "", `EMI ${fmt(d.emi)} @ ${d.rate || 0}%`);
       }
       for (const g of [...(p?.goals || []), ...(shared?.goals || [])]) {
-        const saved =
-          (g.abhavSaved || 0) + (g.aanyaSaved || 0) + (g.saved || 0);
+        const saved = (g.p1Saved || 0) + (g.p2Saved || 0) + (g.saved || 0);
         addResult("Goal", g.name || "", `${L(saved)} / ${L(g.target || 0)}`);
       }
       for (const t of shared?.trips || []) {
@@ -1095,20 +1094,20 @@ function handleIntent(
 /**
  * Ask the local smart advisor. Sync — returns immediately.
  * @param {string} userMessage — user's question
- * @param {object} abhav — person1 raw data
- * @param {object} aanya — person2 raw data
+ * @param {object} p1Raw — person1 raw data
+ * @param {object} p2Raw — person2 raw data
  * @param {object} shared — shared data
- * @param {string} profile — "abhav" | "aanya" | "household"
+ * @param {string} profile — "p1" | "p2" | "household"
  * @returns {string} advisor response text
  */
-export function askSmart(userMessage, abhav, aanya, shared, profile) {
-  const p1 = personData(abhav);
-  const p2 = personData(aanya);
+export function askSmart(userMessage, p1Raw, p2Raw, shared, profile) {
+  const p1 = personData(p1Raw);
+  const p2 = personData(p2Raw);
   const sharedGoals = (shared?.goals || []).map((g) => ({
     name: g.name,
     target: g.target || 0,
-    abhavSaved: g.abhavSaved || 0,
-    aanyaSaved: g.aanyaSaved || 0,
+    p1Saved: g.p1Saved || 0,
+    p2Saved: g.p2Saved || 0,
   }));
 
   const name1 = shared?.profile?.person1Name || "Person 1";
@@ -1116,7 +1115,7 @@ export function askSmart(userMessage, abhav, aanya, shared, profile) {
 
   let activePerson = p1;
   let activeName = name1;
-  if (profile === "aanya") {
+  if (profile === "p2") {
     activePerson = p2;
     activeName = name2;
   }
@@ -1206,6 +1205,6 @@ export function askSmart(userMessage, abhav, aanya, shared, profile) {
 /**
  * Generate a quick health report (used for "How am I doing?")
  */
-export function healthReport(abhav, aanya, shared, profile) {
-  return askSmart("How am I doing overall?", abhav, aanya, shared, profile);
+export function healthReport(p1, p2, shared, profile) {
+  return askSmart("How am I doing overall?", p1, p2, shared, profile);
 }

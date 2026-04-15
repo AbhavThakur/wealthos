@@ -1532,14 +1532,14 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
   );
 }
 
-export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
+export function HouseholdCashFlow({ p1, p2, updatePerson }) {
   const { personNames } = useData() || {};
   const [tab, setTab] = useState("schedule");
   const [search, setSearch] = useState("");
   const [filterPerson, setFilterPerson] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [showAddTx, setShowAddTx] = useState(false);
-  const [addFor, setAddFor] = useState("abhav");
+  const [addFor, setAddFor] = useState("p1");
   const [newTx, setNewTx] = useState({
     date: new Date().toISOString().slice(0, 10),
     desc: "",
@@ -1577,26 +1577,26 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
   const isCurrentMonth = schedMonth === _cfCurYm;
   const today = isCurrentMonth ? _cfNow.getDate() : 0; // only mark due/upcoming for current month
 
-  const abhavAutoRules = autoRecurringRules(abhav || {}).map((r) => ({
+  const p1AutoRules = autoRecurringRules(p1 || {}).map((r) => ({
     ...r,
-    _owner: "abhav",
+    _owner: "p1",
   }));
-  const aanyaAutoRules = autoRecurringRules(aanya || {}).map((r) => ({
+  const p2AutoRules = autoRecurringRules(p2 || {}).map((r) => ({
     ...r,
-    _owner: "aanya",
+    _owner: "p2",
   }));
-  const abhavManualRules = (abhav?.recurringRules || []).filter((r) => !r.auto);
-  const aanyaManualRules = (aanya?.recurringRules || []).filter((r) => !r.auto);
+  const p1ManualRules = (p1?.recurringRules || []).filter((r) => !r.auto);
+  const p2ManualRules = (p2?.recurringRules || []).filter((r) => !r.auto);
 
   const allRulesRaw = [
-    ...abhavAutoRules,
-    ...abhavManualRules
+    ...p1AutoRules,
+    ...p1ManualRules
       .filter((r) => r.active !== false)
-      .map((r) => ({ ...r, _owner: "abhav" })),
-    ...aanyaAutoRules,
-    ...aanyaManualRules
+      .map((r) => ({ ...r, _owner: "p1" })),
+    ...p2AutoRules,
+    ...p2ManualRules
       .filter((r) => r.active !== false)
-      .map((r) => ({ ...r, _owner: "aanya" })),
+      .map((r) => ({ ...r, _owner: "p2" })),
   ];
 
   const now = new Date();
@@ -1608,15 +1608,15 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
   const ym = schedMonth;
   const monthName = schedMonthLabel;
 
-  const abhavTx = (abhav?.transactions || []).map((x) => ({
+  const p1Tx = (p1?.transactions || []).map((x) => ({
     ...x,
-    _owner: "abhav",
+    _owner: "p1",
   }));
-  const aanyaTx = (aanya?.transactions || []).map((x) => ({
+  const p2Tx = (p2?.transactions || []).map((x) => ({
     ...x,
-    _owner: "aanya",
+    _owner: "p2",
   }));
-  const monthTx = [...abhavTx, ...aanyaTx].filter((t) =>
+  const monthTx = [...p1Tx, ...p2Tx].filter((t) =>
     t.date?.startsWith(ym),
   );
   const loggedIn = monthTx
@@ -1640,7 +1640,7 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
     (r) => (r.dayOfMonth || 1) > today,
   );
 
-  const pColor = (o) => (o === "abhav" ? "var(--abhav)" : "var(--aanya)");
+  const pColor = (o) => (o === "p1" ? "var(--p1)" : "var(--p2)");
   const pLabel = (o) => personNames?.[o] || o;
 
   const personBadge = (owner) => (
@@ -1662,10 +1662,10 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
 
   const sourceTx =
     filterPerson === "all"
-      ? [...abhavTx, ...aanyaTx]
-      : filterPerson === "abhav"
-        ? abhavTx
-        : aanyaTx;
+      ? [...p1Tx, ...p2Tx]
+      : filterPerson === "p1"
+        ? p1Tx
+        : p2Tx;
 
   const filtered = sourceTx
     .filter(
@@ -1689,7 +1689,7 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
       newTx.type === "income"
         ? Math.abs(Number(newTx.amount))
         : -Math.abs(Number(newTx.amount));
-    const ownerData = addFor === "abhav" ? abhav : aanya;
+    const ownerData = addFor === "p1" ? p1 : p2;
     const txs = ownerData?.transactions || [];
     updatePerson(addFor, "transactions", [
       { ...newTx, id: nextId(txs), amount: amt },
@@ -2031,13 +2031,13 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
           {/* ── FD Maturities ── */}
           {(() => {
             const allFdInvs = [
-              ...(abhav?.investments || []).map((inv) => ({
+              ...(p1?.investments || []).map((inv) => ({
                 ...inv,
-                _owner: "abhav",
+                _owner: "p1",
               })),
-              ...(aanya?.investments || []).map((inv) => ({
+              ...(p2?.investments || []).map((inv) => ({
                 ...inv,
-                _owner: "aanya",
+                _owner: "p2",
               })),
             ].filter((inv) => inv.type === "FD" && inv.endDate);
             if (allFdInvs.length === 0) return null;
@@ -2175,8 +2175,8 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
               </div>
               {[
                 { id: "all", label: "All" },
-                { id: "abhav", label: personNames?.abhav || "Person 1" },
-                { id: "aanya", label: personNames?.aanya || "Person 2" },
+                { id: "p1", label: personNames?.p1 || "Person 1" },
+                { id: "p2", label: personNames?.p2 || "Person 2" },
               ].map(({ id, label }) => (
                 <button
                   key={id}
@@ -2256,14 +2256,14 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
                   <div style={{ display: "flex", gap: 8 }}>
                     {[
                       {
-                        id: "abhav",
-                        label: personNames?.abhav || "Person 1",
-                        color: "var(--abhav)",
+                        id: "p1",
+                        label: personNames?.p1 || "Person 1",
+                        color: "var(--p1)",
                       },
                       {
-                        id: "aanya",
-                        label: personNames?.aanya || "Person 2",
-                        color: "var(--aanya)",
+                        id: "p2",
+                        label: personNames?.p2 || "Person 2",
+                        color: "var(--p2)",
                       },
                     ].map(({ id, label, color }) => (
                       <button
@@ -2530,7 +2530,7 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
                                     )
                                   ) {
                                     const ownerData =
-                                      tx._owner === "abhav" ? abhav : aanya;
+                                      tx._owner === "p1" ? p1 : p2;
                                     const txs = ownerData?.transactions || [];
                                     updatePerson(
                                       tx._owner,
@@ -2558,18 +2558,18 @@ export function HouseholdCashFlow({ abhav, aanya, updatePerson }) {
         <div className="grid-2" style={{ gap: "1.25rem" }}>
           {[
             {
-              owner: "abhav",
-              pData: abhav,
-              color: "var(--abhav)",
-              label: personNames?.abhav || "Person 1",
-              manualRules: abhavManualRules,
+              owner: "p1",
+              pData: p1,
+              color: "var(--p1)",
+              label: personNames?.p1 || "Person 1",
+              manualRules: p1ManualRules,
             },
             {
-              owner: "aanya",
-              pData: aanya,
-              color: "var(--aanya)",
-              label: personNames?.aanya || "Person 2",
-              manualRules: aanyaManualRules,
+              owner: "p2",
+              pData: p2,
+              color: "var(--p2)",
+              label: personNames?.p2 || "Person 2",
+              manualRules: p2ManualRules,
             },
           ].map(({ owner, pData, color, label, manualRules: rules }) => (
             <div key={owner} className="card">

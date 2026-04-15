@@ -1,24 +1,39 @@
-import { useState, useEffect, lazy, Suspense, Component } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  lazy,
+  Suspense,
+  Component,
+} from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
+import { Toaster } from "sonner";
 import Login from "./pages/Login";
 import Sidebar from "./components/Sidebar";
 import { exportAllData } from "./utils/exportData";
-import Onboarding from "./pages/Onboarding";
 import PinLockScreen from "./components/PinLockScreen";
-import QuickAdd from "./components/QuickAdd";
-import SearchPalette from "./components/SearchPalette";
-import OnboardingTour from "./components/OnboardingTour";
 import { checkReminders } from "./utils/notifications";
 import InstallBanner from "./components/InstallBanner";
 import UpdateBanner from "./components/UpdateBanner";
 import useIdleTimer from "./hooks/useIdleTimer";
 import usePullToRefresh from "./hooks/usePullToRefresh";
-import AIAdvisor from "./components/AIAdvisor";
-import { FeedbackButton, FeedbackAdmin } from "./components/Feedback";
-import NotificationBell from "./components/NotificationBell";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import ADMIN_EMAILS from "./utils/adminEmails";
+
+// ── Heavy shell components — lazy-loaded (not needed for first paint) ───────
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const QuickAdd = lazy(() => import("./components/QuickAdd"));
+const SearchPalette = lazy(() => import("./components/SearchPalette"));
+const OnboardingTour = lazy(() => import("./components/OnboardingTour"));
+const AIAdvisor = lazy(() => import("./components/AIAdvisor"));
+const NotificationBell = lazy(() => import("./components/NotificationBell"));
+const FeedbackButton = lazy(() =>
+  import("./components/Feedback").then((m) => ({ default: m.FeedbackButton })),
+);
+const FeedbackAdmin = lazy(() =>
+  import("./components/Feedback").then((m) => ({ default: m.FeedbackAdmin })),
+);
 
 // ── Error boundary to catch runtime crashes ─────────────────────────────────
 class PageErrorBoundary extends Component {
@@ -314,12 +329,13 @@ function App() {
 
 function AppInner() {
   const {
-    abhav,
-    aanya,
+    p1,
+    p2,
     shared,
     loading,
     needsOnboarding,
     personNames,
+    isSolo,
     updatePerson,
     updateShared,
     takeSnapshot,
@@ -333,12 +349,21 @@ function AppInner() {
   } = useData();
   const { user, logout } = useAuth();
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email);
-  const [page, setPage] = useState(() => {
+  const [page, setPageRaw] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("page");
-    return p && PAGE_TITLES[p] ? p : "dashboard";
+    if (p && PAGE_TITLES[p]) return p;
+    const saved = sessionStorage.getItem("wos_page");
+    return saved && PAGE_TITLES[saved] ? saved : "dashboard";
   });
+  const setPage = useCallback((p) => {
+    setPageRaw(p);
+    sessionStorage.setItem("wos_page", p);
+  }, []);
   const [profile, setProfile] = useState("household");
+
+  // In solo mode, person2 doesn't exist — force profile to person1
+  const effectiveProfile = isSolo && profile !== "p1" ? "p1" : profile;
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // ── PIN Lock (disabled in demo mode) ──────────────────────────────────
@@ -382,30 +407,35 @@ function AppInner() {
 
   // Fire push-notification reminders once data is ready
   useEffect(() => {
-    if (!loading && abhav && aanya && shared) {
-      checkReminders(abhav, aanya, shared, personNames);
+    if (!loading && p1 && p2 && shared) {
+      checkReminders(p1, p2, shared, personNames);
     }
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading || !abhav || !aanya) return <LoadingSkeleton />;
+  if (loading || !p1 || !p2) return <LoadingSkeleton />;
 
-  if (needsOnboarding) return <Onboarding />;
+  if (needsOnboarding)
+    return (
+      <Suspense fallback={<LoadingSkeleton />}>
+        <Onboarding />
+      </Suspense>
+    );
 
-  const isHousehold = profile === "household";
+  const isHousehold = !isSolo && effectiveProfile === "household";
   const personName =
-    profile === "abhav"
-      ? personNames.abhav
-      : profile === "aanya"
-        ? personNames.aanya
+    effectiveProfile === "p1"
+      ? personNames.p1
+      : effectiveProfile === "p2"
+        ? personNames.p2
         : "Household";
   const personColor =
-    profile === "abhav"
-      ? "var(--abhav)"
-      : profile === "aanya"
-        ? "var(--aanya)"
+    effectiveProfile === "p1"
+      ? "var(--p1)"
+      : effectiveProfile === "p2"
+        ? "var(--p2)"
         : "var(--gold)";
-  const data = isHousehold ? null : profile === "abhav" ? abhav : aanya;
-  const personKey = isHousehold ? null : profile;
+  const data = isHousehold ? null : effectiveProfile === "p1" ? p1 : p2;
+  const personKey = isHousehold ? null : effectiveProfile;
   const upd = (k, v) => {
     if (personKey) updatePerson(personKey, k, v);
   };
@@ -414,17 +444,17 @@ function AppInner() {
     isHousehold ? (
       <div className="grid-2" style={{ gap: "1.5rem" }}>
         <Component
-          data={abhav}
-          personName={personNames.abhav}
-          personColor="var(--abhav)"
-          updatePerson={(k, v) => updatePerson("abhav", k, v)}
+          data={p1}
+          personName={personNames.p1}
+          personColor="var(--p1)"
+          updatePerson={(k, v) => updatePerson("p1", k, v)}
           {...extraProps}
         />
         <Component
-          data={aanya}
-          personName={personNames.aanya}
-          personColor="var(--aanya)"
-          updatePerson={(k, v) => updatePerson("aanya", k, v)}
+          data={p2}
+          personName={personNames.p2}
+          personColor="var(--p2)"
+          updatePerson={(k, v) => updatePerson("p2", k, v)}
           {...extraProps}
         />
       </div>
@@ -443,25 +473,21 @@ function AppInner() {
       case "dashboard":
         return (
           <Dashboard
-            abhav={abhav}
-            aanya={aanya}
+            p1={p1}
+            p2={p2}
             shared={shared}
             personNames={personNames}
           />
         );
       case "budget":
         return isHousehold ? (
-          <HouseholdBudget abhav={abhav} aanya={aanya} shared={shared} />
+          <HouseholdBudget p1={p1} p2={p2} shared={shared} />
         ) : (
           both(Budget, { shared, updateShared })
         );
       case "investments":
         return isHousehold ? (
-          <HouseholdInvestments
-            abhav={abhav}
-            aanya={aanya}
-            updatePerson={updatePerson}
-          />
+          <HouseholdInvestments p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(Investments)
         );
@@ -481,33 +507,25 @@ function AppInner() {
       case "networth":
         return (
           <NetWorth
-            abhav={abhav}
-            aanya={aanya}
+            p1={p1}
+            p2={p2}
             shared={shared}
             updatePerson={updatePerson}
             updateShared={updateShared}
             takeSnapshot={takeSnapshot}
-            profile={profile}
+            profile={effectiveProfile}
             personNames={personNames}
           />
         );
       case "debts":
         return isHousehold ? (
-          <HouseholdDebts
-            abhav={abhav}
-            aanya={aanya}
-            updatePerson={updatePerson}
-          />
+          <HouseholdDebts p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(Debts)
         );
       case "cashflow":
         return isHousehold ? (
-          <HouseholdCashFlow
-            abhav={abhav}
-            aanya={aanya}
-            updatePerson={updatePerson}
-          />
+          <HouseholdCashFlow p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(CashFlow)
         );
@@ -517,21 +535,13 @@ function AppInner() {
         return both(TaxPlanner);
       case "insurance":
         return isHousehold ? (
-          <HouseholdInsurance
-            abhav={abhav}
-            aanya={aanya}
-            updatePerson={updatePerson}
-          />
+          <HouseholdInsurance p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(Insurance)
         );
       case "subscriptions":
         return isHousehold ? (
-          <HouseholdSubscriptions
-            abhav={abhav}
-            aanya={aanya}
-            updatePerson={updatePerson}
-          />
+          <HouseholdSubscriptions p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(Subscriptions)
         );
@@ -548,17 +558,17 @@ function AppInner() {
             createManualBackup={isAdmin ? createManualBackup : null}
             seedDevFromProd={isAdmin ? seedDevFromProd : null}
             pushDevToProd={isAdmin ? pushDevToProd : null}
-            onExport={() => exportAllData(abhav, aanya, shared, personNames)}
+            onExport={() => exportAllData(p1, p2, shared, personNames)}
             isAdmin={isAdmin}
           />
         );
       case "advisor":
         return (
           <AIAdvisorPage
-            abhav={abhav}
-            aanya={aanya}
+            p1={p1}
+            p2={p2}
             shared={shared}
-            profile={profile}
+            profile={effectiveProfile}
           />
         );
       case "marketpulse":
@@ -573,12 +583,12 @@ function AppInner() {
   // ── Badge counts for sidebar notifications ──────────────────────────────
   const badges = {};
 
-  if (abhav && aanya) {
+  if (p1 && p2) {
     // Insurance renewals within 30 days
     const now = new Date();
     const renewals = [
-      ...(abhav.insurances || []),
-      ...(aanya.insurances || []),
+      ...(p1.insurances || []),
+      ...(p2.insurances || []),
     ].filter((i) => {
       if (!i.renewalDate) return false;
       const diff = (new Date(i.renewalDate) - now) / 86400000;
@@ -597,14 +607,14 @@ function AppInner() {
           .reduce((s, e) => s + e.amount, 0);
         return spent > a.limit;
       }).length;
-    const alertCount = checkAlerts(abhav) + checkAlerts(aanya);
+    const alertCount = checkAlerts(p1) + checkAlerts(p2);
     if (alertCount) badges.alerts = alertCount;
 
     // Goals nearing deadline (within 30 days)
     const urgentGoals = (shared?.goals || []).filter((g) => {
       if (!g.deadline) return false;
       const diff = (new Date(g.deadline) - now) / 86400000;
-      const saved = (g.abhavSaved || 0) + (g.aanyaSaved || 0);
+      const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
       return diff >= 0 && diff <= 30 && saved < g.target;
     });
     if (urgentGoals.length) badges.goals = urgentGoals.length;
@@ -653,10 +663,11 @@ function AppInner() {
       <Sidebar
         page={page}
         setPage={setPage}
-        profile={profile}
+        profile={effectiveProfile}
         setProfile={setProfile}
         badges={badges}
         personNames={personNames}
+        isSolo={isSolo}
         onQuickAdd={() => setQuickAddOpen(true)}
       />
       <div className="app-layout">
@@ -668,36 +679,46 @@ function AppInner() {
             role="radiogroup"
             aria-label="Profile selection"
           >
-            {[
-              {
-                id: "household",
-                label: "Household",
-                color: "var(--gold)",
-                dim: "var(--gold-dim)",
-              },
-              {
-                id: "abhav",
-                label: personNames.abhav,
-                color: "var(--abhav)",
-                dim: "var(--abhav-dim)",
-              },
-              {
-                id: "aanya",
-                label: personNames.aanya,
-                color: "var(--aanya)",
-                dim: "var(--aanya-dim)",
-              },
-            ].map((p) => (
+            {(isSolo
+              ? [
+                  {
+                    id: "p1",
+                    label: personNames.p1,
+                    color: "var(--p1)",
+                    dim: "var(--p1-dim)",
+                  },
+                ]
+              : [
+                  {
+                    id: "household",
+                    label: "Household",
+                    color: "var(--gold)",
+                    dim: "var(--gold-dim)",
+                  },
+                  {
+                    id: "p1",
+                    label: personNames.p1,
+                    color: "var(--p1)",
+                    dim: "var(--p1-dim)",
+                  },
+                  {
+                    id: "p2",
+                    label: personNames.p2,
+                    color: "var(--p2)",
+                    dim: "var(--p2-dim)",
+                  },
+                ]
+            ).map((p) => (
               <button
                 key={p.id}
-                className={`profile-pill${profile === p.id ? " active" : ""}`}
+                className={`profile-pill${effectiveProfile === p.id ? " active" : ""}`}
                 style={{
                   "--pill-color": p.color,
                   "--pill-dim": p.dim,
                 }}
                 onClick={() => setProfile(p.id)}
                 role="radio"
-                aria-checked={profile === p.id}
+                aria-checked={effectiveProfile === p.id}
               >
                 <span className="profile-pill-dot" />
                 {p.label}
@@ -731,25 +752,27 @@ function AppInner() {
           </div>
         </main>
       </div>
-      <AIAdvisor setPage={setPage} />
-      <QuickAdd
-        setPage={setPage}
-        setProfile={setProfile}
-        personNames={personNames}
-        externalOpen={quickAddOpen}
-        setExternalOpen={setQuickAddOpen}
-      />
-      <FeedbackButton />
-      <NotificationBell isAdmin={isAdmin} />
-      <SearchPalette
-        abhav={abhav}
-        aanya={aanya}
-        shared={shared}
-        personNames={personNames}
-        setPage={setPage}
-        setProfile={setProfile}
-      />
-      <OnboardingTour show={!isDemo} />
+      <Suspense fallback={null}>
+        <AIAdvisor setPage={setPage} />
+        <QuickAdd
+          setPage={setPage}
+          setProfile={setProfile}
+          personNames={personNames}
+          externalOpen={quickAddOpen}
+          setExternalOpen={setQuickAddOpen}
+        />
+        <FeedbackButton />
+        <NotificationBell isAdmin={isAdmin} />
+        <SearchPalette
+          p1={p1}
+          p2={p2}
+          shared={shared}
+          personNames={personNames}
+          setPage={setPage}
+          setProfile={setProfile}
+        />
+        <OnboardingTour show={!isDemo} />
+      </Suspense>
       <InstallBanner />
     </>
   );
@@ -758,6 +781,19 @@ function AppInner() {
 export default function Root() {
   return (
     <AuthProvider>
+      <Toaster
+        position="bottom-center"
+        toastOptions={{
+          style: {
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            color: "var(--text-primary)",
+            fontSize: 13,
+          },
+        }}
+        richColors
+        closeButton
+      />
       <UpdateBanner />
       <App />
     </AuthProvider>
