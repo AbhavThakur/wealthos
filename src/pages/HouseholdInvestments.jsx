@@ -21,7 +21,7 @@ import {
   computeInvRow,
   getInvested,
   isFD,
-  INVESTMENT_APPS,
+  appsForType,
   BANK_LIST,
   hasSIPFreq,
   hasDeductionDate,
@@ -57,6 +57,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     deductionDay: "",
     totalInvested: "",
     capCategory: "",
+    notes: "",
   };
   const [newInv, setNewInv] = useState(emptyNew);
 
@@ -1260,19 +1261,30 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                     marginBottom: 4,
                   }}
                 >
-                  Investment app
+                  {isFD(newInv.type) ? "FD platform / app" : "Investment app"}
                 </label>
-                <select
+                <input
+                  placeholder={
+                    isFD(newInv.type)
+                      ? "e.g. Stable Money, Grip Invest"
+                      : "e.g. Groww, Zerodha"
+                  }
+                  list="hh-app-list-add"
                   value={newInv.appName}
                   onChange={(e) =>
                     setNewInv({ ...newInv, appName: e.target.value })
                   }
-                >
-                  <option value="">Not set</option>
-                  {INVESTMENT_APPS.map((a) => (
-                    <option key={a}>{a}</option>
+                />
+                <datalist id="hh-app-list-add">
+                  {appsForType(newInv.type).map((a) => (
+                    <option key={a} value={a} />
                   ))}
-                </select>
+                  {allApps
+                    .filter((a) => !appsForType(newInv.type).includes(a))
+                    .map((a) => (
+                      <option key={`custom-${a}`} value={a} />
+                    ))}
+                </datalist>
               </div>
             )}
             {hasDeductionDate(newInv.type, newInv.frequency) && (
@@ -1451,6 +1463,31 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
               )}
             </div>
           )}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Notes / Investment plan (optional)
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Paste your plan, AI advice, rationale, or exit strategy here…"
+              value={newInv.notes}
+              onChange={(e) => setNewInv({ ...newInv, notes: e.target.value })}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                fontFamily: "inherit",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            />
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn-primary"

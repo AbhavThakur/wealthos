@@ -28,7 +28,7 @@ import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
 import { fetchAllMFNavs } from "../utils/marketData";
 import {
-  INVESTMENT_APPS,
+  appsForType,
   BANK_LIST,
   ordinalSuffix,
   isFD,
@@ -524,19 +524,25 @@ export const SIPCard = memo(function SIPCard({
                     marginBottom: 4,
                   }}
                 >
-                  Investment app
+                  {isFD(form.type) ? "FD platform / app" : "Investment app"}
                 </label>
-                <select
+                <input
+                  placeholder={
+                    isFD(form.type)
+                      ? "e.g. Stable Money, Grip Invest"
+                      : "e.g. Groww, Zerodha"
+                  }
+                  list="app-list-edit"
                   value={form.appName || ""}
                   onChange={(e) =>
                     setForm({ ...form, appName: e.target.value })
                   }
-                >
-                  <option value="">Not set</option>
-                  {INVESTMENT_APPS.map((a) => (
-                    <option key={a}>{a}</option>
+                />
+                <datalist id="app-list-edit">
+                  {appsForType(form.type).map((a) => (
+                    <option key={a} value={a} />
                   ))}
-                </select>
+                </datalist>
               </div>
             )}
             {hasSIPFreq(form.type) && (
@@ -871,6 +877,32 @@ export const SIPCard = memo(function SIPCard({
               {navMsg}
             </div>
           )}
+          {/* Notes / plan */}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Notes / Investment plan
+            </label>
+            <textarea
+              rows={4}
+              placeholder="Paste your plan here — why you chose this, exit strategy, AI advice, target, etc."
+              value={form.notes || ""}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                fontFamily: "inherit",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            />
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn-primary"
@@ -1992,6 +2024,36 @@ export const SIPCard = memo(function SIPCard({
               />
             </div>
           )}
+        </div>
+      )}
+      {/* Notes / plan — shown when present */}
+      {!editing && inv.notes && (
+        <div
+          style={{
+            marginTop: "1rem",
+            padding: "10px 14px",
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            fontSize: 13,
+            lineHeight: 1.7,
+            color: "var(--text-secondary)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: ".06em",
+              marginBottom: 6,
+            }}
+          >
+            📋 Plan / Notes
+          </div>
+          {inv.notes}
         </div>
       )}
       {dialog}
@@ -3201,6 +3263,10 @@ export default function Investments({
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
   const [filterType, setFilterType] = useState("All");
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [strategyDraft, setStrategyDraft] = useState(
+    data?.investmentStrategy || "",
+  );
   const allApps = useMemo(
     () => [...new Set(investments.map((x) => x.appName).filter(Boolean))],
     [investments],
@@ -3234,6 +3300,7 @@ export default function Investments({
     units: "",
     capCategory: "",
     schemeCode: "",
+    notes: "",
   });
   const [mfResults, setMfResults] = useState([]);
   const [mfSearching, setMfSearching] = useState(false);
@@ -3350,6 +3417,7 @@ export default function Investments({
       units: "",
       capCategory: "",
       schemeCode: "",
+      notes: "",
     });
     setMfResults([]);
     setNavFetchMsg("");
@@ -3964,6 +4032,145 @@ export default function Investments({
       </div>
 
       <PortfolioCharts rows={invRows} isHousehold={false} />
+
+      {/* ── Investment Strategy Note ── */}
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <button
+          onClick={() => {
+            setStrategyDraft(data?.investmentStrategy || "");
+            setStrategyOpen((o) => !o);
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            color: "var(--text-secondary)",
+            fontSize: 13,
+          }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 15 }}>📋</span>
+            <span style={{ fontWeight: 500 }}>Investment Strategy & Notes</span>
+            {data?.investmentStrategy && !strategyOpen && (
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  fontWeight: 400,
+                }}
+              >
+                · saved
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            {strategyOpen ? "▲" : "▼"}
+          </span>
+        </button>
+
+        {strategyOpen && (
+          <div style={{ marginTop: "0.75rem" }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                marginBottom: 8,
+                lineHeight: 1.5,
+              }}
+            >
+              Write your overall investment philosophy, goals, or paste a plan
+              from an AI assistant. This is saved to your profile.
+            </div>
+            <textarea
+              rows={8}
+              placeholder={`Example:\n• Goal: ₹5 Cr corpus by age 50\n• Strategy: 60% equity (Nifty 50 index), 20% mid-cap, 10% gold, 10% PPF\n• Review every 6 months\n• Stop SIP if job loss, resume within 3 months\n• LTCG: harvest gains before ₹1L limit each year`}
+              value={strategyDraft}
+              onChange={(e) => setStrategyDraft(e.target.value)}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                fontFamily: "inherit",
+                fontSize: 13,
+                lineHeight: 1.7,
+                minHeight: 160,
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button
+                className="btn-primary"
+                style={{ fontSize: 12 }}
+                onClick={() => {
+                  updatePerson("investmentStrategy", strategyDraft);
+                  setStrategyOpen(false);
+                }}
+              >
+                Save
+              </button>
+              <button
+                className="btn-ghost"
+                style={{ fontSize: 12 }}
+                onClick={() => setStrategyOpen(false)}
+              >
+                Cancel
+              </button>
+              {data?.investmentStrategy && (
+                <button
+                  className="btn-ghost"
+                  style={{ fontSize: 12, color: "var(--text-muted)" }}
+                  onClick={async () => {
+                    await navigator.clipboard
+                      .writeText(data.investmentStrategy)
+                      .catch(() => {});
+                  }}
+                >
+                  Copy
+                </button>
+              )}
+            </div>
+            {!strategyOpen && data?.investmentStrategy && (
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  lineHeight: 1.7,
+                }}
+              >
+                {data.investmentStrategy}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Preview when collapsed and content exists */}
+        {!strategyOpen && data?.investmentStrategy && (
+          <div
+            style={{
+              marginTop: "0.625rem",
+              fontSize: 12,
+              color: "var(--text-muted)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              lineHeight: 1.6,
+              maxHeight: 60,
+              overflow: "hidden",
+              maskImage:
+                "linear-gradient(to bottom, black 40%, transparent 100%)",
+              WebkitMaskImage:
+                "linear-gradient(to bottom, black 40%, transparent 100%)",
+            }}
+          >
+            {data.investmentStrategy}
+          </div>
+        )}
+      </div>
 
       {/* ── Quick Update panel ── */}
       {(() => {
@@ -5010,19 +5217,32 @@ export default function Investments({
                     marginBottom: 4,
                   }}
                 >
-                  Investment app
+                  {isFD(newInv.type) ? "FD platform / app" : "Investment app"}
                 </label>
-                <select
+                <input
+                  placeholder={
+                    isFD(newInv.type)
+                      ? "e.g. Stable Money, Grip Invest"
+                      : "e.g. Groww, Zerodha"
+                  }
+                  list="app-list-add"
                   value={newInv.appName}
                   onChange={(e) =>
                     setNewInv({ ...newInv, appName: e.target.value })
                   }
-                >
-                  <option value="">Not set</option>
-                  {INVESTMENT_APPS.map((a) => (
-                    <option key={a}>{a}</option>
+                />
+                <datalist id="app-list-add">
+                  {/* Predefined for this type */}
+                  {appsForType(newInv.type).map((a) => (
+                    <option key={a} value={a} />
                   ))}
-                </select>
+                  {/* Custom apps already used in existing investments */}
+                  {allApps
+                    .filter((a) => !appsForType(newInv.type).includes(a))
+                    .map((a) => (
+                      <option key={`custom-${a}`} value={a} />
+                    ))}
+                </datalist>
               </div>
             )}
             <div>
@@ -5334,6 +5554,31 @@ export default function Investments({
               )}
             </div>
           )}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Notes / Investment plan (optional)
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Paste your plan, AI advice, rationale, or exit strategy here…"
+              value={newInv.notes}
+              onChange={(e) => setNewInv({ ...newInv, notes: e.target.value })}
+              style={{
+                width: "100%",
+                resize: "vertical",
+                fontFamily: "inherit",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            />
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn-primary" onClick={add}>
               Add Investment

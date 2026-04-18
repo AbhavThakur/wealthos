@@ -7,6 +7,7 @@ import {
 
 // ── Investment type helpers ──────────────────────────────────────────────────
 
+// SIP / stock investment apps
 export const INVESTMENT_APPS = [
   "Zerodha / Kite",
   "Groww",
@@ -14,7 +15,24 @@ export const INVESTMENT_APPS = [
   "myCams",
   "smallcase",
   "Coin",
+  "Paytm Money",
+  "ET Money",
+  "INDmoney",
 ];
+
+// FD / fixed-income platforms
+export const FD_APPS = [
+  "Stable Money",
+  "Grip Invest",
+  "Wint Wealth",
+  "Altifi",
+  "BondsIndia",
+  "GoldenPi",
+  "Jiraaf",
+];
+
+// All app names combined (for datalist autocomplete)
+export const ALL_APPS = [...INVESTMENT_APPS, ...FD_APPS];
 
 export const BANK_LIST = [
   // Big private banks
@@ -46,9 +64,16 @@ export const BANK_LIST = [
   "Equitas Small Finance Bank",
   "Jana Small Finance Bank",
   "Ujjivan Small Finance Bank",
+  "Utkarsh Small Finance Bank",
+  "Unity Small Finance Bank",
+  "Suryoday Small Finance Bank",
+  "Shivalik Small Finance Bank",
   "ESAF Small Finance Bank",
-  // NBFCs
+  "slice Small Finance Bank",
+  // NBFCs / other lenders
   "Bajaj Finance",
+  "Shriram Finance",
+  "Mahindra Finance",
   "Tata Capital",
 ];
 
@@ -66,7 +91,10 @@ export const hasDeductionDate = (t, freq) =>
   freq !== "weekly" &&
   ["Mutual Fund", "Stocks", "Gold", "NPS", "ULIP"].includes(t);
 export const hasInvestmentApp = (t) =>
-  ["Mutual Fund", "Stocks", "Gold"].includes(t);
+  ["Mutual Fund", "Stocks", "Gold", "FD"].includes(t);
+
+// Which app list to suggest for a given investment type
+export const appsForType = (t) => (t === "FD" ? FD_APPS : INVESTMENT_APPS);
 
 export const DEDUCTION_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
 export const WEEKDAYS = [
