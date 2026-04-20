@@ -32,10 +32,12 @@ import {
   Users,
   Info,
   Edit3,
+  ClipboardPaste,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
+import SmartPaste from "../components/SmartPaste";
 import { useData } from "../context/DataContext";
 
 // ── Mobile-friendly input modal ──────────────────────────────────────────────
@@ -761,6 +763,7 @@ export default function Budget({
   });
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
+  const [smartPasteOpen, setSmartPasteOpen] = useState(false);
 
   // ── Month selector for expense tabs ────────────────────────────────────
   const _now = new Date();
@@ -2807,14 +2810,36 @@ export default function Budget({
 
       {tab === "expenses" && (
         <div>
-          {/* ── Expense sub-tabs ── */}
+          {/* ── Smart Paste + Expense sub-tabs ── */}
           <div
             style={{
               display: "flex",
               gap: 4,
               marginBottom: "1rem",
+              alignItems: "center",
             }}
           >
+            <button
+              onClick={() => setSmartPasteOpen(true)}
+              title="Paste SMS to add expenses automatically"
+              style={{
+                padding: "6px 12px",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--gold-dim)",
+                color: "var(--gold)",
+                border: "1px solid var(--gold-border)",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                marginRight: 4,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <ClipboardPaste size={12} /> Smart Paste
+            </button>
             {[
               {
                 key: "onetime",
@@ -4822,6 +4847,14 @@ export default function Budget({
         </div>
       )}
       {dialog}
+      <SmartPaste
+        open={smartPasteOpen}
+        onClose={() => setSmartPasteOpen(false)}
+        expenses={expenses}
+        updatePerson={updatePerson}
+        merchantMap={shared?.merchantMap || {}}
+        onMerchantMapUpdate={(newMap) => updateShared("merchantMap", newMap)}
+      />
     </div>
   );
 }
