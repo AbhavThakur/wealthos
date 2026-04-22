@@ -9,6 +9,7 @@ import { useData } from "../context/DataContext";
 import ThemeToggle from "../components/ThemeToggle";
 import RELEASE_NOTES from "../data/releaseNotes";
 import { APP_VERSION } from "../components/UpdateBanner";
+import GoogleSheetsConnect from "../components/GoogleSheetsConnect";
 import {
   isBiometricAvailable,
   isBiometricEnrolled,
@@ -4007,6 +4008,12 @@ export function Settings({
           </button>
         </div>
       )}
+
+      {/* Google Sheets Integration */}
+      <div className="card section-gap">
+        <div className="card-title">📊 Google Sheets Sync</div>
+        <GoogleSheetsConnect />
+      </div>
 
       {/* Data Export */}
       {onExport && (

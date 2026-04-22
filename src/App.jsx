@@ -8,7 +8,7 @@ import {
 } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import Login from "./pages/Login";
 import Sidebar from "./components/Sidebar";
 import { exportAllData } from "./utils/exportData";
@@ -311,6 +311,23 @@ function OfflineBanner() {
 
 function App() {
   const { user } = useAuth();
+
+  // If this window was opened as an OAuth popup, notify the parent and close.
+  // Runs before auth so it works regardless of login state.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sheetsParam = params.get("sheets");
+    if (!sheetsParam || !window.opener) return;
+    try {
+      window.opener.postMessage(
+        { type: "SHEETS_OAUTH", status: sheetsParam },
+        window.location.origin,
+      );
+    } catch {
+      /* cross-origin opener — ignore */
+    }
+    window.close();
+  }, []);
   if (user === undefined) return <LoadingScreen />;
   if (!user) return <Login />;
   if (user.isDemo) {
@@ -404,6 +421,40 @@ function AppInner() {
     document.title = `${PAGE_TITLES[page] || "WealthOS"} — WealthOS`;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [page]);
+
+  // Handle Google Sheets OAuth callback URL params (?sheets=connected|error)
+  // Also handles the postMessage broadcast from the OAuth popup.
+  useEffect(() => {
+    const showSheetsResult = (status, reason) => {
+      if (status === "connected") {
+        toast.success("Google Sheets connected successfully!");
+      } else if (status === "error") {
+        const msg = (reason || "unknown").replace(/_/g, " ");
+        toast.error(`Sheets connection failed: ${msg}`);
+      }
+    };
+
+    // Check URL params (direct redirect or popup-blocked fallback)
+    const params = new URLSearchParams(window.location.search);
+    const sheetsParam = params.get("sheets");
+    if (sheetsParam) {
+      const reason = params.get("reason");
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("sheets");
+      clean.searchParams.delete("reason");
+      window.history.replaceState({}, "", clean.toString());
+      showSheetsResult(sheetsParam, reason);
+    }
+
+    // Listen for postMessage from the OAuth popup
+    const handler = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "SHEETS_OAUTH") return;
+      showSheetsResult(event.data.status);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   // Fire push-notification reminders once data is ready
   useEffect(() => {
