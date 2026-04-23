@@ -58,7 +58,12 @@ function verifyState(state) {
 }
 
 // ── Google OAuth helpers ──────────────────────────────────────────────────────
-const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+// drive.file = only files the app creates (not sensitive, no Google verification needed)
+// spreadsheets = read/write cell data in those files
+const SHEETS_SCOPE = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/spreadsheets",
+].join(" ");
 
 function buildOAuthUrl(uid) {
   const params = new URLSearchParams({
@@ -201,7 +206,13 @@ export default async function handler(req, res) {
       return redirect("connected");
     } catch (err) {
       console.error("[google-auth] OAuth callback error:", err);
-      return redirect("error", "server_error");
+      // Encode a short sanitised reason — strip any tokens/secrets from the message
+      const reason = encodeURIComponent(
+        String(err.message || "server_error")
+          .replace(/Bearer [^ ]+/gi, "REDACTED")
+          .slice(0, 120),
+      );
+      return redirect("error", reason);
     }
   }
 

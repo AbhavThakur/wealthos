@@ -320,7 +320,11 @@ function App() {
     if (!sheetsParam || !window.opener) return;
     try {
       window.opener.postMessage(
-        { type: "SHEETS_OAUTH", status: sheetsParam },
+        {
+          type: "SHEETS_OAUTH",
+          status: sheetsParam,
+          reason: new URLSearchParams(window.location.search).get("reason"),
+        },
         window.location.origin,
       );
     } catch {
@@ -450,7 +454,7 @@ function AppInner() {
     const handler = (event) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== "SHEETS_OAUTH") return;
-      showSheetsResult(event.data.status);
+      showSheetsResult(event.data.status, event.data.reason);
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
