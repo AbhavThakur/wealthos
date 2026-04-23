@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "prepare": "husky",
+    "release": "node scripts/release.js",
     "send-test-email": "node scripts/test-email.js"
   },
   "dependencies": {

@@ -3583,6 +3583,218 @@ function PinSetup({ sharedData, updateShared }) {
   );
 }
 
+// ── Release Notes Accordion ───────────────────────────────────────────────────
+// Latest release is always shown expanded.
+// All older releases are grouped under one "Previous versions" toggle.
+function ReleaseNotesAccordion() {
+  const [prevOpen, setPrevOpen] = useState(false);
+  const latest = RELEASE_NOTES[0];
+  const older = RELEASE_NOTES.slice(1);
+
+  return (
+    <div className="card section-gap">
+      <div
+        className="card-title"
+        style={{ display: "flex", alignItems: "center", gap: 8 }}
+      >
+        <Sparkles size={16} style={{ color: "var(--gold)" }} />
+        What&apos;s New
+      </div>
+
+      {/* Latest release — always visible, never collapsible */}
+      <div
+        style={{
+          padding: "12px 14px",
+          background: "var(--gold-dim)",
+          border: "1px solid var(--gold-border)",
+          borderRadius: "var(--radius-sm)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: "var(--gold)",
+              color: "#000",
+            }}
+          >
+            v{latest.version}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            {new Date(latest.date).toLocaleDateString("en-IN", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--gold)", fontWeight: 600 }}>
+            LATEST
+          </span>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+          {latest.title}
+        </div>
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 16,
+            fontSize: 12,
+            color: "var(--text-secondary)",
+            lineHeight: 1.7,
+          }}
+        >
+          {latest.highlights.map((h, i) => (
+            <li key={i}>{h}</li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Single accordion for all previous versions */}
+      {older.length > 0 && (
+        <div
+          style={{
+            background: "var(--bg-card2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            overflow: "hidden",
+            marginTop: 4,
+          }}
+        >
+          <button
+            onClick={() => setPrevOpen((o) => !o)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text-secondary)",
+                flex: 1,
+              }}
+            >
+              Previous versions
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+              }}
+            >
+              {older.length} release{older.length !== 1 ? "s" : ""}
+            </span>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                transform: prevOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.2s ease",
+                display: "inline-block",
+              }}
+            >
+              ▾
+            </span>
+          </button>
+
+          {prevOpen && (
+            <div
+              style={{
+                borderTop: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+              }}
+            >
+              {older.map((release, idx) => (
+                <div
+                  key={release.version}
+                  style={{
+                    padding: "10px 14px",
+                    borderBottom:
+                      idx < older.length - 1
+                        ? "1px solid var(--border)"
+                        : "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        background: "rgba(255,255,255,0.08)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      v{release.version}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
+                      {release.title}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {new Date(release.date).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: 16,
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {release.highlights.map((h, i) => (
+                      <li key={i}>{h}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Settings({
   sharedData,
   updateShared,
@@ -3829,89 +4041,8 @@ export function Settings({
       {/* PIN Lock Setup */}
       <PinSetup sharedData={sharedData} updateShared={updateShared} />
 
-      {/* What's New — Release Notes */}
-      <div className="card section-gap">
-        <div
-          className="card-title"
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          <Sparkles size={16} style={{ color: "var(--gold)" }} />
-          What&apos;s New
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {RELEASE_NOTES.map((release, idx) => (
-            <div
-              key={release.version}
-              style={{
-                padding: "12px 14px",
-                background: idx === 0 ? "var(--gold-dim)" : "var(--bg-card2)",
-                border:
-                  idx === 0
-                    ? "1px solid var(--gold-border)"
-                    : "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 6,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    background:
-                      idx === 0 ? "var(--gold)" : "rgba(255,255,255,0.08)",
-                    color: idx === 0 ? "#000" : "var(--text-muted)",
-                  }}
-                >
-                  v{release.version}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  {new Date(release.date).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </span>
-                {idx === 0 && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      color: "var(--gold)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    LATEST
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                {release.title}
-              </div>
-              <ul
-                style={{
-                  margin: 0,
-                  paddingLeft: 16,
-                  fontSize: 12,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.7,
-                }}
-              >
-                {release.highlights.map((h, i) => (
-                  <li key={i}>{h}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* What's New — Release Notes accordion */}
+      <ReleaseNotesAccordion />
 
       <div className="card section-gap">
         <div className="card-title">About WealthOS</div>

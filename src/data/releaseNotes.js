@@ -2,6 +2,17 @@
 // Bump the version in the service worker (CACHE_NAME) to trigger the update banner.
 const RELEASE_NOTES = [
   {
+    version: "2.6.0",
+    date: "2026-04-23",
+    title: "Google Sheets Sync & UI Polish",
+    highlights: [
+      "Connect Google Sheets via OAuth — sync all data to 8 tabs",
+      "Auto-push transactions, budget, investments, goals & net worth to Sheet",
+      "Import preview from Sheet before applying changes",
+      "What's New section redesigned with accordion",
+    ],
+  },
+  {
     version: "2.5.0",
     date: "2026-04-04",
     title: "One-time Purchases Redesign",
