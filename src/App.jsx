@@ -499,6 +499,7 @@ function AppInner() {
     isHousehold ? (
       <div className="grid-2" style={{ gap: "1.5rem" }}>
         <Component
+          key="p1"
           data={p1}
           personName={personNames.p1}
           personColor="var(--p1)"
@@ -506,6 +507,7 @@ function AppInner() {
           {...extraProps}
         />
         <Component
+          key="p2"
           data={p2}
           personName={personNames.p2}
           personColor="var(--p2)"
@@ -515,6 +517,7 @@ function AppInner() {
       </div>
     ) : (
       <Component
+        key={personKey}
         data={data}
         personName={personName}
         personColor={personColor}
