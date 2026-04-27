@@ -30,6 +30,8 @@ export default defineConfig({
     },
   },
   build: {
+    target: "es2020",
+    cssMinify: "lightningcss",
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -47,6 +49,16 @@ export default defineConfig({
           }
           if (id.includes("node_modules/sonner")) {
             return "sonner";
+          }
+          if (
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/scheduler")
+          ) {
+            return "react";
+          }
+          if (id.includes("node_modules/lucide-react")) {
+            return "icons";
           }
         },
       },

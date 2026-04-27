@@ -24,12 +24,77 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
     <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
+    <!-- Preload the most critical font weight so LCP text renders fast -->
+    <link
+      rel="preload"
+      href="https://fonts.gstatic.com/s/dmsans/v15/rP2Fp2ywxg089UriCZa4ET-DNl0.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap"
       media="print"
       onload="this.media = 'all'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap"
+      />
+    </noscript>
+    <!-- Inline critical CSS to prevent FOUC and speed up LCP -->
+    <style>
+      :root {
+        --bg: #0c0c0f;
+        --bg-card: #13131a;
+        --text-primary: #eeeae4;
+        --gold: #c9a84c;
+        --gold-dim: rgba(201, 168, 76, 0.1);
+        --gold-border: rgba(201, 168, 76, 0.25);
+        --font-body: "DM Sans", system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) {
+          --bg: #f5f3ef;
+          --bg-card: #fff;
+          --text-primary: #1a1a1f;
+        }
+      }
+      [data-theme="light"] {
+        --bg: #f5f3ef;
+        --bg-card: #fff;
+        --text-primary: #1a1a1f;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-body);
+        background: var(--bg);
+        color: var(--text-primary);
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      .loading-pulse {
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+    </style>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -37,6 +102,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.jsx" fetchpriority="high"></script>
   </body>
 </html>

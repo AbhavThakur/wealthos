@@ -2,24 +2,30 @@ import {
   useState,
   useEffect,
   useCallback,
+  startTransition,
   lazy,
   Suspense,
   Component,
 } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
-import { Toaster, toast } from "sonner";
-import Login from "./pages/Login";
+import { toast } from "sonner";
 import Sidebar from "./components/Sidebar";
 import { exportAllData } from "./utils/exportData";
-import PinLockScreen from "./components/PinLockScreen";
 import { checkReminders } from "./utils/notifications";
-import InstallBanner from "./components/InstallBanner";
-import UpdateBanner from "./components/UpdateBanner";
 import useIdleTimer from "./hooks/useIdleTimer";
 import usePullToRefresh from "./hooks/usePullToRefresh";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import ADMIN_EMAILS from "./utils/adminEmails";
+
+// ── Non-critical shell components — lazy-loaded ─────────────────────────────
+const Login = lazy(() => import("./pages/Login"));
+const PinLockScreen = lazy(() => import("./components/PinLockScreen"));
+const InstallBanner = lazy(() => import("./components/InstallBanner"));
+const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
+const Toaster = lazy(() =>
+  import("sonner").then((m) => ({ default: m.Toaster })),
+);
 
 // ── Heavy shell components — lazy-loaded (not needed for first paint) ───────
 const Onboarding = lazy(() => import("./pages/Onboarding"));
@@ -333,7 +339,12 @@ function App() {
     window.close();
   }, []);
   if (user === undefined) return <LoadingScreen />;
-  if (!user) return <Login />;
+  if (!user)
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <Login />
+      </Suspense>
+    );
   if (user.isDemo) {
     return (
       <DemoDataProvider>
@@ -378,7 +389,7 @@ function AppInner() {
     return saved && PAGE_TITLES[saved] ? saved : "dashboard";
   });
   const setPage = useCallback((p) => {
-    setPageRaw(p);
+    startTransition(() => setPageRaw(p));
     sessionStorage.setItem("wos_page", p);
   }, []);
   const [profile, setProfile] = useState("household");
@@ -680,7 +691,9 @@ function AppInner() {
 
   if (hasPin && !pinUnlocked) {
     return (
-      <PinLockScreen pin={shared.pin} onUnlock={(v) => setPinUnlocked(v)} />
+      <Suspense fallback={<LoadingScreen />}>
+        <PinLockScreen pin={shared.pin} onUnlock={(v) => setPinUnlocked(v)} />
+      </Suspense>
     );
   }
 
@@ -831,7 +844,9 @@ function AppInner() {
         />
         <OnboardingTour show={!isDemo} />
       </Suspense>
-      <InstallBanner />
+      <Suspense fallback={null}>
+        <InstallBanner />
+      </Suspense>
     </>
   );
 }
@@ -839,20 +854,24 @@ function AppInner() {
 export default function Root() {
   return (
     <AuthProvider>
-      <Toaster
-        position="bottom-center"
-        toastOptions={{
-          style: {
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            color: "var(--text-primary)",
-            fontSize: 13,
-          },
-        }}
-        richColors
-        closeButton
-      />
-      <UpdateBanner />
+      <Suspense fallback={null}>
+        <Toaster
+          position="bottom-center"
+          toastOptions={{
+            style: {
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              color: "var(--text-primary)",
+              fontSize: 13,
+            },
+          }}
+          richColors
+          closeButton
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <UpdateBanner />
+      </Suspense>
       <App />
     </AuthProvider>
   );
