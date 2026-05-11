@@ -904,6 +904,9 @@ export default function Budget({
   // per-income-id expanded state + pending salary-change form
   const [expandedHistory, setExpandedHistory] = useState({});
   const [salaryForm, setSalaryForm] = useState({}); // id → { newAmount, note, date }
+  // per-expense-id amount change form (rent hike, etc.)
+  const [expandedAmtHistory, setExpandedAmtHistory] = useState({});
+  const [rentForm, setRentForm] = useState({}); // expId → { newAmount, note, date }
   // expense entries (dated purchase log)
   const [expandedExp, setExpandedExp] = useState({});
   const [entryForm, setEntryForm] = useState({}); // expId → { date, amount, note }
@@ -1121,6 +1124,53 @@ export default function Budget({
       incomes.map((x) => (x.id === inc.id ? updatedInc : x)),
     );
     cancelSalaryChange(inc.id);
+  };
+
+  // ── Expense amount change (rent hike, subscription price change, etc.) ──
+  const openRentChange = (exp) =>
+    setRentForm((s) => ({
+      ...s,
+      [exp.id]: {
+        newAmount: String(exp.amount),
+        note: "",
+        date: new Date().toISOString().slice(0, 10),
+      },
+    }));
+
+  const cancelRentChange = (id) =>
+    setRentForm((s) => {
+      const n = { ...s };
+      delete n[id];
+      return n;
+    });
+
+  const commitRentChange = (exp) => {
+    const f = rentForm[exp.id];
+    if (!f || !f.newAmount) return;
+    const newAmt = Number(f.newAmount);
+    if (newAmt === exp.amount) {
+      cancelRentChange(exp.id);
+      return;
+    }
+    const prevHistory = exp.amountHistory || [];
+    const updatedExp = {
+      ...exp,
+      amount: newAmt,
+      amountHistory: [
+        ...prevHistory,
+        {
+          date: f.date || new Date().toISOString().slice(0, 10),
+          from: exp.amount,
+          to: newAmt,
+          note: f.note.trim(),
+        },
+      ],
+    };
+    updatePerson(
+      "expenses",
+      expenses.map((x) => (x.id === exp.id ? updatedExp : x)),
+    );
+    cancelRentChange(exp.id);
   };
 
   const totalIncome = incomes.reduce((s, x) => s + x.amount, 0);
@@ -3614,6 +3664,296 @@ export default function Budget({
                         </div>
                       </div>
                     )}
+
+                    {/* ── Amount change log (rent hike / price change) ── */}
+                    {rentForm[exp.id] ? (
+                      <div
+                        style={{
+                          background: "var(--bg-card2)",
+                          borderRadius: "var(--radius-sm)",
+                          padding: "12px 14px",
+                          marginTop: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            marginBottom: 10,
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          Log amount change
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr 1.5fr",
+                            gap: 8,
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div>
+                            <label
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                display: "block",
+                                marginBottom: 3,
+                              }}
+                            >
+                              New amount (₹)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={rentForm[exp.id].newAmount}
+                              onChange={(e) =>
+                                setRentForm((s) => ({
+                                  ...s,
+                                  [exp.id]: {
+                                    ...s[exp.id],
+                                    newAmount: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                display: "block",
+                                marginBottom: 3,
+                              }}
+                            >
+                              Effective date
+                            </label>
+                            <input
+                              type="date"
+                              value={rentForm[exp.id].date}
+                              onChange={(e) =>
+                                setRentForm((s) => ({
+                                  ...s,
+                                  [exp.id]: {
+                                    ...s[exp.id],
+                                    date: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                display: "block",
+                                marginBottom: 3,
+                              }}
+                            >
+                              Reason (optional)
+                            </label>
+                            <input
+                              placeholder="e.g. Annual hike, New agreement"
+                              value={rentForm[exp.id].note}
+                              onChange={(e) =>
+                                setRentForm((s) => ({
+                                  ...s,
+                                  [exp.id]: {
+                                    ...s[exp.id],
+                                    note: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                        {rentForm[exp.id].newAmount &&
+                          Number(rentForm[exp.id].newAmount) !== exp.amount && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text-muted)",
+                                marginBottom: 8,
+                              }}
+                            >
+                              {fmt(exp.amount)} →{" "}
+                              <strong
+                                style={{
+                                  color:
+                                    Number(rentForm[exp.id].newAmount) >
+                                    exp.amount
+                                      ? "var(--red)"
+                                      : "var(--green)",
+                                }}
+                              >
+                                {fmt(Number(rentForm[exp.id].newAmount))}
+                              </strong>
+                              {exp.amount > 0 && (
+                                <span
+                                  style={{
+                                    marginLeft: 6,
+                                    color:
+                                      Number(rentForm[exp.id].newAmount) >
+                                      exp.amount
+                                        ? "var(--red)"
+                                        : "var(--green)",
+                                  }}
+                                >
+                                  (
+                                  {((Number(rentForm[exp.id].newAmount) -
+                                    exp.amount) /
+                                    exp.amount) *
+                                    100 >
+                                  0
+                                    ? "+"
+                                    : ""}
+                                  {(
+                                    ((Number(rentForm[exp.id].newAmount) -
+                                      exp.amount) /
+                                      exp.amount) *
+                                    100
+                                  ).toFixed(1)}
+                                  %)
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            className="btn-primary"
+                            style={{ fontSize: 12, padding: "4px 12px" }}
+                            onClick={() => commitRentChange(exp)}
+                          >
+                            Save change
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            style={{ fontSize: 12, padding: "4px 10px" }}
+                            onClick={() => cancelRentChange(exp.id)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 11, padding: "3px 10px" }}
+                          onClick={() => openRentChange(exp)}
+                        >
+                          ↑ Log amount change
+                        </button>
+                        {(exp.amountHistory?.length ?? 0) > 0 && (
+                          <button
+                            className="btn-ghost"
+                            style={{
+                              fontSize: 11,
+                              padding: "3px 10px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                            onClick={() =>
+                              setExpandedAmtHistory((s) => ({
+                                ...s,
+                                [exp.id]: !s[exp.id],
+                              }))
+                            }
+                          >
+                            History ({exp.amountHistory.length})
+                            {expandedAmtHistory[exp.id] ? (
+                              <ChevronUp size={11} />
+                            ) : (
+                              <ChevronDown size={11} />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Amount history timeline */}
+                    {expandedAmtHistory[exp.id] &&
+                      (exp.amountHistory?.length ?? 0) > 0 && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            paddingLeft: 12,
+                            borderLeft: "2px solid var(--blue)",
+                          }}
+                        >
+                          {[...exp.amountHistory].reverse().map((h, i) => {
+                            const pct =
+                              h.from > 0
+                                ? (((h.to - h.from) / h.from) * 100).toFixed(1)
+                                : null;
+                            return (
+                              <div
+                                key={i}
+                                style={{
+                                  padding: "6px 0",
+                                  borderBottom: "1px solid var(--border)",
+                                  fontSize: 12,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "baseline",
+                                  }}
+                                >
+                                  <span style={{ color: "var(--text-muted)" }}>
+                                    {h.date}
+                                  </span>
+                                  <span>
+                                    {fmt(h.from)} →{" "}
+                                    <strong
+                                      style={{
+                                        color:
+                                          h.to > h.from
+                                            ? "var(--red)"
+                                            : "var(--green)",
+                                      }}
+                                    >
+                                      {fmt(h.to)}
+                                    </strong>
+                                    {pct && (
+                                      <span
+                                        style={{
+                                          marginLeft: 6,
+                                          color:
+                                            h.to > h.from
+                                              ? "var(--red)"
+                                              : "var(--green)",
+                                          fontSize: 11,
+                                        }}
+                                      >
+                                        ({h.to > h.from ? "+" : ""}
+                                        {pct}%)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                {h.note && (
+                                  <div
+                                    style={{
+                                      color: "var(--text-muted)",
+                                      fontSize: 11,
+                                      marginTop: 2,
+                                    }}
+                                  >
+                                    {h.note}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                   </div>
                 );
               })}
