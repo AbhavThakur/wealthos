@@ -33,6 +33,7 @@ import {
   Info,
   Edit3,
   ClipboardPaste,
+  GitMerge,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
@@ -200,8 +201,45 @@ function MobileInput({
 const tripTotal = (trip) =>
   (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
 
+// Helper: resolve the effective monthly amount for a given year-month (YYYY-MM).
+// Walks amountHistory (sorted by date) to find the last change whose effective
+// date is ≤ the last day of `ym`. Falls back to exp.amount when no history.
+const effectiveAmount = (exp, ym) => {
+  const hist = exp.amountHistory;
+  if (!hist || hist.length === 0) return exp.amount || 0;
+  // Build a chronological timeline: original amount → each change
+  // The first entry's `from` is the original amount before any change.
+  const sorted = [...hist].sort((a, b) => a.date.localeCompare(b.date));
+  const originalAmt = sorted[0].from;
+  // Walk forward: find the last entry whose effective date's YYYY-MM is ≤ ym
+  let amount = originalAmt;
+  for (const h of sorted) {
+    const hYm = (h.date || "").slice(0, 7);
+    if (hYm <= ym) {
+      amount = h.to;
+    } else {
+      break;
+    }
+  }
+  return amount;
+};
+
+// Helper: get the amount for a non-onetime expense, optionally date-aware.
+// For past months (before current calendar month), resolves from amountHistory.
+// For current month and future, always uses exp.amount (the live value).
+const _curYmStatic = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+})();
+const expAmount = (e, ym) => {
+  if (e.expenseType === "onetime") return onetimeEffective(e);
+  if (ym && ym < _curYmStatic && e.amountHistory && e.amountHistory.length > 0)
+    return effectiveAmount(e, ym);
+  return e.amount || 0;
+};
+
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
-const buildExpByCategory = (expenses) =>
+const buildExpByCategory = (expenses, ym) =>
   expenses.reduce((acc, e) => {
     if (e.expenseType === "trip") {
       // Each trip item has its own category
@@ -210,15 +248,14 @@ const buildExpByCategory = (expenses) =>
         acc[cat] = (acc[cat] || 0) + (item.amount || 0);
       }
     } else {
-      const amt =
-        e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
+      const amt = expAmount(e, ym);
       acc[e.category] = (acc[e.category] || 0) + amt;
     }
     return acc;
   }, {});
 
 // Helper: build grouped view { cat: { total, subs: { sub: amount } } }
-const buildExpGrouped = (expenses) =>
+const buildExpGrouped = (expenses, ym) =>
   expenses.reduce((acc, e) => {
     if (e.expenseType === "trip") {
       for (const item of e.items || []) {
@@ -232,8 +269,7 @@ const buildExpGrouped = (expenses) =>
     } else {
       const cat = e.category;
       if (!acc[cat]) acc[cat] = { total: 0, subs: {} };
-      const amt =
-        e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
+      const amt = expAmount(e, ym);
       acc[cat].total += amt;
       const sub = e.subCategory || "";
       acc[cat].subs[sub] = (acc[cat].subs[sub] || 0) + amt;
@@ -907,6 +943,69 @@ export default function Budget({
   // per-expense-id amount change form (rent hike, etc.)
   const [expandedAmtHistory, setExpandedAmtHistory] = useState({});
   const [rentForm, setRentForm] = useState({}); // expId → { newAmount, note, date }
+  // one-time expense merge mode
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSelected, setMergeSelected] = useState(new Set());
+  const [mergeForm, setMergeForm] = useState(null); // null | { name, category, subCategory }
+  const toggleMergeSelect = (id) =>
+    setMergeSelected((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  const exitMergeMode = () => {
+    setMergeMode(false);
+    setMergeSelected(new Set());
+    setMergeForm(null);
+  };
+  const openMergeForm = () => {
+    if (mergeSelected.size < 2) return;
+    const first = filteredOnetimeExps.find((e) => mergeSelected.has(e.id));
+    setMergeForm({
+      name: "",
+      category: first?.category || "Others",
+      subCategory: first?.subCategory || "",
+    });
+  };
+  const commitMerge = () => {
+    if (!mergeForm || mergeSelected.size < 2) return;
+    const selected = filteredOnetimeExps.filter((e) => mergeSelected.has(e.id));
+    if (selected.length < 2) return; // stale IDs guard
+    // Pool all entries; for expenses with no entries but an amount, synthesise one.
+    // Use genEntryId() so IDs never clash with future entries added to this expense.
+    const allEntries = [];
+    for (const exp of selected) {
+      const ents = exp.entries || [];
+      if (ents.length === 0 && (exp.amount || 0) > 0) {
+        allEntries.push({
+          id: genEntryId(),
+          date: exp.date || new Date().toISOString().slice(0, 10),
+          amount: exp.amount,
+          note: exp.name,
+        });
+      } else {
+        ents.forEach((e) =>
+          allEntries.push({ ...e, id: genEntryId(), note: e.note || exp.name }),
+        );
+      }
+    }
+    const merged = {
+      id: nextId(expenses),
+      expenseType: "onetime",
+      name: mergeForm.name.trim() || `Merged (${selected.length} items)`,
+      category: mergeForm.category,
+      subCategory: mergeForm.subCategory,
+      entries: allEntries,
+      date:
+        allEntries.length > 0
+          ? [...allEntries].sort((a, b) => a.date.localeCompare(b.date))[0].date
+          : new Date().toISOString().slice(0, 10),
+      amount: 0,
+    };
+    const remaining = expenses.filter((e) => !mergeSelected.has(e.id));
+    updatePerson("expenses", [...remaining, merged]);
+    exitMergeMode();
+  };
   // expense entries (dated purchase log)
   const [expandedExp, setExpandedExp] = useState({});
   const [entryForm, setEntryForm] = useState({}); // expId → { date, amount, note }
@@ -1201,11 +1300,8 @@ export default function Budget({
     0,
   );
   const totalExpenses =
-    monthFilteredExpenses.reduce(
-      (s, x) =>
-        s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
-      0,
-    ) + sharedTripTotal;
+    monthFilteredExpenses.reduce((s, x) => s + expAmount(x, expMonth), 0) +
+    sharedTripTotal;
   const savingsRate =
     totalIncome > 0
       ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
@@ -1216,10 +1312,10 @@ export default function Budget({
     ...monthFilteredExpenses,
     ...monthFilteredSharedTrips.map((t) => ({ ...t, expenseType: "trip" })),
   ];
-  const expByCategory = buildExpByCategory(allExpensesForCategories);
+  const expByCategory = buildExpByCategory(allExpensesForCategories, expMonth);
 
   // Grouped: { Food: { total, subs: { Groceries: X, "Dining Out": Y, "": Z } } }
-  const expGrouped = buildExpGrouped(allExpensesForCategories);
+  const expGrouped = buildExpGrouped(allExpensesForCategories, expMonth);
 
   const addIncome = () =>
     updatePerson("incomes", [
@@ -1862,7 +1958,7 @@ export default function Budget({
                         >
                           <span>{e.name}</span>
                           <span style={{ fontWeight: 600 }}>
-                            {fmt(e.amount)}
+                            {fmt(expAmount(e, expMonth))}
                           </span>
                         </div>
                       ))}
@@ -1879,7 +1975,7 @@ export default function Budget({
                         <span>
                           {fmt(
                             filteredMonthlyExps.reduce(
-                              (s, x) => s + x.amount,
+                              (s, x) => s + expAmount(x, expMonth),
                               0,
                             ),
                           )}
@@ -3057,6 +3153,13 @@ export default function Budget({
                 const spentThisMonth = entries
                   .filter((e) => e.date?.slice(0, 7) === thisMonth)
                   .reduce((s, e) => s + e.amount, 0);
+                // Check if there's a future change coming (only show for past months)
+                const nextChange =
+                  expMonth < _curYm
+                    ? (exp.amountHistory || [])
+                        .filter((h) => (h.date || "").slice(0, 7) > expMonth)
+                        .sort((a, b) => a.date.localeCompare(b.date))[0]
+                    : null;
                 return (
                   <div
                     key={exp.id}
@@ -3101,7 +3204,7 @@ export default function Budget({
                             color: "var(--text-primary)",
                           }}
                         >
-                          {fmt(exp.amount)}
+                          {fmt(expAmount(exp, expMonth))}
                           {spentThisMonth > 0 && (
                             <div
                               style={{
@@ -3196,6 +3299,27 @@ export default function Budget({
                         </button>
                       </div>
                     </div>
+
+                    {/* Upcoming change indicator */}
+                    {nextChange && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--gold)",
+                          marginBottom: 6,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        ↗ Changes to {fmt(nextChange.to)} from {nextChange.date}
+                        {nextChange.note && (
+                          <span style={{ color: "var(--text-muted)" }}>
+                            — {nextChange.note}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Row 2: Category pill + Recurrence */}
                     <div
@@ -3969,7 +4093,12 @@ export default function Budget({
                 >
                   Monthly total:{" "}
                   <span className="red-text">
-                    {fmt(monthlyExps.reduce((s, x) => s + x.amount, 0))}
+                    {fmt(
+                      monthlyExps.reduce(
+                        (s, x) => s + expAmount(x, expMonth),
+                        0,
+                      ),
+                    )}
                   </span>
                 </div>
               )}
@@ -4608,13 +4737,40 @@ export default function Budget({
                   />
                   One-time Purchases
                 </div>
-                <button
-                  className="btn-primary"
-                  style={{ display: "flex", alignItems: "center", gap: 6 }}
-                  onClick={addOnetimeExpense}
-                >
-                  <Plus size={13} /> Add
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {filteredOnetimeExps.length >= 2 && (
+                    <button
+                      className={mergeMode ? "btn-primary" : "btn-ghost"}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        fontSize: 12,
+                        padding: "5px 10px",
+                        ...(mergeMode
+                          ? {
+                              background: "var(--gold-dim)",
+                              color: "var(--gold)",
+                              border: "1px solid var(--gold-border)",
+                            }
+                          : {}),
+                      }}
+                      onClick={() =>
+                        mergeMode ? exitMergeMode() : setMergeMode(true)
+                      }
+                    >
+                      <GitMerge size={12} />
+                      {mergeMode ? "Cancel" : "Select"}
+                    </button>
+                  )}
+                  <button
+                    className="btn-primary"
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    onClick={addOnetimeExpense}
+                  >
+                    <Plus size={13} /> Add
+                  </button>
+                </div>
               </div>
 
               {filteredOnetimeExps.length === 0 && (
@@ -4635,519 +4791,858 @@ export default function Budget({
                 const entries = exp.entries || [];
                 const isOpen = expandedExp[exp.id];
                 const ef = getEntryForm(exp.id);
+                const isSelected = mergeSelected.has(exp.id);
                 return (
                   <div
                     key={exp.id}
                     style={{
-                      background: "var(--bg-card2)",
+                      background: isSelected
+                        ? "rgba(var(--gold-rgb,180,140,60),0.10)"
+                        : "var(--bg-card2)",
                       borderRadius: "var(--radius-sm)",
                       padding: "12px 14px",
                       marginBottom: 8,
-                      borderLeft: "3px solid var(--gold)",
+                      borderLeft: isSelected
+                        ? "3px solid var(--gold)"
+                        : "3px solid var(--gold)",
+                      outline: isSelected
+                        ? "1.5px solid var(--gold-border)"
+                        : "none",
+                      cursor: mergeMode ? "pointer" : "default",
+                      transition: "outline 0.12s, background 0.12s",
                     }}
+                    onClick={
+                      mergeMode ? () => toggleMergeSelect(exp.id) : undefined
+                    }
                   >
-                    {/* Row 1: Expense name */}
-                    <MobileInput
-                      value={exp.name}
-                      label="Expense name"
-                      onChange={(v) =>
-                        updatePerson(
-                          "expenses",
-                          expenses.map((x) =>
-                            x.id === exp.id ? { ...x, name: v } : x,
-                          ),
-                        )
-                      }
-                      style={{ width: "100%", marginBottom: 6 }}
-                      placeholder="Expense name"
-                    />
-                    {/* Row 2: Category + subcategory */}
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <select
-                        value={exp.category}
-                        onChange={(e) =>
-                          updatePerson(
-                            "expenses",
-                            expenses.map((x) =>
-                              x.id === exp.id
-                                ? {
-                                    ...x,
-                                    category: e.target.value,
-                                    subCategory: "",
-                                  }
-                                : x,
-                            ),
-                          )
-                        }
-                        style={{ flex: "0 1 130px", fontSize: 12 }}
+                    {/* Selection checkbox row */}
+                    {mergeMode && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 8,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {EXPENSE_CATEGORIES.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                      {(() => {
-                        const subs = getSubcats(exp.category);
-                        const isAdding = addingSubCat?.expId === exp.id;
-                        return (
-                          <>
-                            {subs.length > 0 && (
-                              <select
-                                value={exp.subCategory || ""}
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleMergeSelect(exp.id)}
+                          style={{
+                            width: 15,
+                            height: 15,
+                            cursor: "pointer",
+                            accentColor: "var(--gold)",
+                          }}
+                        />
+                        <span
+                          style={{ fontSize: 11, color: "var(--text-muted)" }}
+                        >
+                          {isSelected ? "Selected" : "Select to merge"}
+                        </span>
+                      </div>
+                    )}
+                    {/* In merge mode, show read-only summary; otherwise show full editing UI */}
+                    {mergeMode ? (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ pointerEvents: "none" }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 13,
+                            marginBottom: 4,
+                          }}
+                        >
+                          {exp.name || "Untitled"}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            fontSize: 12,
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          <span>{exp.category}</span>
+                          {exp.subCategory && <span>· {exp.subCategory}</span>}
+                          <span
+                            style={{
+                              marginLeft: "auto",
+                              fontWeight: 600,
+                              color: "var(--red)",
+                            }}
+                          >
+                            {fmt(onetimeEffective(exp))}
+                          </span>
+                        </div>
+                        {entries.length > 0 && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              marginTop: 4,
+                            }}
+                          >
+                            {entries.length}{" "}
+                            {entries.length === 1 ? "entry" : "entries"}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Row 1: Expense name */}
+                        <MobileInput
+                          value={exp.name}
+                          label="Expense name"
+                          onChange={(v) =>
+                            updatePerson(
+                              "expenses",
+                              expenses.map((x) =>
+                                x.id === exp.id ? { ...x, name: v } : x,
+                              ),
+                            )
+                          }
+                          style={{ width: "100%", marginBottom: 6 }}
+                          placeholder="Expense name"
+                        />
+                        {/* Row 2: Category + subcategory */}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <select
+                            value={exp.category}
+                            onChange={(e) =>
+                              updatePerson(
+                                "expenses",
+                                expenses.map((x) =>
+                                  x.id === exp.id
+                                    ? {
+                                        ...x,
+                                        category: e.target.value,
+                                        subCategory: "",
+                                      }
+                                    : x,
+                                ),
+                              )
+                            }
+                            style={{ flex: "0 1 130px", fontSize: 12 }}
+                          >
+                            {EXPENSE_CATEGORIES.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                          {(() => {
+                            const subs = getSubcats(exp.category);
+                            const isAdding = addingSubCat?.expId === exp.id;
+                            return (
+                              <>
+                                {subs.length > 0 && (
+                                  <select
+                                    value={exp.subCategory || ""}
+                                    onChange={(e) =>
+                                      updatePerson(
+                                        "expenses",
+                                        expenses.map((x) =>
+                                          x.id === exp.id
+                                            ? {
+                                                ...x,
+                                                subCategory: e.target.value,
+                                              }
+                                            : x,
+                                        ),
+                                      )
+                                    }
+                                    style={{ flex: "0 1 130px", fontSize: 12 }}
+                                  >
+                                    <option value="">— sub —</option>
+                                    {subs.map((s) => (
+                                      <option key={s}>{s}</option>
+                                    ))}
+                                  </select>
+                                )}
+                                {isAdding ? (
+                                  <input
+                                    autoFocus
+                                    type="text"
+                                    value={newSubCatText}
+                                    onChange={(e) =>
+                                      setNewSubCatText(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        saveCustomSubCat(
+                                          exp.category,
+                                          newSubCatText,
+                                          exp.id,
+                                        );
+                                      if (e.key === "Escape") {
+                                        setAddingSubCat(null);
+                                        setNewSubCatText("");
+                                      }
+                                    }}
+                                    onBlur={() =>
+                                      saveCustomSubCat(
+                                        exp.category,
+                                        newSubCatText,
+                                        exp.id,
+                                      )
+                                    }
+                                    placeholder="New subcategory…"
+                                    style={{
+                                      flex: "0 1 120px",
+                                      fontSize: 12,
+                                      padding: "3px 6px",
+                                    }}
+                                  />
+                                ) : (
+                                  <button
+                                    title="Add custom subcategory"
+                                    onClick={() => {
+                                      setAddingSubCat({
+                                        expId: exp.id,
+                                        category: exp.category,
+                                      });
+                                      setNewSubCatText("");
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "1px dashed var(--border)",
+                                      color: "var(--text-muted)",
+                                      borderRadius: 4,
+                                      padding: "2px 7px",
+                                      fontSize: 11,
+                                      cursor: "pointer",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    + sub
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                        {/* Row 3: Log button */}
+                        <div style={{ marginBottom: 4 }}>
+                          <button
+                            onClick={() => {
+                              toggleExpandExp(exp.id);
+                              if (!isOpen) setEF(exp.id, {});
+                            }}
+                            title="Log purchases"
+                            style={{
+                              background:
+                                entries.length > 0
+                                  ? "var(--gold-dim)"
+                                  : "rgba(255,255,255,0.06)",
+                              border:
+                                entries.length > 0
+                                  ? "1px solid var(--gold-border)"
+                                  : "1px solid var(--border)",
+                              color:
+                                entries.length > 0
+                                  ? "var(--gold)"
+                                  : "var(--text-muted)",
+                              borderRadius: 6,
+                              padding: "5px 12px",
+                              fontSize: 12,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                            }}
+                          >
+                            <CalendarDays size={12} />
+                            {entries.length > 0
+                              ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} · tap to add more`
+                              : "Add purchase log"}
+                          </button>
+                        </div>
+
+                        {/* Logged total pill */}
+                        {entries.length > 0 &&
+                          (() => {
+                            const loggedTotal = entries.reduce(
+                              (s, e) => s + (e.amount || 0),
+                              0,
+                            );
+                            return (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 10,
+                                  marginTop: 8,
+                                  padding: "6px 10px",
+                                  background: "rgba(255,255,255,0.04)",
+                                  borderRadius: "var(--radius-sm)",
+                                  fontSize: 12,
+                                }}
+                              >
+                                <span style={{ color: "var(--text-muted)" }}>
+                                  Total:{" "}
+                                  <span
+                                    style={{
+                                      fontWeight: 600,
+                                      color: "var(--red)",
+                                    }}
+                                  >
+                                    {fmt(loggedTotal)}
+                                  </span>
+                                  <span
+                                    style={{ margin: "0 6px", opacity: 0.4 }}
+                                  >
+                                    ·
+                                  </span>
+                                  {entries.length}{" "}
+                                  {entries.length === 1 ? "entry" : "entries"}
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                        {/* Purchase log panel */}
+                        {isOpen && (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              padding: "10px 12px",
+                              background: "var(--bg-card)",
+                              borderRadius: "var(--radius-sm)",
+                              borderLeft: `3px solid ${personColor}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                marginBottom: 8,
+                                textTransform: "uppercase",
+                                letterSpacing: ".06em",
+                              }}
+                            >
+                              Purchase log
+                            </div>
+                            {entries.length > 0 && (
+                              <div style={{ marginBottom: 10 }}>
+                                {[...entries]
+                                  .sort((a, b) => b.date.localeCompare(a.date))
+                                  .map((e) => {
+                                    const editKey = `${exp.id}_${e.id}`;
+                                    const isEditing = !!editEntry[editKey];
+                                    const ef2 = editEntry[editKey] || {};
+                                    if (isEditing) {
+                                      return (
+                                        <div
+                                          key={e.id}
+                                          style={{
+                                            display: "flex",
+                                            gap: 6,
+                                            alignItems: "center",
+                                            flexWrap: "wrap",
+                                            padding: "6px 0",
+                                            borderBottom:
+                                              "1px solid var(--border)",
+                                          }}
+                                        >
+                                          <input
+                                            type="date"
+                                            value={ef2.date}
+                                            onChange={(ev) =>
+                                              setEditEntry((s) => ({
+                                                ...s,
+                                                [editKey]: {
+                                                  ...ef2,
+                                                  date: ev.target.value,
+                                                },
+                                              }))
+                                            }
+                                            style={{
+                                              flex: "0 0 130px",
+                                              fontSize: 12,
+                                            }}
+                                          />
+                                          <MobileInput
+                                            type="number"
+                                            placeholder="₹"
+                                            value={ef2.amount}
+                                            label="Amount"
+                                            onChange={(v) =>
+                                              setEditEntry((s) => ({
+                                                ...s,
+                                                [editKey]: {
+                                                  ...ef2,
+                                                  amount: v,
+                                                },
+                                              }))
+                                            }
+                                            style={{ flex: "0 0 90px" }}
+                                            min="0"
+                                          />
+                                          <MobileInput
+                                            placeholder="Note"
+                                            value={ef2.note}
+                                            label="Note"
+                                            onChange={(v) =>
+                                              setEditEntry((s) => ({
+                                                ...s,
+                                                [editKey]: { ...ef2, note: v },
+                                              }))
+                                            }
+                                            style={{ flex: 1, minWidth: 80 }}
+                                          />
+                                          <button
+                                            className="btn-primary"
+                                            style={{
+                                              padding: "4px 10px",
+                                              fontSize: 12,
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 4,
+                                            }}
+                                            onClick={() =>
+                                              saveEditEntry(exp, e.id)
+                                            }
+                                            disabled={!ef2.amount || !ef2.date}
+                                          >
+                                            <Check size={11} /> Save
+                                          </button>
+                                          <button
+                                            className="btn-ghost"
+                                            style={{
+                                              padding: "4px 8px",
+                                              fontSize: 12,
+                                            }}
+                                            onClick={() =>
+                                              cancelEditEntry(exp, e)
+                                            }
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div
+                                        key={e.id}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 8,
+                                          padding: "4px 0",
+                                          borderBottom:
+                                            "1px solid var(--border)",
+                                          fontSize: 12,
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            color: "var(--text-muted)",
+                                            fontVariantNumeric: "tabular-nums",
+                                            flexShrink: 0,
+                                            width: 72,
+                                          }}
+                                        >
+                                          {e.date.slice(5).replace("-", " ")}
+                                        </span>
+                                        <span
+                                          style={{
+                                            flex: 1,
+                                            color: "var(--text-secondary)",
+                                          }}
+                                        >
+                                          {e.note || "—"}
+                                        </span>
+                                        <span
+                                          style={{
+                                            fontWeight: 600,
+                                            color: "var(--red)",
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          {fmt(e.amount)}
+                                        </span>
+                                        <button
+                                          onClick={() => startEditEntry(exp, e)}
+                                          title="Edit"
+                                          style={{
+                                            background: "none",
+                                            border: "none",
+                                            cursor: "pointer",
+                                            color: "var(--text-muted)",
+                                            padding: 2,
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          <Edit3 size={11} />
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            if (
+                                              await confirm(
+                                                "Delete entry?",
+                                                `Remove this purchase log entry of ${fmt(e.amount)}?`,
+                                              )
+                                            )
+                                              deleteEntry(exp, e.id);
+                                          }}
+                                          style={{
+                                            background: "none",
+                                            border: "none",
+                                            cursor: "pointer",
+                                            color: "var(--text-muted)",
+                                            padding: 2,
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          <X size={11} />
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                            <div
+                              className="budget-entry-form"
+                              style={{
+                                display: "flex",
+                                gap: 6,
+                                alignItems: "center",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <input
+                                type="date"
+                                value={ef.date}
                                 onChange={(e) =>
-                                  updatePerson(
-                                    "expenses",
-                                    expenses.map((x) =>
-                                      x.id === exp.id
-                                        ? { ...x, subCategory: e.target.value }
-                                        : x,
-                                    ),
-                                  )
+                                  setEF(exp.id, { date: e.target.value })
                                 }
-                                style={{ flex: "0 1 130px", fontSize: 12 }}
+                                style={{ flex: "0 0 130px" }}
+                              />
+                              <MobileInput
+                                type="number"
+                                placeholder="₹"
+                                value={ef.amount}
+                                label="Amount"
+                                onChange={(v) => setEF(exp.id, { amount: v })}
+                                style={{ flex: "0 0 90px" }}
+                                min="0"
+                              />
+                              <MobileInput
+                                placeholder="Note"
+                                value={ef.note}
+                                label="Note"
+                                onChange={(v) => setEF(exp.id, { note: v })}
+                                style={{ flex: 1, minWidth: 100 }}
+                              />
+                              <button
+                                className="btn-primary"
+                                style={{
+                                  flexShrink: 0,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  padding: "6px 12px",
+                                }}
+                                onClick={() => addEntry(exp)}
+                                disabled={!ef.amount || !ef.date}
+                              >
+                                <Plus size={11} /> Submit
+                              </button>
+                              <button
+                                className="btn-ghost"
+                                style={{
+                                  flexShrink: 0,
+                                  padding: "6px 12px",
+                                  fontSize: 12,
+                                }}
+                                onClick={() => toggleExpandExp(exp.id)}
+                              >
+                                Close
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Bottom: Move + Delete */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginTop: 10,
+                            paddingTop: 8,
+                            borderTop: "1px solid var(--border)",
+                          }}
+                        >
+                          <MoveButton expId={exp.id} currentType="onetime" />
+                          <button
+                            className="btn-danger"
+                            aria-label={`Delete ${exp.name}`}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 11,
+                            }}
+                            onClick={async () => {
+                              if (
+                                await confirm(
+                                  "Delete expense?",
+                                  `Remove "${exp.name}"?`,
+                                )
+                              )
+                                updatePerson(
+                                  "expenses",
+                                  expenses.filter((x) => x.id !== exp.id),
+                                );
+                            }}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* ── Merge mode action bar ── */}
+              {mergeMode && (
+                <div
+                  style={{
+                    background: "var(--bg-card2)",
+                    border: "1px solid var(--gold-border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "12px 14px",
+                    marginBottom: 8,
+                  }}
+                >
+                  {mergeSelected.size < 2 ? (
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      Select 2 or more expenses to merge them into one.
+                    </div>
+                  ) : mergeForm ? (
+                    /* Confirm panel */
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          marginBottom: 10,
+                          color: "var(--text-secondary)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <GitMerge size={13} />
+                        Merge {mergeSelected.size} expenses
+                        <span
+                          style={{
+                            marginLeft: "auto",
+                            color: "var(--text-muted)",
+                            fontWeight: 400,
+                          }}
+                        >
+                          Total:{" "}
+                          <strong style={{ color: "var(--red)" }}>
+                            {fmt(
+                              filteredOnetimeExps
+                                .filter((e) => mergeSelected.has(e.id))
+                                .reduce((s, e) => s + onetimeEffective(e), 0),
+                            )}
+                          </strong>
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1.5fr 1fr 1fr",
+                          gap: 8,
+                          marginBottom: 10,
+                        }}
+                      >
+                        <div>
+                          <label
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              display: "block",
+                              marginBottom: 3,
+                            }}
+                          >
+                            Name for merged expense
+                          </label>
+                          <input
+                            autoFocus
+                            placeholder={`Merged (${mergeSelected.size} items)`}
+                            value={mergeForm.name}
+                            onChange={(e) =>
+                              setMergeForm((f) => ({
+                                ...f,
+                                name: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              display: "block",
+                              marginBottom: 3,
+                            }}
+                          >
+                            Category
+                          </label>
+                          <select
+                            value={mergeForm.category}
+                            onChange={(e) =>
+                              setMergeForm((f) => ({
+                                ...f,
+                                category: e.target.value,
+                                subCategory: "",
+                              }))
+                            }
+                            style={{ fontSize: 12, width: "100%" }}
+                          >
+                            {EXPENSE_CATEGORIES.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              display: "block",
+                              marginBottom: 3,
+                            }}
+                          >
+                            Sub-category
+                          </label>
+                          {(() => {
+                            const subs = getSubcats(mergeForm.category);
+                            return subs.length > 0 ? (
+                              <select
+                                value={mergeForm.subCategory}
+                                onChange={(e) =>
+                                  setMergeForm((f) => ({
+                                    ...f,
+                                    subCategory: e.target.value,
+                                  }))
+                                }
+                                style={{ fontSize: 12, width: "100%" }}
                               >
                                 <option value="">— sub —</option>
                                 {subs.map((s) => (
                                   <option key={s}>{s}</option>
                                 ))}
                               </select>
-                            )}
-                            {isAdding ? (
-                              <input
-                                autoFocus
-                                type="text"
-                                value={newSubCatText}
-                                onChange={(e) =>
-                                  setNewSubCatText(e.target.value)
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter")
-                                    saveCustomSubCat(
-                                      exp.category,
-                                      newSubCatText,
-                                      exp.id,
-                                    );
-                                  if (e.key === "Escape") {
-                                    setAddingSubCat(null);
-                                    setNewSubCatText("");
-                                  }
-                                }}
-                                onBlur={() =>
-                                  saveCustomSubCat(
-                                    exp.category,
-                                    newSubCatText,
-                                    exp.id,
-                                  )
-                                }
-                                placeholder="New subcategory…"
-                                style={{
-                                  flex: "0 1 120px",
-                                  fontSize: 12,
-                                  padding: "3px 6px",
-                                }}
-                              />
                             ) : (
-                              <button
-                                title="Add custom subcategory"
-                                onClick={() => {
-                                  setAddingSubCat({
-                                    expId: exp.id,
-                                    category: exp.category,
-                                  });
-                                  setNewSubCatText("");
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "1px dashed var(--border)",
-                                  color: "var(--text-muted)",
-                                  borderRadius: 4,
-                                  padding: "2px 7px",
-                                  fontSize: 11,
-                                  cursor: "pointer",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                + sub
-                              </button>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    {/* Row 3: Log button */}
-                    <div style={{ marginBottom: 4 }}>
-                      <button
-                        onClick={() => {
-                          toggleExpandExp(exp.id);
-                          if (!isOpen) setEF(exp.id, {});
-                        }}
-                        title="Log purchases"
-                        style={{
-                          background:
-                            entries.length > 0
-                              ? "var(--gold-dim)"
-                              : "rgba(255,255,255,0.06)",
-                          border:
-                            entries.length > 0
-                              ? "1px solid var(--gold-border)"
-                              : "1px solid var(--border)",
-                          color:
-                            entries.length > 0
-                              ? "var(--gold)"
-                              : "var(--text-muted)",
-                          borderRadius: 6,
-                          padding: "5px 12px",
-                          fontSize: 12,
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                        }}
-                      >
-                        <CalendarDays size={12} />
-                        {entries.length > 0
-                          ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} · tap to add more`
-                          : "Add purchase log"}
-                      </button>
-                    </div>
-
-                    {/* Logged total pill */}
-                    {entries.length > 0 &&
-                      (() => {
-                        const loggedTotal = entries.reduce(
-                          (s, e) => s + (e.amount || 0),
-                          0,
-                        );
-                        return (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              marginTop: 8,
-                              padding: "6px 10px",
-                              background: "rgba(255,255,255,0.04)",
-                              borderRadius: "var(--radius-sm)",
-                              fontSize: 12,
-                            }}
-                          >
-                            <span style={{ color: "var(--text-muted)" }}>
-                              Total:{" "}
-                              <span
-                                style={{ fontWeight: 600, color: "var(--red)" }}
-                              >
-                                {fmt(loggedTotal)}
-                              </span>
-                              <span style={{ margin: "0 6px", opacity: 0.4 }}>
-                                ·
-                              </span>
-                              {entries.length}{" "}
-                              {entries.length === 1 ? "entry" : "entries"}
-                            </span>
-                          </div>
-                        );
-                      })()}
-
-                    {/* Purchase log panel */}
-                    {isOpen && (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          padding: "10px 12px",
-                          background: "var(--bg-card)",
-                          borderRadius: "var(--radius-sm)",
-                          borderLeft: `3px solid ${personColor}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                            marginBottom: 8,
-                            textTransform: "uppercase",
-                            letterSpacing: ".06em",
-                          }}
-                        >
-                          Purchase log
-                        </div>
-                        {entries.length > 0 && (
-                          <div style={{ marginBottom: 10 }}>
-                            {[...entries]
-                              .sort((a, b) => b.date.localeCompare(a.date))
-                              .map((e) => {
-                                const editKey = `${exp.id}_${e.id}`;
-                                const isEditing = !!editEntry[editKey];
-                                const ef2 = editEntry[editKey] || {};
-                                if (isEditing) {
-                                  return (
-                                    <div
-                                      key={e.id}
-                                      style={{
-                                        display: "flex",
-                                        gap: 6,
-                                        alignItems: "center",
-                                        flexWrap: "wrap",
-                                        padding: "6px 0",
-                                        borderBottom: "1px solid var(--border)",
-                                      }}
-                                    >
-                                      <input
-                                        type="date"
-                                        value={ef2.date}
-                                        onChange={(ev) =>
-                                          setEditEntry((s) => ({
-                                            ...s,
-                                            [editKey]: {
-                                              ...ef2,
-                                              date: ev.target.value,
-                                            },
-                                          }))
-                                        }
-                                        style={{
-                                          flex: "0 0 130px",
-                                          fontSize: 12,
-                                        }}
-                                      />
-                                      <MobileInput
-                                        type="number"
-                                        placeholder="₹"
-                                        value={ef2.amount}
-                                        label="Amount"
-                                        onChange={(v) =>
-                                          setEditEntry((s) => ({
-                                            ...s,
-                                            [editKey]: { ...ef2, amount: v },
-                                          }))
-                                        }
-                                        style={{ flex: "0 0 90px" }}
-                                        min="0"
-                                      />
-                                      <MobileInput
-                                        placeholder="Note"
-                                        value={ef2.note}
-                                        label="Note"
-                                        onChange={(v) =>
-                                          setEditEntry((s) => ({
-                                            ...s,
-                                            [editKey]: { ...ef2, note: v },
-                                          }))
-                                        }
-                                        style={{ flex: 1, minWidth: 80 }}
-                                      />
-                                      <button
-                                        className="btn-primary"
-                                        style={{
-                                          padding: "4px 10px",
-                                          fontSize: 12,
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 4,
-                                        }}
-                                        onClick={() => saveEditEntry(exp, e.id)}
-                                        disabled={!ef2.amount || !ef2.date}
-                                      >
-                                        <Check size={11} /> Save
-                                      </button>
-                                      <button
-                                        className="btn-ghost"
-                                        style={{
-                                          padding: "4px 8px",
-                                          fontSize: 12,
-                                        }}
-                                        onClick={() => cancelEditEntry(exp, e)}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  );
+                              <input
+                                placeholder="Optional"
+                                value={mergeForm.subCategory}
+                                onChange={(e) =>
+                                  setMergeForm((f) => ({
+                                    ...f,
+                                    subCategory: e.target.value,
+                                  }))
                                 }
-                                return (
-                                  <div
-                                    key={e.id}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 8,
-                                      padding: "4px 0",
-                                      borderBottom: "1px solid var(--border)",
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        color: "var(--text-muted)",
-                                        fontVariantNumeric: "tabular-nums",
-                                        flexShrink: 0,
-                                        width: 72,
-                                      }}
-                                    >
-                                      {e.date.slice(5).replace("-", " ")}
-                                    </span>
-                                    <span
-                                      style={{
-                                        flex: 1,
-                                        color: "var(--text-secondary)",
-                                      }}
-                                    >
-                                      {e.note || "—"}
-                                    </span>
-                                    <span
-                                      style={{
-                                        fontWeight: 600,
-                                        color: "var(--red)",
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      {fmt(e.amount)}
-                                    </span>
-                                    <button
-                                      onClick={() => startEditEntry(exp, e)}
-                                      title="Edit"
-                                      style={{
-                                        background: "none",
-                                        border: "none",
-                                        cursor: "pointer",
-                                        color: "var(--text-muted)",
-                                        padding: 2,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      <Edit3 size={11} />
-                                    </button>
-                                    <button
-                                      onClick={async () => {
-                                        if (
-                                          await confirm(
-                                            "Delete entry?",
-                                            `Remove this purchase log entry of ${fmt(e.amount)}?`,
-                                          )
-                                        )
-                                          deleteEntry(exp, e.id);
-                                      }}
-                                      style={{
-                                        background: "none",
-                                        border: "none",
-                                        cursor: "pointer",
-                                        color: "var(--text-muted)",
-                                        padding: 2,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      <X size={11} />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        )}
-                        <div
-                          className="budget-entry-form"
-                          style={{
-                            display: "flex",
-                            gap: 6,
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <input
-                            type="date"
-                            value={ef.date}
-                            onChange={(e) =>
-                              setEF(exp.id, { date: e.target.value })
-                            }
-                            style={{ flex: "0 0 130px" }}
-                          />
-                          <MobileInput
-                            type="number"
-                            placeholder="₹"
-                            value={ef.amount}
-                            label="Amount"
-                            onChange={(v) => setEF(exp.id, { amount: v })}
-                            style={{ flex: "0 0 90px" }}
-                            min="0"
-                          />
-                          <MobileInput
-                            placeholder="Note"
-                            value={ef.note}
-                            label="Note"
-                            onChange={(v) => setEF(exp.id, { note: v })}
-                            style={{ flex: 1, minWidth: 100 }}
-                          />
-                          <button
-                            className="btn-primary"
-                            style={{
-                              flexShrink: 0,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              padding: "6px 12px",
-                            }}
-                            onClick={() => addEntry(exp)}
-                            disabled={!ef.amount || !ef.date}
-                          >
-                            <Plus size={11} /> Submit
-                          </button>
-                          <button
-                            className="btn-ghost"
-                            style={{
-                              flexShrink: 0,
-                              padding: "6px 12px",
-                              fontSize: 12,
-                            }}
-                            onClick={() => toggleExpandExp(exp.id)}
-                          >
-                            Close
-                          </button>
+                                style={{ fontSize: 12 }}
+                              />
+                            );
+                          })()}
                         </div>
                       </div>
-                    )}
-
-                    {/* Bottom: Move + Delete */}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="btn-primary"
+                          style={{
+                            fontSize: 12,
+                            padding: "5px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                          }}
+                          onClick={commitMerge}
+                        >
+                          <GitMerge size={12} /> Confirm merge
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 12, padding: "5px 10px" }}
+                          onClick={() => setMergeForm(null)}
+                        >
+                          Back
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ fontSize: 12, padding: "5px 10px" }}
+                          onClick={exitMergeMode}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Ready to merge */
                     <div
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
                         alignItems: "center",
-                        marginTop: 10,
-                        paddingTop: 8,
-                        borderTop: "1px solid var(--border)",
+                        gap: 10,
+                        flexWrap: "wrap",
                       }}
                     >
-                      <MoveButton expId={exp.id} currentType="onetime" />
+                      <span
+                        style={{ fontSize: 12, color: "var(--text-secondary)" }}
+                      >
+                        {mergeSelected.size} selected ·{" "}
+                        <strong style={{ color: "var(--red)" }}>
+                          {fmt(
+                            filteredOnetimeExps
+                              .filter((e) => mergeSelected.has(e.id))
+                              .reduce((s, e) => s + onetimeEffective(e), 0),
+                          )}
+                        </strong>
+                      </span>
                       <button
-                        className="btn-danger"
-                        aria-label={`Delete ${exp.name}`}
+                        className="btn-primary"
                         style={{
+                          fontSize: 12,
+                          padding: "5px 14px",
                           display: "flex",
                           alignItems: "center",
-                          gap: 4,
-                          fontSize: 11,
+                          gap: 5,
                         }}
-                        onClick={async () => {
-                          if (
-                            await confirm(
-                              "Delete expense?",
-                              `Remove "${exp.name}"?`,
-                            )
-                          )
-                            updatePerson(
-                              "expenses",
-                              expenses.filter((x) => x.id !== exp.id),
-                            );
-                        }}
+                        onClick={openMergeForm}
                       >
-                        <Trash2 size={12} /> Delete
+                        <GitMerge size={12} /> Merge →
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        style={{ fontSize: 12, padding: "5px 10px" }}
+                        onClick={() => setMergeSelected(new Set())}
+                      >
+                        Clear selection
                       </button>
                     </div>
-                  </div>
-                );
-              })}
+                  )}
+                </div>
+              )}
 
               {filteredOnetimeExps.length > 0 && (
                 <div
@@ -5263,16 +5758,8 @@ export function HouseholdBudget({ p1, p2, shared }) {
     0,
   );
 
-  const p1Expenses = p1Filtered.reduce(
-    (s, x) =>
-      s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
-    0,
-  );
-  const p2Expenses = p2Filtered.reduce(
-    (s, x) =>
-      s + (x.expenseType === "onetime" ? onetimeEffective(x) : x.amount),
-    0,
-  );
+  const p1Expenses = p1Filtered.reduce((s, x) => s + expAmount(x, hhMonth), 0);
+  const p2Expenses = p2Filtered.reduce((s, x) => s + expAmount(x, hhMonth), 0);
   const totalExpenses = p1Expenses + p2Expenses + sharedTripTotal;
 
   const surplus = totalIncome - totalExpenses;
@@ -5298,8 +5785,7 @@ export function HouseholdBudget({ p1, p2, shared }) {
         }
       } else {
         const cat = e.category;
-        const amt =
-          e.expenseType === "onetime" ? onetimeEffective(e) : e.amount || 0;
+        const amt = expAmount(e, hhMonth);
         if (!acc[cat]) acc[cat] = { total: 0, p1: 0, p2: 0, subs: {} };
         acc[cat].total += amt;
         acc[cat][key] = (acc[cat][key] || 0) + amt;
