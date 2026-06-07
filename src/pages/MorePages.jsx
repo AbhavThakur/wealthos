@@ -4,6 +4,7 @@ import { Plus, Trash2, Shield } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
 import EmptyState from "../components/EmptyState";
+import { parseLocalDate } from "../utils/date";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INSURANCE TRACKER
@@ -87,7 +88,8 @@ export function Insurance({ data, personName, personColor, updatePerson }) {
   const now = new Date();
   const upcomingRenewals = insurances.filter((i) => {
     if (!i.renewalDate) return false;
-    const d = new Date(i.renewalDate);
+    const d = parseLocalDate(i.renewalDate);
+    if (!d) return false;
     const diff = (d - now) / 86400000;
     return diff >= 0 && diff <= 30;
   });
@@ -283,7 +285,7 @@ export function Insurance({ data, personName, personColor, updatePerson }) {
                   {fmt(annPrem)}/yr premium
                   {ins.coverage ? ` · ${fmtCr(ins.coverage)} cover` : ""}
                   {ins.renewalDate &&
-                    ` · Renews ${new Date(ins.renewalDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+                    ` · Renews ${(parseLocalDate(ins.renewalDate) || new Date(ins.renewalDate)).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
                 </div>
               </div>
               <button className="btn-icon" onClick={() => remove(ins.id)}>

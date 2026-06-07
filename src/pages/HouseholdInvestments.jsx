@@ -32,6 +32,23 @@ import {
   MONTHS,
   ordinalSuffix,
 } from "./investmentHelpers";
+import { localDateISO, parseLocalDate } from "../utils/date";
+
+const MS_PER_DAY = 24 * 3600 * 1000;
+
+const elapsedYears = (startDate, daysPerYear = 365.25, nowMs) => {
+  const currentMs = nowMs ?? new Date().getTime();
+  const startMs = parseLocalDate(startDate)?.getTime();
+  if (startMs == null) return 0;
+  return Math.max(0, (currentMs - startMs) / (daysPerYear * MS_PER_DAY));
+};
+
+const rangeYears = (startDate, endDate, daysPerYear = 365.25) => {
+  const startMs = parseLocalDate(startDate)?.getTime();
+  const endMs = parseLocalDate(endDate)?.getTime();
+  if (startMs == null || endMs == null) return 0;
+  return Math.max(0, (endMs - startMs) / (daysPerYear * MS_PER_DAY));
+};
 
 export function HouseholdInvestments({ p1, p2, updatePerson }) {
   const { personNames } = useData() || {};
@@ -48,7 +65,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     existingCorpus: 0,
     type: "Mutual Fund",
     frequency: "monthly",
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: localDateISO(),
     endDate: "",
     maturityDate: "",
     appName: "",
@@ -97,23 +114,11 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     );
     const current = list.reduce((s, x) => {
       if (isFD(x.type)) {
-        const yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
+        const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
         return s + lumpCorpus(x.amount || 0, x.returnPct || 0, yrs);
       }
       if (x.frequency === "onetime") {
-        const _yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
+        const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
         return (
           s +
           (x.existingCorpus > 0
@@ -126,13 +131,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     const yr20 = list.reduce((s, x) => {
       if (isFD(x.type)) {
         const tenureYrs =
-          x.startDate && x.endDate
-            ? Math.max(
-                0,
-                (new Date(x.endDate) - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 5;
+          x.startDate && x.endDate ? rangeYears(x.startDate, x.endDate) : 5;
         return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
       }
       if (x.frequency === "onetime") {
@@ -158,13 +157,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     const { cost, currentForGain } = list.reduce(
       (acc, x) => {
         if (isFD(x.type)) {
-          const yrs = x.startDate
-            ? Math.max(
-                0,
-                (new Date() - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 0;
+          const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
           return {
             cost: acc.cost + (x.amount || 0),
             currentForGain:
@@ -173,13 +166,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
           };
         }
         if (x.frequency === "onetime") {
-          const _yrs = x.startDate
-            ? Math.max(
-                0,
-                (new Date() - new Date(x.startDate)) /
-                  (365.25 * 24 * 3600 * 1000),
-              )
-            : 0;
+          const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
           return {
             cost: acc.cost + (x.amount || 0),
             currentForGain:
@@ -1402,12 +1389,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                           lumpCorpus(
                             Number(newInv.amount),
                             Number(newInv.returnPct),
-                            Math.max(
-                              0,
-                              (new Date(newInv.endDate) -
-                                new Date(newInv.startDate)) /
-                                (365.25 * 24 * 3600 * 1000),
-                            ),
+                            rangeYears(newInv.startDate, newInv.endDate),
                           ),
                         )}
                       </strong>

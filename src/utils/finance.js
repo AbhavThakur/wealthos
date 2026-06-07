@@ -1,3 +1,5 @@
+import { parseLocalDate } from "./date";
+
 export const fmt = (n = 0) =>
   "₹" + Math.abs(Math.round(Number(n) || 0)).toLocaleString("en-IN");
 
@@ -92,7 +94,8 @@ export const autoCorpus = (
     frequency === "onetime" ? initialCorpus + (monthly || 0) : initialCorpus;
   if (!startDate) return base;
   const now = new Date();
-  const start = new Date(startDate);
+  const start = parseLocalDate(startDate);
+  if (!start) return base;
   const mo = Math.max(
     0,
     (now.getFullYear() - start.getFullYear()) * 12 +
@@ -206,7 +209,8 @@ export const INCOME_TYPES = [
 ];
 export const monthsUntil = (dateStr) => {
   if (!dateStr) return null;
-  const target = new Date(dateStr);
+  const target = parseLocalDate(dateStr);
+  if (!target) return null;
   const now = new Date();
   return Math.max(
     0,

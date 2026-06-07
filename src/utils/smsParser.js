@@ -10,6 +10,8 @@
  *           AI fallback is a separate layer (see SmartPaste component).
  * ──────────────────────────────────────────────────────────────────────────── */
 
+import { localDateISO } from "./date";
+
 // ── Noise filter — skip OTPs, promos, balance-only, non-transactional ───────
 const NOISE_PATTERNS = [
   /\bOTP\b/i,
@@ -97,7 +99,7 @@ function parseDate(str) {
   }
 
   // Fallback: today
-  return new Date().toISOString().slice(0, 10);
+  return localDateISO();
 }
 
 // ── Direction detection (debit vs credit) ───────────────────────────────────

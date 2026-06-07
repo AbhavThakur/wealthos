@@ -15,6 +15,12 @@ import { autoRecurringRules } from "../utils/autoRecurringRules";
 import { useData } from "../context/DataContext";
 import { useSessionState } from "../hooks/useSessionState";
 import { InfoModal } from "../components/InfoModal";
+import {
+  localDateISO,
+  yearMonthToDate,
+  parseLocalDate,
+  compareISODateDesc,
+} from "../utils/date";
 
 // All transaction categories (income + expense)
 const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
@@ -42,14 +48,16 @@ function rulesForMonth(rules, year, month) {
     const freq = r.frequency || "monthly";
     if (freq === "monthly" || freq === "weekly") return true;
     if (freq === "yearly" && r.startDate) {
-      const startMonth = new Date(r.startDate).getMonth();
+      const startMonth = parseLocalDate(r.startDate)?.getMonth();
+      if (startMonth == null) return false;
       return month === startMonth;
     }
     if (freq === "yearly" && r.recurrenceMonth != null) {
       return month === r.recurrenceMonth;
     }
     if (freq === "quarterly" && r.startDate) {
-      const startMonth = new Date(r.startDate).getMonth();
+      const startMonth = parseLocalDate(r.startDate)?.getMonth();
+      if (startMonth == null) return false;
       return ((month - startMonth + 12) % 12) % 3 === 0;
     }
     // non-investment rules (expenses, income) default to monthly
@@ -178,7 +186,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
   );
   const [newTx, setNewTx] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateISO(),
     desc: "",
     amount: "",
     type: "expense",
@@ -215,7 +223,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
   });
 
   // History month navigation helpers
-  const historyDate = new Date(historyMonth + "-01");
+  const historyDate = yearMonthToDate(historyMonth);
   const historyMonthName = historyDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
@@ -266,7 +274,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
         (t.desc.toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => compareISODateDesc(a.date, b.date));
 
   const totalIn = filtered
     .filter((t) => t.amount > 0)
@@ -286,7 +294,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
       ...transactions,
     ]);
     setNewTx({
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateISO(),
       desc: "",
       amount: "",
       type: "expense",
@@ -748,7 +756,8 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
                   const tenureYrs = inv.startDate
                     ? Math.max(
                         0,
-                        (new Date(inv.endDate) - new Date(inv.startDate)) /
+                        ((parseLocalDate(inv.endDate)?.getTime() || 0) -
+                          (parseLocalDate(inv.startDate)?.getTime() || 0)) /
                           (365.25 * 24 * 3600 * 1000),
                       )
                     : null;
@@ -1541,7 +1550,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
   const [showAddTx, setShowAddTx] = useState(false);
   const [addFor, setAddFor] = useState("p1");
   const [newTx, setNewTx] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateISO(),
     desc: "",
     amount: "",
     type: "expense",
@@ -1555,7 +1564,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
   const _cfNow = new Date();
   const _cfCurYm = `${_cfNow.getFullYear()}-${String(_cfNow.getMonth() + 1).padStart(2, "0")}`;
   const [schedMonth, setSchedMonth] = useState(_cfCurYm);
-  const schedMonthDate = new Date(schedMonth + "-01");
+  const schedMonthDate = yearMonthToDate(schedMonth);
   const schedMonthLabel = schedMonthDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
@@ -1616,9 +1625,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
     ...x,
     _owner: "p2",
   }));
-  const monthTx = [...p1Tx, ...p2Tx].filter((t) =>
-    t.date?.startsWith(ym),
-  );
+  const monthTx = [...p1Tx, ...p2Tx].filter((t) => t.date?.startsWith(ym));
   const loggedIn = monthTx
     .filter((t) => t.amount > 0)
     .reduce((s, t) => s + t.amount, 0);
@@ -1674,7 +1681,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
         (t.desc.toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => compareISODateDesc(a.date, b.date));
 
   const totalIn = filtered
     .filter((t) => t.amount > 0)
@@ -1696,7 +1703,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
       ...txs,
     ]);
     setNewTx({
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateISO(),
       desc: "",
       amount: "",
       type: "expense",
@@ -2054,7 +2061,8 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
                   const tenureYrs = inv.startDate
                     ? Math.max(
                         0,
-                        (new Date(inv.endDate) - new Date(inv.startDate)) /
+                        ((parseLocalDate(inv.endDate)?.getTime() || 0) -
+                          (parseLocalDate(inv.startDate)?.getTime() || 0)) /
                           (365.25 * 24 * 3600 * 1000),
                       )
                     : null;

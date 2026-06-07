@@ -25,6 +25,7 @@ import {
 } from "firebase/firestore";
 import { db, IS_DEV } from "../firebase";
 import { lumpCorpus, freqToMonthly } from "../utils/finance";
+import { parseLocalDate } from "../utils/date";
 import { useAuth } from "./AuthContext";
 
 // Firestore paths — dev uses "dev_data" subcollection; prod uses "data"
@@ -215,7 +216,8 @@ function applyRecurring(data) {
     // ──────────────────────────────────────────────────────────────────
 
     const dateStr = `${ym}-${String(rule.dayOfMonth).padStart(2, "0")}`;
-    if (new Date(dateStr) > now) continue;
+    const ruleDate = parseLocalDate(dateStr);
+    if (!ruleDate || ruleDate > now) continue;
 
     const key = `${dateStr}|${rule.desc}`;
     const isDismissed = dismissed.includes(key);
@@ -584,12 +586,16 @@ export function DataProvider({ children }) {
       // Investment corpus values (auto)
       const invTotal = (data.investments || []).reduce((s, inv) => {
         if (inv.type === "FD") {
-          const start = inv.startDate ? new Date(inv.startDate) : now;
+          const start = inv.startDate
+            ? parseLocalDate(inv.startDate) || now
+            : now;
           const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
           return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
         }
         if (inv.frequency === "onetime") {
-          const start = inv.startDate ? new Date(inv.startDate) : now;
+          const start = inv.startDate
+            ? parseLocalDate(inv.startDate) || now
+            : now;
           const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
           return (
             s +
@@ -705,12 +711,16 @@ export function DataProvider({ children }) {
       const computeNW = (data) => {
         const invTotal = (data.investments || []).reduce((s, inv) => {
           if (inv.type === "FD") {
-            const start = inv.startDate ? new Date(inv.startDate) : now;
+            const start = inv.startDate
+              ? parseLocalDate(inv.startDate) || now
+              : now;
             const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
             return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
           }
           if (inv.frequency === "onetime") {
-            const start = inv.startDate ? new Date(inv.startDate) : now;
+            const start = inv.startDate
+              ? parseLocalDate(inv.startDate) || now
+              : now;
             const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
             return (
               s +

@@ -2,6 +2,8 @@
 // Centralised fetch layer for live MF NAV, gold price, and portfolio valuation.
 // All fetch results are cached in sessionStorage with configurable TTL.
 
+import { localDateISO } from "./date";
+
 const CACHE_PREFIX = "wos_mkt_";
 const NAV_TTL = 30 * 60 * 1000; // 30 min
 const GOLD_TTL = 60 * 60 * 1000; // 1 hour
@@ -115,7 +117,7 @@ export async function fetchGoldPrice() {
         const pricePerGram = Math.round(inrPerOz / 31.1035);
         const result = {
           pricePerGram,
-          date: json.date || new Date().toISOString().slice(0, 10),
+          date: json.date || localDateISO(),
         };
         setCache("gold_inr", result);
         return result;

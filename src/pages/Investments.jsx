@@ -43,6 +43,12 @@ import {
   getInvested,
   computeAutoInvested,
 } from "./investmentHelpers";
+import {
+  localDateISO,
+  compareISODateDesc,
+  compareISODateAsc,
+  parseLocalDate,
+} from "../utils/date";
 
 // ─── mfapi.in helpers ────────────────────────────────────────────────────────
 async function mfSearch(query) {
@@ -75,6 +81,22 @@ async function mfLatestNAV(schemeCode) {
 import { InfoModal } from "../components/InfoModal";
 export { InfoModal } from "../components/InfoModal";
 
+const MS_PER_DAY = 24 * 3600 * 1000;
+
+const elapsedYears = (startDate, daysPerYear = 365.25, nowMs) => {
+  const currentMs = nowMs ?? new Date().getTime();
+  const startMs = parseLocalDate(startDate)?.getTime();
+  if (startMs == null) return 0;
+  return Math.max(0, (currentMs - startMs) / (daysPerYear * MS_PER_DAY));
+};
+
+const rangeYears = (startDate, endDate, daysPerYear = 365.25) => {
+  const startMs = parseLocalDate(startDate)?.getTime();
+  const endMs = parseLocalDate(endDate)?.getTime();
+  if (startMs == null || endMs == null) return null;
+  return Math.max(0, (endMs - startMs) / (daysPerYear * MS_PER_DAY));
+};
+
 export const SIPCard = memo(function SIPCard({
   inv,
   onUpdate,
@@ -89,7 +111,7 @@ export const SIPCard = memo(function SIPCard({
   const [navMsg, setNavMsg] = useState("");
   const [showLogValue, setShowLogValue] = useState(false);
   const [logEntry, setLogEntry] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateISO(),
     value: "",
     note: "",
   });
@@ -99,11 +121,11 @@ export const SIPCard = memo(function SIPCard({
   const INFLATION = 6; // India CPI avg ~6%
 
   const corpusHistory = inv.corpusHistory || [];
-  const sortedHistory = [...corpusHistory].sort(
-    (a, b) => new Date(b.date) - new Date(a.date),
+  const sortedHistory = [...corpusHistory].sort((a, b) =>
+    compareISODateDesc(a.date, b.date),
   );
   const historyChartData = [...corpusHistory]
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .sort((a, b) => compareISODateAsc(a.date, b.date))
     .map((h) => ({ date: h.date.slice(0, 7), value: h.value }));
 
   const logValue = () => {
@@ -119,7 +141,7 @@ export const SIPCard = memo(function SIPCard({
       existingCorpus: Number(logEntry.value),
     });
     setLogEntry({
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateISO(),
       value: "",
       note: "",
     });
@@ -140,21 +162,14 @@ export const SIPCard = memo(function SIPCard({
     thisMonthCount !== null ? inv.amount * thisMonthCount : null;
 
   // FD/onetime: compound growth on lump-sum principal; others: SIP-based auto corpus
+  const nowMs = new Date().getTime();
   const fdYrsElapsed =
     (isFDInv || isOneTimeInv) && inv.startDate
-      ? Math.max(
-          0,
-          (new Date() - new Date(inv.startDate)) / (365.25 * 24 * 3600 * 1000),
-        )
+      ? elapsedYears(inv.startDate, 365.25, nowMs)
       : 0;
   // FD uses exact 365-day year + quarterly compounding to match Indian bank calc
   const fdElapsedExact =
-    isFDInv && inv.startDate
-      ? Math.max(
-          0,
-          (new Date() - new Date(inv.startDate)) / (365 * 24 * 3600 * 1000),
-        )
-      : 0;
+    isFDInv && inv.startDate ? elapsedYears(inv.startDate, 365, nowMs) : 0;
   const currentVal = isFDInv
     ? fdCorpus(inv.amount || 0, inv.returnPct || 0, fdElapsedExact)
     : isOneTimeInv
@@ -167,11 +182,7 @@ export const SIPCard = memo(function SIPCard({
   // FD maturity value (based on start + end date)
   const fdTenureYrs =
     isFDInv && inv.startDate && inv.endDate
-      ? Math.max(
-          0,
-          (new Date(inv.endDate) - new Date(inv.startDate)) /
-            (365 * 24 * 3600 * 1000),
-        )
+      ? (rangeYears(inv.startDate, inv.endDate, 365) ?? 0)
       : null;
   const fdMaturityVal =
     fdTenureYrs !== null
@@ -191,8 +202,7 @@ export const SIPCard = memo(function SIPCard({
       : null;
   let cagr = null;
   if (totalInvested > 0 && inv.startDate) {
-    const years =
-      (new Date() - new Date(inv.startDate)) / (365.25 * 24 * 3600 * 1000);
+    const years = elapsedYears(inv.startDate, 365.25, nowMs);
     if (years >= 0.08) {
       cagr = (Math.pow(currentVal / totalInvested, 1 / years) - 1) * 100;
     }
@@ -243,14 +253,12 @@ export const SIPCard = memo(function SIPCard({
     ? ppfCorpus(inv.existingCorpus || 0, ppfYearly, ppfRate, 15)
     : 0;
   // PPF maturity: years remaining from today to maturityDate
-  const ppfYearsToMaturity =
-    isPPF && inv.maturityDate
-      ? Math.max(
-          0,
-          (new Date(inv.maturityDate) - new Date()) /
-            (365.25 * 24 * 3600 * 1000),
-        )
-      : null;
+  const ppfYearsToMaturity = (() => {
+    if (!isPPF || !inv.maturityDate) return null;
+    const maturity = parseLocalDate(inv.maturityDate);
+    if (!maturity) return null;
+    return Math.max(0, (maturity.getTime() - nowMs) / (365.25 * MS_PER_DAY));
+  })();
   const ppfMaturityCorpus =
     ppfYearsToMaturity !== null
       ? ppfCorpus(
@@ -281,10 +289,7 @@ export const SIPCard = memo(function SIPCard({
     }
     const _now = new Date();
     const elapsedYrs = inv.startDate
-      ? Math.max(
-          0,
-          (_now - new Date(inv.startDate)) / (365.25 * 24 * 3600 * 1000),
-        )
+      ? elapsedYears(inv.startDate, 365.25, _now.getTime())
       : 0;
     const idealNow =
       elapsedYrs > 0
@@ -1208,10 +1213,14 @@ export const SIPCard = memo(function SIPCard({
                         Maturity{" "}
                         <span style={{ fontWeight: 400, fontSize: 11 }}>
                           (
-                          {new Date(inv.maturityDate).toLocaleDateString(
-                            "en-IN",
-                            { day: "2-digit", month: "short", year: "numeric" },
-                          )}
+                          {(
+                            parseLocalDate(inv.maturityDate) ||
+                            new Date(inv.maturityDate)
+                          ).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}
                           )
                         </span>
                       </span>
@@ -3290,7 +3299,7 @@ export default function Investments({
     existingCorpus: 0,
     type: "Mutual Fund",
     frequency: "monthly",
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: localDateISO(),
     endDate: "",
     appName: "",
     bankName: "",
@@ -3407,7 +3416,7 @@ export default function Investments({
       existingCorpus: 0,
       type: "Mutual Fund",
       frequency: "monthly",
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: localDateISO(),
       endDate: "",
       appName: "",
       bankName: "",
@@ -3430,21 +3439,11 @@ export default function Investments({
   );
   const totalCurrent = filteredInvestments.reduce((s, x) => {
     if (isFD(x.type)) {
-      const yrs = x.startDate
-        ? Math.max(
-            0,
-            (new Date() - new Date(x.startDate)) / (365.25 * 24 * 3600 * 1000),
-          )
-        : 0;
+      const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
       return s + lumpCorpus(x.amount || 0, x.returnPct || 0, yrs);
     }
     if (x.frequency === "onetime") {
-      const _yrs = x.startDate
-        ? Math.max(
-            0,
-            (new Date() - new Date(x.startDate)) / (365.25 * 24 * 3600 * 1000),
-          )
-        : 0;
+      const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
       return (
         s +
         (x.existingCorpus > 0
@@ -3458,11 +3457,7 @@ export default function Investments({
     if (isFD(x.type)) {
       const tenureYrs =
         x.startDate && x.endDate
-          ? Math.max(
-              0,
-              (new Date(x.endDate) - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
+          ? (rangeYears(x.startDate, x.endDate) ?? 0)
           : 5;
       return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
     }
@@ -3491,13 +3486,7 @@ export default function Investments({
   const { totalCostBasis, totalCurrentForGain } = filteredInvestments.reduce(
     (acc, x) => {
       if (isFD(x.type)) {
-        const yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
+        const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
         return {
           totalCostBasis: acc.totalCostBasis + (x.amount || 0),
           totalCurrentForGain:
@@ -3506,13 +3495,7 @@ export default function Investments({
         };
       }
       if (x.frequency === "onetime") {
-        const _yrs = x.startDate
-          ? Math.max(
-              0,
-              (new Date() - new Date(x.startDate)) /
-                (365.25 * 24 * 3600 * 1000),
-            )
-          : 0;
+        const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
         return {
           totalCostBasis: acc.totalCostBasis + (x.amount || 0),
           totalCurrentForGain:
@@ -4587,7 +4570,7 @@ export default function Investments({
                       disabled={quickSaving}
                       onClick={() => {
                         setQuickSaving(true);
-                        const today = new Date().toISOString().slice(0, 10);
+                        const today = localDateISO();
                         const newList = investments.map((inv) => {
                           if (inv.type !== "Mutual Fund") return inv;
                           const e = quickEdits[inv.id];
@@ -5443,9 +5426,7 @@ export default function Investments({
                             Number(newInv.returnPct),
                             Math.max(
                               0,
-                              (new Date(newInv.endDate) -
-                                new Date(newInv.startDate)) /
-                                (365.25 * 24 * 3600 * 1000),
+                              rangeYears(newInv.startDate, newInv.endDate) || 0,
                             ),
                           ),
                         )}

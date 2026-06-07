@@ -40,6 +40,12 @@ import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
 import { useData } from "../context/DataContext";
+import { yearMonthToDate } from "../utils/date";
+
+const localDateISO = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
 
 // ── Mobile-friendly input modal ──────────────────────────────────────────────
 // On small screens, inputs get cropped. Tapping opens a full-width bottom sheet
@@ -805,7 +811,7 @@ export default function Budget({
   const _now = new Date();
   const _curYm = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`;
   const [expMonth, setExpMonth] = useState(_curYm);
-  const expMonthDate = new Date(expMonth + "-01");
+  const expMonthDate = yearMonthToDate(expMonth);
   const expMonthLabel = expMonthDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
@@ -979,7 +985,7 @@ export default function Budget({
       if (ents.length === 0 && (exp.amount || 0) > 0) {
         allEntries.push({
           id: genEntryId(),
-          date: exp.date || new Date().toISOString().slice(0, 10),
+          date: exp.date || localDateISO(),
           amount: exp.amount,
           note: exp.name,
         });
@@ -999,7 +1005,7 @@ export default function Budget({
       date:
         allEntries.length > 0
           ? [...allEntries].sort((a, b) => a.date.localeCompare(b.date))[0].date
-          : new Date().toISOString().slice(0, 10),
+          : localDateISO(),
       amount: 0,
     };
     const remaining = expenses.filter((e) => !mergeSelected.has(e.id));
@@ -1011,7 +1017,7 @@ export default function Budget({
   const [entryForm, setEntryForm] = useState({}); // expId → { date, amount, note }
   const [addingSubCat, setAddingSubCat] = useState(null); // { expId, category } | null
   const [newSubCatText, setNewSubCatText] = useState("");
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => localDateISO();
   const toggleExpandExp = (id) =>
     setExpandedExp((s) => ({ ...s, [id]: !s[id] }));
   const getEntryForm = (id) =>
@@ -1185,7 +1191,7 @@ export default function Budget({
       [inc.id]: {
         newAmount: String(inc.amount),
         note: "",
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateISO(),
       },
     }));
 
@@ -1211,7 +1217,7 @@ export default function Budget({
       salaryHistory: [
         ...prevHistory,
         {
-          date: f.date || new Date().toISOString().slice(0, 10),
+          date: f.date || localDateISO(),
           from: inc.amount,
           to: newAmt,
           note: f.note.trim(),
@@ -1232,7 +1238,7 @@ export default function Budget({
       [exp.id]: {
         newAmount: String(exp.amount),
         note: "",
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateISO(),
       },
     }));
 
@@ -1258,7 +1264,7 @@ export default function Budget({
       amountHistory: [
         ...prevHistory,
         {
-          date: f.date || new Date().toISOString().slice(0, 10),
+          date: f.date || localDateISO(),
           from: exp.amount,
           to: newAmt,
           note: f.note.trim(),
@@ -1333,7 +1339,7 @@ export default function Budget({
         amount: 0,
         category: "Others",
         entries: [],
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateISO(),
         recurrence: "monthly",
       },
       ...expenses,
@@ -1347,10 +1353,7 @@ export default function Budget({
         name: "New trip",
         amount: 0,
         category: "Others",
-        startDate:
-          expMonth === _curYm
-            ? new Date().toISOString().slice(0, 10)
-            : `${expMonth}-01`,
+        startDate: expMonth === _curYm ? localDateISO() : `${expMonth}-01`,
         endDate: "",
         budget: 0,
         items: [],
@@ -1367,10 +1370,7 @@ export default function Budget({
         name: "New shared trip",
         amount: 0,
         category: "Others",
-        startDate:
-          expMonth === _curYm
-            ? new Date().toISOString().slice(0, 10)
-            : `${expMonth}-01`,
+        startDate: expMonth === _curYm ? localDateISO() : `${expMonth}-01`,
         endDate: "",
         budget: 0,
         items: [],
@@ -1411,10 +1411,7 @@ export default function Budget({
         name: "New purchase",
         amount: 0,
         category: "Others",
-        date:
-          expMonth === _curYm
-            ? new Date().toISOString().slice(0, 10)
-            : `${expMonth}-01`,
+        date: expMonth === _curYm ? localDateISO() : `${expMonth}-01`,
         recurrence: "once",
       },
       ...expenses,
@@ -1514,7 +1511,7 @@ export default function Budget({
         name: exp.name,
         amount: items.reduce((s, i) => s + i.amount, 0),
         category: exp.category || "Others",
-        startDate: exp.date || new Date().toISOString().slice(0, 10),
+        startDate: exp.date || localDateISO(),
         endDate: "",
         budget: 0,
         items,
@@ -1529,14 +1526,11 @@ export default function Budget({
         category: exp.category || "Others",
         recurrence: "monthly",
         entries: exp.entries || [],
-        date:
-          (src === "trip" ? exp.startDate : exp.date) ||
-          new Date().toISOString().slice(0, 10),
+        date: (src === "trip" ? exp.startDate : exp.date) || localDateISO(),
       };
     } else if (targetType === "onetime") {
       const movedDate =
-        (src === "trip" ? exp.startDate : exp.date) ||
-        new Date().toISOString().slice(0, 10);
+        (src === "trip" ? exp.startDate : exp.date) || localDateISO();
       moved = {
         id: exp.id,
         expenseType: "onetime",
@@ -2362,7 +2356,7 @@ export default function Budget({
             const incEntries = inc.incomeEntries || [];
             const isIncOpen = !!expandedInc[inc.id];
             const ief = getIncEF(inc.id);
-            const thisMonth = new Date().toISOString().slice(0, 7);
+            const thisMonth = _curYm;
             const varThisMonth = incEntries
               .filter((e) => e.date?.slice(0, 7) === thisMonth)
               .reduce((s, e) => s + e.amount, 0);
@@ -3149,7 +3143,7 @@ export default function Budget({
                 const entries = exp.entries || [];
                 const isOpen = !!expandedExp[exp.id];
                 const ef = getEntryForm(exp.id);
-                const thisMonth = new Date().toISOString().slice(0, 7);
+                const thisMonth = _curYm;
                 const spentThisMonth = entries
                   .filter((e) => e.date?.slice(0, 7) === thisMonth)
                   .reduce((s, e) => s + e.amount, 0);
@@ -5700,7 +5694,7 @@ export function HouseholdBudget({ p1, p2, shared }) {
   const _hhNow = new Date();
   const _hhCurYm = `${_hhNow.getFullYear()}-${String(_hhNow.getMonth() + 1).padStart(2, "0")}`;
   const [hhMonth, setHhMonth] = useState(_hhCurYm);
-  const hhMonthDate = new Date(hhMonth + "-01");
+  const hhMonthDate = yearMonthToDate(hhMonth);
   const hhMonthLabel = hhMonthDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",

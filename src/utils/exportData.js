@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA EXPORT (CSV)
 // ─────────────────────────────────────────────────────────────────────────────
+import { localDateISO } from "./date";
+
 function toCsvRow(arr) {
   return arr
     .map((v) => {
@@ -24,7 +26,7 @@ function downloadCsv(filename, header, rows) {
 }
 
 export function exportAllData(p1, p2, shared, personNames = {}) {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = localDateISO();
   const p1Name = personNames.p1 || "Person 1";
   const p2Name = personNames.p2 || "Person 2";
 

@@ -4,6 +4,7 @@ import {
   totalCorpus,
   weekdayCountInMonth,
 } from "../utils/finance";
+import { parseLocalDate } from "../utils/date";
 
 // ── Investment type helpers ──────────────────────────────────────────────────
 
@@ -124,7 +125,8 @@ export const hasDeductionMonth = (freq) => freq === "yearly";
 // Returns net invested total (after stamp duty for MFs)
 export function computeAutoInvested(inv) {
   if (!inv.startDate || !inv.amount) return 0;
-  const start = new Date(inv.startDate);
+  const start = parseLocalDate(inv.startDate);
+  if (!start) return 0;
   const now = new Date();
   if (now < start) return 0;
   const freq = inv.frequency;
@@ -251,12 +253,10 @@ export function getInvested(inv) {
 
 // Shared row-computation helper (used in both single-person and household views)
 export function computeInvRow(x) {
+  const parsedStart = x.startDate ? parseLocalDate(x.startDate) : null;
   const elapsedYrs =
-    (isFD(x.type) || x.frequency === "onetime") && x.startDate
-      ? Math.max(
-          0,
-          (new Date() - new Date(x.startDate)) / (365.25 * 24 * 3600 * 1000),
-        )
+    (isFD(x.type) || x.frequency === "onetime") && parsedStart
+      ? Math.max(0, (new Date() - parsedStart) / (365.25 * 24 * 3600 * 1000))
       : 0;
   const cur = isFD(x.type)
     ? lumpCorpus(x.amount || 0, x.returnPct || 0, elapsedYrs)

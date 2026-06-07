@@ -3,6 +3,7 @@ import { Chart } from "../components/Chart";
 import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
 import { Camera, Download, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
+import { localYearMonth, parseLocalDate } from "../utils/date";
 
 const MANUAL_ASSET_TYPES = [
   "cash",
@@ -38,12 +39,12 @@ function autoAssets(data) {
     let value;
     if (isFDType) {
       const now = new Date();
-      const start = inv.startDate ? new Date(inv.startDate) : now;
+      const start = inv.startDate ? parseLocalDate(inv.startDate) || now : now;
       const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
       value = lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
     } else if (isOneTime) {
       const now = new Date();
-      const start = inv.startDate ? new Date(inv.startDate) : now;
+      const start = inv.startDate ? parseLocalDate(inv.startDate) || now : now;
       const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
       value = lumpCorpus(
         (inv.existingCorpus || 0) + (inv.amount || 0),
@@ -768,7 +769,7 @@ export default function NetWorth({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `net-worth-${new Date().toISOString().slice(0, 7)}.csv`;
+    a.download = `net-worth-${localYearMonth()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -860,7 +861,7 @@ export default function NetWorth({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `net-worth-${new Date().toISOString().slice(0, 7)}.txt`;
+    a.download = `net-worth-${localYearMonth()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -17,6 +17,7 @@ import useIdleTimer from "./hooks/useIdleTimer";
 import usePullToRefresh from "./hooks/usePullToRefresh";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import ADMIN_EMAILS from "./utils/adminEmails";
+import { parseLocalDate, goalDeadlineDate } from "./utils/date";
 
 // ── Non-critical shell components — lazy-loaded ─────────────────────────────
 const Login = lazy(() => import("./pages/Login"));
@@ -660,7 +661,9 @@ function AppInner() {
       ...(p2.insurances || []),
     ].filter((i) => {
       if (!i.renewalDate) return false;
-      const diff = (new Date(i.renewalDate) - now) / 86400000;
+      const renewal = parseLocalDate(i.renewalDate);
+      if (!renewal) return false;
+      const diff = (renewal - now) / 86400000;
       return diff >= 0 && diff <= 30;
     });
     if (renewals.length) badges.insurance = renewals.length;
@@ -682,7 +685,9 @@ function AppInner() {
     // Goals nearing deadline (within 30 days)
     const urgentGoals = (shared?.goals || []).filter((g) => {
       if (!g.deadline) return false;
-      const diff = (new Date(g.deadline) - now) / 86400000;
+      const deadline = goalDeadlineDate(g.deadline);
+      if (!deadline) return false;
+      const diff = (deadline - now) / 86400000;
       const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
       return diff >= 0 && diff <= 30 && saved < g.target;
     });

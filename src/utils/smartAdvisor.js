@@ -11,6 +11,7 @@ import {
   freqToMonthly,
   onetimeEffective,
 } from "./finance";
+import { compareISODateDesc } from "./date";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -896,8 +897,8 @@ function handleIntent(
         (i) => i.salaryHistory && i.salaryHistory.length > 0,
       );
       if (withHistory.length > 0) {
-        const latest = withHistory[0].salaryHistory.sort(
-          (a, b) => new Date(b.date || 0) - new Date(a.date || 0),
+        const latest = withHistory[0].salaryHistory.sort((a, b) =>
+          compareISODateDesc(a.date, b.date),
         )[0];
         if (latest) {
           body += `\n\nLast salary change: ${latest.from ? fmt(latest.from) : "?"} → ${latest.to ? fmt(latest.to) : "?"} on ${latest.date || "?"}${latest.note ? " (" + latest.note + ")" : ""}`;

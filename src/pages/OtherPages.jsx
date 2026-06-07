@@ -17,6 +17,7 @@ import {
   removeBiometric,
 } from "../utils/biometric";
 import CSVImport from "../components/CSVImport";
+import { localDateISO, compareISODateDesc } from "../utils/date";
 
 export function Debts({ data, personName, personColor, updatePerson }) {
   const debts = data?.debts || [];
@@ -643,7 +644,7 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
   );
   const [showAdd, setShowAdd] = useState(false);
   const [n, setN] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateISO(),
     desc: "",
     amount: "",
     type: "expense",
@@ -664,7 +665,7 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
       ...transactions,
     ]);
     setN({
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateISO(),
       desc: "",
       amount: "",
       type: "expense",
@@ -680,7 +681,7 @@ export function Transactions({ data, personName, personColor, updatePerson }) {
         (t.desc.toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => compareISODateDesc(a.date, b.date));
 
   const totalIn = filtered
     .filter((t) => t.amount > 0)
@@ -2088,7 +2089,7 @@ export function HouseholdTransactions({ p1, p2, updatePerson }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addFor, setAddFor] = useState("p1");
   const [n, setN] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateISO(),
     desc: "",
     amount: "",
     type: "expense",
@@ -2113,7 +2114,7 @@ export function HouseholdTransactions({ p1, p2, updatePerson }) {
         (t.desc.toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => compareISODateDesc(a.date, b.date));
 
   const totalIn = filtered
     .filter((t) => t.amount > 0)
@@ -2135,7 +2136,7 @@ export function HouseholdTransactions({ p1, p2, updatePerson }) {
       ...txs,
     ]);
     setN({
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateISO(),
       desc: "",
       amount: "",
       type: "expense",

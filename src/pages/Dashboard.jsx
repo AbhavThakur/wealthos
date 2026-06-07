@@ -33,6 +33,7 @@ import {
 import { InfoModal } from "../components/InfoModal";
 import { useMarketData } from "../hooks/useMarketData";
 import MonthlySummary from "../components/MonthlySummary";
+import { localYearMonth, parseLocalDate } from "../utils/date";
 
 function Sparkline({ data, color, width = 64, height = 24 }) {
   if (!data || data.length < 2) return null;
@@ -517,7 +518,7 @@ function buildCashFlow(
   processIncs(p2Incs);
 
   // ── Include standing amounts for current month (fallback) ──────────────
-  const curYm = new Date().toISOString().slice(0, 7);
+  const curYm = localYearMonth();
   const curMonth = new Date().getMonth();
 
   // Standing income — for incomes without variable income entries this month
@@ -1156,7 +1157,9 @@ function RaiseNudge({ p1, p2, personNames }) {
   const today = new Date();
   const recent = candidates
     .filter((r) => {
-      const days = (today - new Date(r.date)) / (1000 * 60 * 60 * 24);
+      const raiseDate = parseLocalDate(r.date);
+      if (!raiseDate) return false;
+      const days = (today - raiseDate) / (1000 * 60 * 60 * 24);
       return days >= 0 && days <= NUDGE_DAYS && r.to > r.from;
     })
     .sort((a, b) => b.date.localeCompare(a.date));

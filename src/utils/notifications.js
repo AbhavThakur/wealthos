@@ -1,6 +1,8 @@
 // PWA Notification manager — uses the Web Notification API
 // Works on both desktop and mobile (via service worker)
 
+import { localDateISO, parseLocalDate, goalDeadlineDate } from "./date";
+
 const LS_ENABLED = "wealthos-notifications";
 
 export function isNotificationSupported() {
@@ -66,7 +68,7 @@ export function checkReminders(p1, p2, shared, _PersonNames) {
   if (getNotificationPermission() !== "granted") return;
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const today = localDateISO(now);
   const shownKey = `wealthos-notif-${today}`;
 
   // Only show once per day
@@ -79,7 +81,9 @@ export function checkReminders(p1, p2, shared, _PersonNames) {
   for (const p of [p1, p2]) {
     for (const ins of p?.insurances || []) {
       if (!ins.renewalDate) continue;
-      const days = Math.ceil((new Date(ins.renewalDate) - now) / 86400000);
+      const renewal = parseLocalDate(ins.renewalDate);
+      if (!renewal) continue;
+      const days = Math.ceil((renewal - now) / 86400000);
       if (days >= 0 && days <= 7) {
         reminders.push({
           title: `Insurance renewal in ${days} day${days !== 1 ? "s" : ""}`,
@@ -93,7 +97,8 @@ export function checkReminders(p1, p2, shared, _PersonNames) {
   // Goal deadlines within 14 days
   for (const g of shared?.goals || []) {
     if (!g.deadline) continue;
-    const deadline = new Date(g.deadline + "-28"); // month deadline
+    const deadline = goalDeadlineDate(g.deadline);
+    if (!deadline) continue;
     const days = Math.ceil((deadline - now) / 86400000);
     const saved = (g.p1Saved || 0) + (g.p2Saved || 0);
     if (days >= 0 && days <= 14 && saved < g.target) {

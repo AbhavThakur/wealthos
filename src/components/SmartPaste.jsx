@@ -31,6 +31,7 @@ import {
   updateMerchantMap,
 } from "../utils/merchantMatcher";
 import { fmt, nextId, EXPENSE_CATEGORIES } from "../utils/finance";
+import { localDateISO } from "../utils/date";
 
 // ── Styles (inline, consistent with app's dark theme vars) ──────────────────
 const S = {
@@ -815,7 +816,7 @@ export default function SmartPaste({
           amount: 0,
           category: cardDef.category,
           subCategory: cardDef.subCategory || "",
-          date: new Date().toISOString().slice(0, 10),
+          date: localDateISO(),
           recurrence: cardDef.expenseType === "monthly" ? "monthly" : "once",
           entries: [],
         },
