@@ -839,48 +839,26 @@ export default function Budget({
   // ── Month selector for expense tabs ────────────────────────────────────
   const _now = new Date();
   const _curYm = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`;
-  const [expMonth, setExpMonth] = useState(() => {
-    // Restore the last-viewed month, but only if it is the current month or
-    // within the last 3 months — so stale months don't confuse new sessions.
-    try {
-      const stored = localStorage.getItem("budget-exp-month-v2");
-      if (stored && /^\d{4}-\d{2}$/.test(stored)) {
-        const [sy, sm] = stored.split("-").map(Number);
-        const now = new Date();
-        // allow current month or any past month within the last year
-        const diff =
-          (now.getFullYear() - sy) * 12 + (now.getMonth() - (sm - 1));
-        if (diff >= 0 && diff <= 12) return stored; // within the last year
-      }
-    } catch {
-      /* ignore */
-    }
-    return _curYm;
-  });
+  // Always open on the current month. Persisting a stale month across sessions
+  // caused newly-added expenses to silently land in a past month (the user
+  // thinks they're on the current month, but the restored month is older).
+  const [expMonth, setExpMonth] = useState(_curYm);
   const expMonthDate = yearMonthToDate(expMonth);
   const expMonthLabel = expMonthDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
   });
-  const _setExpMonth = (ym) => {
-    setExpMonth(ym);
-    try {
-      localStorage.setItem("budget-exp-month-v2", ym);
-    } catch {
-      /* ignore */
-    }
-  };
   const expPrevMonth = () => {
     const d = new Date(expMonthDate);
     d.setMonth(d.getMonth() - 1);
-    _setExpMonth(
+    setExpMonth(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
     );
   };
   const expNextMonth = () => {
     const d = new Date(expMonthDate);
     d.setMonth(d.getMonth() + 1);
-    _setExpMonth(
+    setExpMonth(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
     );
   };
@@ -1617,7 +1595,7 @@ export default function Budget({
       // Navigate to the month the expense belongs to
       const movedYm = (moved.startDate || moved.date || "").slice(0, 7);
       if (movedYm && (targetType === "onetime" || targetType === "trip")) {
-        _setExpMonth(movedYm);
+        setExpMonth(movedYm);
       }
     }
   };
@@ -1951,7 +1929,7 @@ export default function Budget({
             </button>
             {expMonth !== _curYm && (
               <button
-                onClick={() => _setExpMonth(_curYm)}
+                onClick={() => setExpMonth(_curYm)}
                 className="btn-ghost"
                 style={{ fontSize: 12 }}
               >
@@ -3160,7 +3138,7 @@ export default function Budget({
               </button>
               {expMonth !== _curYm && (
                 <button
-                  onClick={() => _setExpMonth(_curYm)}
+                  onClick={() => setExpMonth(_curYm)}
                   className="btn-ghost"
                   style={{ fontSize: 12 }}
                 >
