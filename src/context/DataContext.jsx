@@ -247,7 +247,16 @@ export function DataProvider({ children }) {
   const [p1, setP1] = useState(null);
   const [p2, setP2] = useState(null);
   const [shared, setShared] = useState(null);
+  const p1Ref = useRef(null);
+  const p2Ref = useRef(null);
+  const sharedRef = useRef(null);
   const loading = !!(user && (!p1 || !p2 || !shared));
+
+  useEffect(() => {
+    p1Ref.current = p1;
+    p2Ref.current = p2;
+    sharedRef.current = shared;
+  }, [p1, p2, shared]);
 
   useEffect(() => {
     if (!user) return;
@@ -396,61 +405,63 @@ export function DataProvider({ children }) {
 
   // Write guard: reject writes that would wipe important arrays.
   // Returns true if the write looks safe; false if suspicious.
-  const isWriteSafe = useCallback(
-    (docId, newData) => {
-      const current = docId === "p1" ? p1 : docId === "p2" ? p2 : shared;
-      if (!current) return true; // first write, allow
-      // Reject if newData is missing most expected keys (spread of null)
-      const expectedKeys =
-        docId === "shared"
-          ? ["trips", "goals", "profile", "netWorthHistory"]
-          : ["incomes", "expenses", "investments", "debts", "transactions"];
-      const presentKeys = expectedKeys.filter((k) => k in newData);
-      if (presentKeys.length < 2) {
+  const isWriteSafe = useCallback((docId, newData) => {
+    const current =
+      docId === "p1"
+        ? p1Ref.current
+        : docId === "p2"
+          ? p2Ref.current
+          : sharedRef.current;
+    if (!current) return true; // first write, allow
+    // Reject if newData is missing most expected keys (spread of null)
+    const expectedKeys =
+      docId === "shared"
+        ? ["trips", "goals", "profile", "netWorthHistory"]
+        : ["incomes", "expenses", "investments", "debts", "transactions"];
+    const presentKeys = expectedKeys.filter((k) => k in newData);
+    if (presentKeys.length < 2) {
+      console.error(
+        `[DataGuard] BLOCKED write to "${docId}": ` +
+          `only ${presentKeys.length}/${expectedKeys.length} expected keys present. Likely a null-spread bug.`,
+      );
+      return false;
+    }
+    // Check key arrays — if current has data but new is empty, block
+    const keys =
+      docId === "shared"
+        ? ["trips", "goals", "netWorthHistory"]
+        : ["incomes", "expenses", "investments", "debts", "goals"];
+    for (const key of keys) {
+      const curLen = (current[key] || []).length;
+      const newLen = (newData[key] || []).length;
+      // Block if current has 3+ items and new has 0 (bulk wipe)
+      if (curLen >= 3 && newLen === 0) {
         console.error(
-          `[DataGuard] BLOCKED write to "${docId}": ` +
-            `only ${presentKeys.length}/${expectedKeys.length} expected keys present. Likely a null-spread bug.`,
+          `[DataGuard] BLOCKED write to "${docId}.${key}": ` +
+            `would delete all ${curLen} items. This looks like a bug.`,
         );
         return false;
       }
-      // Check key arrays — if current has data but new is empty, block
-      const keys =
-        docId === "shared"
-          ? ["trips", "goals", "netWorthHistory"]
-          : ["incomes", "expenses", "investments", "debts", "goals"];
-      for (const key of keys) {
-        const curLen = (current[key] || []).length;
-        const newLen = (newData[key] || []).length;
-        // Block if current has 3+ items and new has 0 (bulk wipe)
-        if (curLen >= 3 && newLen === 0) {
-          console.error(
-            `[DataGuard] BLOCKED write to "${docId}.${key}": ` +
-              `would delete all ${curLen} items. This looks like a bug.`,
+    }
+    // Guard against expense entry loss: warn if entries are dropped
+    if (docId !== "shared") {
+      const curExps = current.expenses || [];
+      const newExps = newData.expenses || [];
+      for (const curExp of curExps) {
+        const curEntries = curExp.entries || [];
+        if (curEntries.length === 0) continue;
+        const newExp = newExps.find((e) => e.id === curExp.id);
+        if (!newExp) continue; // expense deleted, that's fine
+        const newEntries = newExp.entries || [];
+        if (curEntries.length > 0 && newEntries.length === 0) {
+          console.warn(
+            `[DataGuard] WARNING: expense "${curExp.name}" (id=${curExp.id}) had ${curEntries.length} entries, write has 0. Possible data loss.`,
           );
-          return false;
         }
       }
-      // Guard against expense entry loss: warn if entries are dropped
-      if (docId !== "shared") {
-        const curExps = current.expenses || [];
-        const newExps = newData.expenses || [];
-        for (const curExp of curExps) {
-          const curEntries = curExp.entries || [];
-          if (curEntries.length === 0) continue;
-          const newExp = newExps.find((e) => e.id === curExp.id);
-          if (!newExp) continue; // expense deleted, that's fine
-          const newEntries = newExp.entries || [];
-          if (curEntries.length > 0 && newEntries.length === 0) {
-            console.warn(
-              `[DataGuard] WARNING: expense "${curExp.name}" (id=${curExp.id}) had ${curEntries.length} entries, write has 0. Possible data loss.`,
-            );
-          }
-        }
-      }
-      return true;
-    },
-    [p1, p2, shared],
-  );
+    }
+    return true;
+  }, []);
 
   // Debounce backup: only backup once every 30s per docId
   const lastBackupRef = useRef({});
@@ -491,7 +502,7 @@ export function DataProvider({ children }) {
 
   const updatePerson = useCallback(
     (person, key, value) => {
-      const current = person === "p1" ? p1 : p2;
+      const current = person === "p1" ? p1Ref.current : p2Ref.current;
       if (!current) {
         console.error(
           `[DataGuard] updatePerson("${person}") skipped — data not loaded yet.`,
@@ -512,8 +523,13 @@ export function DataProvider({ children }) {
         updated = { ...updated, transactions: applyRecurring(updated) };
       }
 
-      if (person === "p1") setP1(updated);
-      else setP2(updated);
+      if (person === "p1") {
+        p1Ref.current = updated;
+        setP1(updated);
+      } else {
+        p2Ref.current = updated;
+        setP2(updated);
+      }
       save(person, updated).catch((err) => {
         // Firestore write failed — revert React state so UI matches Firestore.
         // Without this, the user sees the change until reload, then it's gone.
@@ -521,16 +537,21 @@ export function DataProvider({ children }) {
           `[DataGuard] Save failed for "${person}.${key}", reverting state. Error:`,
           err?.code || err?.message || err,
         );
-        if (person === "p1") setP1(current);
-        else setP2(current);
+        if (person === "p1") {
+          p1Ref.current = current;
+          setP1(current);
+        } else {
+          p2Ref.current = current;
+          setP2(current);
+        }
       });
     },
-    [p1, p2, save],
+    [save],
   );
 
   const batchUpdatePerson = useCallback(
     (person, fields) => {
-      const current = person === "p1" ? p1 : p2;
+      const current = person === "p1" ? p1Ref.current : p2Ref.current;
       if (!current) {
         console.error(
           `[DataGuard] batchUpdatePerson("${person}") skipped — data not loaded yet.`,
@@ -548,26 +569,52 @@ export function DataProvider({ children }) {
         updated = { ...updated, transactions: withoutAutoThisMonth };
         updated = { ...updated, transactions: applyRecurring(updated) };
       }
-      if (person === "p1") setP1(updated);
-      else setP2(updated);
-      save(person, updated);
+      if (person === "p1") {
+        p1Ref.current = updated;
+        setP1(updated);
+      } else {
+        p2Ref.current = updated;
+        setP2(updated);
+      }
+      save(person, updated).catch((err) => {
+        console.error(
+          `[DataGuard] Save failed for "${person}" batch update, reverting state. Error:`,
+          err?.code || err?.message || err,
+        );
+        if (person === "p1") {
+          p1Ref.current = current;
+          setP1(current);
+        } else {
+          p2Ref.current = current;
+          setP2(current);
+        }
+      });
     },
-    [p1, p2, save],
+    [save],
   );
 
   const updateShared = useCallback(
     (key, value) => {
-      if (!shared) {
+      const current = sharedRef.current;
+      if (!current) {
         console.error(
           `[DataGuard] updateShared("${key}") skipped — data not loaded yet.`,
         );
         return;
       }
-      const updated = { ...shared, [key]: value };
+      const updated = { ...current, [key]: value };
+      sharedRef.current = updated;
       setShared(updated);
-      save("shared", updated);
+      save("shared", updated).catch((err) => {
+        console.error(
+          `[DataGuard] Save failed for shared.${key}, reverting state. Error:`,
+          err?.code || err?.message || err,
+        );
+        sharedRef.current = current;
+        setShared(current);
+      });
     },
-    [shared, save],
+    [save],
   );
 
   const resetData = useCallback(async () => {
