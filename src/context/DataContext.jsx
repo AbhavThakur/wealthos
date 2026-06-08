@@ -13,6 +13,7 @@ import {
   onSnapshot,
   setDoc,
   getDoc,
+  getDocFromServer,
   collection,
   addDoc,
   query,
@@ -263,9 +264,20 @@ export function DataProvider({ children }) {
         // But set a timeout so we don't hang forever if the network is slow.
         if (!snap.exists() && snap.metadata.fromCache) {
           if (!cacheTimeout) {
-            cacheTimeout = setTimeout(() => {
-              // Timed out waiting for server — treat as genuinely new user
-              setDoc(ref, defaultData);
+            cacheTimeout = setTimeout(async () => {
+              // Timed out waiting for server. Do a hard server fetch before
+              // writing defaults — this prevents overwriting an existing user's
+              // data when Firestore is slow to respond on a fresh device.
+              try {
+                const serverSnap = await getDocFromServer(ref);
+                if (!serverSnap.exists()) {
+                  setDoc(ref, defaultData);
+                }
+                // If it exists on the server, onSnapshot will fire again with
+                // the real data — no action needed here.
+              } catch {
+                // Offline or unreachable — don't create the doc; retry on next load.
+              }
             }, 4000);
           }
           return;
@@ -502,7 +514,16 @@ export function DataProvider({ children }) {
 
       if (person === "p1") setP1(updated);
       else setP2(updated);
-      save(person, updated);
+      save(person, updated).catch((err) => {
+        // Firestore write failed — revert React state so UI matches Firestore.
+        // Without this, the user sees the change until reload, then it's gone.
+        console.error(
+          `[DataGuard] Save failed for "${person}.${key}", reverting state. Error:`,
+          err?.code || err?.message || err,
+        );
+        if (person === "p1") setP1(current);
+        else setP2(current);
+      });
     },
     [p1, p2, save],
   );
@@ -808,58 +829,13 @@ export function DataProvider({ children }) {
     };
   }, [loading, user, p1, p2]);
 
-  // ── Always track latest p1/p2 so deferred persist never uses stale closure data ──
-  // The deferred persist fires 2s after initial load. Without this ref, it would
-  // capture the initial p1/p2 in its closure and could overwrite a more recent
-  // save (e.g. if the user adds an expense within 2s of the page loading).
-  const latestPersonDataRef = useRef({ p1: null, p2: null });
-  useEffect(() => {
-    latestPersonDataRef.current = { p1, p2 };
-  }, [p1, p2]);
-
-  // ── One-time deferred persist: write pruned/migrated data back ──────────
-  // Runs once after initial load. Separated from watch() so the first render
-  // cycle completes without triggering onSnapshot re-fires that crash recharts.
-  // IMPORTANT: reads from latestPersonDataRef (not closure p1/p2) so it always
-  // writes the most current data, never a stale snapshot.
-  const persistedRef = useRef(false);
-  useEffect(() => {
-    if (loading || persistedRef.current || !user) return;
-    if (!p1 || !p2 || !shared) return;
-    persistedRef.current = true;
-    const uid = user.uid;
-    const persist = async () => {
-      for (const internalId of ["p1", "p2"]) {
-        // Always read the LATEST data from the ref — never the closure value.
-        const data = latestPersonDataRef.current[internalId];
-        if (!data) continue;
-        const ref = doc(
-          db,
-          COL_HOUSEHOLDS,
-          uid,
-          SUBCOL_DATA,
-          toDocId(internalId),
-        );
-        const snap = await getDoc(ref);
-        if (!snap.exists()) continue;
-        const stored = snap.data();
-        // Only write back if migration is still needed (expenseType backfill).
-        // Do NOT trigger on transaction-count differences — those are generated
-        // by applyRecurring on every load and do not need to be persisted here.
-        // Writing back on tx-count diffs caused a race where a user's newly-added
-        // expense was overwritten by this timer firing with the initial p1 closure.
-        const needsMigrate = stored.expenses?.some((e) => !e.expenseType);
-        if (needsMigrate) {
-          await setDoc(ref, data).catch((err) =>
-            console.warn(`[Persist] Failed for ${internalId}:`, err),
-          );
-        }
-      }
-    };
-    // Defer 2s so all charts are mounted and stable
-    const timer = setTimeout(persist, 2000);
-    return () => clearTimeout(timer);
-  }, [loading, user, p1, p2, shared]);
+  // NOTE: The deferred persist effect was removed. It existed to write
+  // migration/pruning results back to Firestore, but caused a race condition
+  // where newly-added expenses were overwritten by the stale initial state.
+  // The expenseType migration is idempotent in-memory (via migrateExpenseTypes
+  // in every onSnapshot call) and gets persisted on the next real user save.
+  // Pruning of old transactions/dismissedAutoTxns is a storage optimisation
+  // only and does not affect correctness.
 
   // ── Backup listing & restore ────────────────────────────────────────────
   const listBackups = useCallback(

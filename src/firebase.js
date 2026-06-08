@@ -21,6 +21,9 @@ export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
   }),
+  // Silently dropping undefined values instead of throwing prevents write failures
+  // when any field in the document is inadvertently set to undefined.
+  ignoreUndefinedProperties: true,
 });
 
 // Dev mode flag — when true, data reads/writes use "dev_data" subcollection
