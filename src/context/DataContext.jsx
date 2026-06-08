@@ -466,7 +466,13 @@ export function DataProvider({ children }) {
       await setDoc(
         doc(db, COL_HOUSEHOLDS, user.uid, SUBCOL_DATA, toDocId(docId)),
         data,
-      );
+      ).catch((err) => {
+        console.error(
+          `[Save] Firestore write failed for "${docId}":`,
+          err?.code || err?.message || err,
+        );
+        throw err; // re-throw so callers can detect failure
+      });
     },
     [user, isWriteSafe, backupBeforeSave],
   );

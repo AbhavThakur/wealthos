@@ -238,7 +238,16 @@ const _curYmStatic = (() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 })();
 const expAmount = (e, ym) => {
-  if (e.expenseType === "onetime") return onetimeEffective(e);
+  if (e.expenseType === "onetime") {
+    // When a month is specified, only count entries from that month.
+    // This prevents double-counting when a card has entries spanning multiple months.
+    if (!ym) return onetimeEffective(e);
+    return (e.entries || []).reduce(
+      (s, entry) =>
+        (entry.date || "").slice(0, 7) === ym ? s + (entry.amount || 0) : s,
+      0,
+    );
+  }
   if (ym && ym < _curYmStatic && e.amountHistory && e.amountHistory.length > 0)
     return effectiveAmount(e, ym);
   return e.amount || 0;
@@ -806,10 +815,23 @@ export default function Budget({
 }) {
   const incomes = data?.incomes || [];
   const expenses = data?.expenses || [];
-  const [tab, setTab] = useState(() => {
-    const signal = sessionStorage.getItem("budget-open-tab");
-    return signal ? "expenses" : "overview";
+  const [tab, setTabState] = useState(() => {
+    // QuickAdd signal overrides persisted state
+    if (sessionStorage.getItem("budget-open-tab")) return "expenses";
+    try {
+      return localStorage.getItem("budget-tab-v2") || "overview";
+    } catch {
+      return "overview";
+    }
   });
+  const setTab = (t) => {
+    setTabState(t);
+    try {
+      localStorage.setItem("budget-tab-v2", t);
+    } catch {
+      /* ignore */
+    }
+  };
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
@@ -817,36 +839,73 @@ export default function Budget({
   // ── Month selector for expense tabs ────────────────────────────────────
   const _now = new Date();
   const _curYm = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}`;
-  const [expMonth, setExpMonth] = useState(_curYm);
+  const [expMonth, setExpMonth] = useState(() => {
+    // Restore the last-viewed month, but only if it is the current month or
+    // within the last 3 months — so stale months don't confuse new sessions.
+    try {
+      const stored = localStorage.getItem("budget-exp-month-v2");
+      if (stored && /^\d{4}-\d{2}$/.test(stored)) {
+        const [sy, sm] = stored.split("-").map(Number);
+        const now = new Date();
+        // allow current month or any past month within the last year
+        const diff =
+          (now.getFullYear() - sy) * 12 + (now.getMonth() - (sm - 1));
+        if (diff >= 0 && diff <= 12) return stored; // within the last year
+      }
+    } catch {
+      /* ignore */
+    }
+    return _curYm;
+  });
   const expMonthDate = yearMonthToDate(expMonth);
   const expMonthLabel = expMonthDate.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
   });
+  const _setExpMonth = (ym) => {
+    setExpMonth(ym);
+    try {
+      localStorage.setItem("budget-exp-month-v2", ym);
+    } catch {
+      /* ignore */
+    }
+  };
   const expPrevMonth = () => {
     const d = new Date(expMonthDate);
     d.setMonth(d.getMonth() - 1);
-    setExpMonth(
+    _setExpMonth(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
     );
   };
   const expNextMonth = () => {
     const d = new Date(expMonthDate);
     d.setMonth(d.getMonth() + 1);
-    setExpMonth(
+    _setExpMonth(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
     );
   };
 
   // ── Expense sub-tab (monthly | trips | onetime) ───────────────────────
-  const [expTab, setExpTab] = useState(() => {
+  const [expTab, setExpTabState] = useState(() => {
     const signal = sessionStorage.getItem("budget-open-tab");
     if (signal) {
       sessionStorage.removeItem("budget-open-tab");
       return signal;
     }
-    return "onetime";
+    try {
+      return localStorage.getItem("budget-exp-tab-v2") || "onetime";
+    } catch {
+      return "onetime";
+    }
   });
+  const setExpTab = (t) => {
+    setExpTabState(t);
+    try {
+      localStorage.setItem("budget-exp-tab-v2", t);
+    } catch {
+      /* ignore */
+    }
+  };
   const [moveMenuOpen, setMoveMenuOpen] = useState(null); // expId or null
   const [moveToTripPicker, setMoveToTripPicker] = useState(null); // expId when showing trip sub-menu
 
@@ -1558,7 +1617,7 @@ export default function Budget({
       // Navigate to the month the expense belongs to
       const movedYm = (moved.startDate || moved.date || "").slice(0, 7);
       if (movedYm && (targetType === "onetime" || targetType === "trip")) {
-        setExpMonth(movedYm);
+        _setExpMonth(movedYm);
       }
     }
   };
@@ -1892,7 +1951,7 @@ export default function Budget({
             </button>
             {expMonth !== _curYm && (
               <button
-                onClick={() => setExpMonth(_curYm)}
+                onClick={() => _setExpMonth(_curYm)}
                 className="btn-ghost"
                 style={{ fontSize: 12 }}
               >
@@ -2065,7 +2124,7 @@ export default function Budget({
                         >
                           <span>{e.name}</span>
                           <span style={{ fontWeight: 600 }}>
-                            {fmt(onetimeEffective(e))}
+                            {fmt(expAmount(e, expMonth))}
                           </span>
                         </div>
                       ))}
@@ -3101,7 +3160,7 @@ export default function Budget({
               </button>
               {expMonth !== _curYm && (
                 <button
-                  onClick={() => setExpMonth(_curYm)}
+                  onClick={() => _setExpMonth(_curYm)}
                   className="btn-ghost"
                   style={{ fontSize: 12 }}
                 >
@@ -5657,7 +5716,7 @@ export default function Budget({
                   <span className="red-text">
                     {fmt(
                       filteredOnetimeExps.reduce(
-                        (s, x) => s + onetimeEffective(x),
+                        (s, x) => s + expAmount(x, expMonth),
                         0,
                       ),
                     )}
