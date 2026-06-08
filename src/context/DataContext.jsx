@@ -808,9 +808,20 @@ export function DataProvider({ children }) {
     };
   }, [loading, user, p1, p2]);
 
+  // ── Always track latest p1/p2 so deferred persist never uses stale closure data ──
+  // The deferred persist fires 2s after initial load. Without this ref, it would
+  // capture the initial p1/p2 in its closure and could overwrite a more recent
+  // save (e.g. if the user adds an expense within 2s of the page loading).
+  const latestPersonDataRef = useRef({ p1: null, p2: null });
+  useEffect(() => {
+    latestPersonDataRef.current = { p1, p2 };
+  }, [p1, p2]);
+
   // ── One-time deferred persist: write pruned/migrated data back ──────────
   // Runs once after initial load. Separated from watch() so the first render
   // cycle completes without triggering onSnapshot re-fires that crash recharts.
+  // IMPORTANT: reads from latestPersonDataRef (not closure p1/p2) so it always
+  // writes the most current data, never a stale snapshot.
   const persistedRef = useRef(false);
   useEffect(() => {
     if (loading || persistedRef.current || !user) return;
@@ -818,10 +829,10 @@ export function DataProvider({ children }) {
     persistedRef.current = true;
     const uid = user.uid;
     const persist = async () => {
-      for (const [internalId, data] of [
-        ["p1", p1],
-        ["p2", p2],
-      ]) {
+      for (const internalId of ["p1", "p2"]) {
+        // Always read the LATEST data from the ref — never the closure value.
+        const data = latestPersonDataRef.current[internalId];
+        if (!data) continue;
         const ref = doc(
           db,
           COL_HOUSEHOLDS,
@@ -832,17 +843,13 @@ export function DataProvider({ children }) {
         const snap = await getDoc(ref);
         if (!snap.exists()) continue;
         const stored = snap.data();
-        // Only write if the stored data differs (needs migration/pruning)
-        const storedTxLen = (stored.transactions || []).length;
-        const localTxLen = (data.transactions || []).length;
-        const storedDismLen = (stored.dismissedAutoTxns || []).length;
-        const localDismLen = (data.dismissedAutoTxns || []).length;
+        // Only write back if migration is still needed (expenseType backfill).
+        // Do NOT trigger on transaction-count differences — those are generated
+        // by applyRecurring on every load and do not need to be persisted here.
+        // Writing back on tx-count diffs caused a race where a user's newly-added
+        // expense was overwritten by this timer firing with the initial p1 closure.
         const needsMigrate = stored.expenses?.some((e) => !e.expenseType);
-        if (
-          storedTxLen !== localTxLen ||
-          storedDismLen !== localDismLen ||
-          needsMigrate
-        ) {
+        if (needsMigrate) {
           await setDoc(ref, data).catch((err) =>
             console.warn(`[Persist] Failed for ${internalId}:`, err),
           );
