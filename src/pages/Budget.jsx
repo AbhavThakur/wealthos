@@ -244,6 +244,13 @@ const expAmount = (e, ym) => {
   return e.amount || 0;
 };
 
+const onetimeMatchesMonth = (exp, ym) => {
+  const primaryYm = (exp.date || "").slice(0, 7);
+  if (primaryYm === ym) return true;
+  const entries = exp.entries || [];
+  return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
+};
+
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
 const buildExpByCategory = (expenses, ym) =>
   expenses.reduce((acc, e) => {
@@ -851,8 +858,8 @@ export default function Budget({
   const onetimeExps = expenses.filter((e) => e.expenseType === "onetime");
 
   // Month-filtered versions for display
-  const filteredOnetimeExps = onetimeExps.filter(
-    (e) => (e.date || "").slice(0, 7) === expMonth,
+  const filteredOnetimeExps = onetimeExps.filter((e) =>
+    onetimeMatchesMonth(e, expMonth),
   );
   const filteredTripExps = tripExps.filter(
     (e) => (e.startDate || e.date || "").slice(0, 7) === expMonth,
@@ -1291,8 +1298,7 @@ export default function Budget({
     return true;
   };
   const monthFilteredExpenses = expenses.filter((x) => {
-    if (x.expenseType === "onetime")
-      return (x.date || "").slice(0, 7) === expMonth;
+    if (x.expenseType === "onetime") return onetimeMatchesMonth(x, expMonth);
     if (x.expenseType === "trip")
       return (x.startDate || x.date || "").slice(0, 7) === expMonth;
     // monthly: apply recurrence gating
@@ -5729,8 +5735,7 @@ export function HouseholdBudget({ p1, p2, shared }) {
   // ── Month-filtered expenses per person ─────────────────────────────────
   const filterPersonExpenses = (data) =>
     (data?.expenses || []).filter((x) => {
-      if (x.expenseType === "onetime")
-        return (x.date || "").slice(0, 7) === hhMonth;
+      if (x.expenseType === "onetime") return onetimeMatchesMonth(x, hhMonth);
       if (x.expenseType === "trip")
         return (x.startDate || x.date || "").slice(0, 7) === hhMonth;
       return _hhIsActive(x);
