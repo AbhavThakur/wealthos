@@ -14,6 +14,7 @@ import { db } from "../firebase";
 
 const NOTIFICATIONS_COL = "notifications";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const deletingExpiredNotifications = new Set();
 
 /**
  * Subscribe to the global notifications collection (real-time).
@@ -33,7 +34,14 @@ export function subscribeNotifications(callback) {
       const created = data.createdAt?.toDate?.();
       if (created && now - created.getTime() > THIRTY_DAYS_MS) {
         // Auto-delete expired notification (fire-and-forget)
-        deleteDoc(doc(db, NOTIFICATIONS_COL, d.id)).catch(() => {});
+        if (!deletingExpiredNotifications.has(d.id)) {
+          deletingExpiredNotifications.add(d.id);
+          deleteDoc(doc(db, NOTIFICATIONS_COL, d.id))
+            .catch(() => {})
+            .finally(() => {
+              deletingExpiredNotifications.delete(d.id);
+            });
+        }
       } else {
         active.push(data);
       }

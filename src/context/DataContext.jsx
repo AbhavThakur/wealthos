@@ -81,41 +81,60 @@ const DOC_P2 = "person2";
 const toDocId = (id) => (id === "p1" ? DOC_P1 : id === "p2" ? DOC_P2 : id);
 const fromDocId = (id) => (id === DOC_P1 ? "p1" : id === DOC_P2 ? "p2" : id);
 
+const docNameMigrationRuns = new Map();
+
 // One-time migration: copy legacy "p1"/"p2" docs → "person1"/"person2".
 // After a verified copy, the old doc is deleted to save Firestore storage.
 async function migrateDocNames(uid, subcol) {
-  const pairs = [
-    { old: "p1", new: DOC_P1 },
-    { old: "p2", new: DOC_P2 },
-  ];
-  for (const { old: oldId, new: newId } of pairs) {
-    const newRef = doc(db, COL_HOUSEHOLDS, uid, subcol, newId);
-    const newSnap = await getDoc(newRef);
-    if (newSnap.exists()) {
-      // Already migrated — clean up leftover old doc if it still exists
+  const migrationKey = `${uid}:${subcol}`;
+  const existingRun = docNameMigrationRuns.get(migrationKey);
+  if (existingRun) return existingRun;
+
+  const run = (async () => {
+    const pairs = [
+      { old: "p1", new: DOC_P1 },
+      { old: "p2", new: DOC_P2 },
+    ];
+    for (const { old: oldId, new: newId } of pairs) {
+      const newRef = doc(db, COL_HOUSEHOLDS, uid, subcol, newId);
+      const newSnap = await getDoc(newRef);
+      if (newSnap.exists()) {
+        // Already migrated — clean up leftover old doc if it still exists
+        const oldRef = doc(db, COL_HOUSEHOLDS, uid, subcol, oldId);
+        const oldSnap = await getDoc(oldRef);
+        if (oldSnap.exists()) {
+          await deleteDoc(oldRef);
+          console.log(
+            `[Migration] Cleaned up leftover "${oldId}" in ${subcol}`,
+          );
+        }
+        continue;
+      }
       const oldRef = doc(db, COL_HOUSEHOLDS, uid, subcol, oldId);
       const oldSnap = await getDoc(oldRef);
       if (oldSnap.exists()) {
-        await deleteDoc(oldRef);
-        console.log(`[Migration] Cleaned up leftover "${oldId}" in ${subcol}`);
-      }
-      continue;
-    }
-    const oldRef = doc(db, COL_HOUSEHOLDS, uid, subcol, oldId);
-    const oldSnap = await getDoc(oldRef);
-    if (oldSnap.exists()) {
-      await setDoc(newRef, oldSnap.data());
-      // Verify the copy before deleting
-      const verifySnap = await getDoc(newRef);
-      if (verifySnap.exists()) {
-        await deleteDoc(oldRef);
-        console.log(`[Migration] Moved "${oldId}" → "${newId}" in ${subcol}`);
-      } else {
-        console.warn(
-          `[Migration] Copy verification failed for "${newId}", keeping "${oldId}"`,
-        );
+        await setDoc(newRef, oldSnap.data());
+        // Verify the copy before deleting
+        const verifySnap = await getDoc(newRef);
+        if (verifySnap.exists()) {
+          await deleteDoc(oldRef);
+          console.log(`[Migration] Moved "${oldId}" → "${newId}" in ${subcol}`);
+        } else {
+          console.warn(
+            `[Migration] Copy verification failed for "${newId}", keeping "${oldId}"`,
+          );
+        }
       }
     }
+  })();
+
+  docNameMigrationRuns.set(migrationKey, run);
+
+  try {
+    return await run;
+  } catch (error) {
+    docNameMigrationRuns.delete(migrationKey);
+    throw error;
   }
 }
 
@@ -137,6 +156,52 @@ function migrateExpenseTypes(data) {
         expenseType: e.recurrence === "once" ? "onetime" : "monthly",
       };
     }),
+  };
+}
+
+function migrateOnetimeV2(data) {
+  const legacy = data.onetime_v2;
+  if (!Array.isArray(legacy) || legacy.length === 0) return data;
+
+  const existingIds = new Set((data.expenses || []).map((exp) => exp.id));
+  const migrated = legacy
+    .filter((item) => item && !existingIds.has(item.id))
+    .map((item) => {
+      const amount = Number(item.amount) || 0;
+      const date = item.date || `${new Date().toISOString().slice(0, 10)}`;
+      const entrySource =
+        Array.isArray(item.entries) && item.entries.length > 0
+          ? item.entries
+          : [
+              {
+                id: `${item.id || "onetime"}_entry`,
+                date,
+                amount,
+                note: item.note || item.name || "",
+              },
+            ];
+
+      return {
+        id: item.id,
+        expenseType: "onetime",
+        name: item.name || "One-time purchase",
+        category: item.category || "Others",
+        subCategory: item.subCategory || "",
+        amount,
+        recurrence: "once",
+        date,
+        entries: entrySource.map((entry, index) => ({
+          id: entry.id || `${item.id || "onetime"}_entry_${index + 1}`,
+          date: entry.date || date,
+          amount: Number(entry.amount) || 0,
+          note: entry.note || item.note || item.name || "",
+        })),
+      };
+    });
+
+  return {
+    ...data,
+    expenses: [...(data.expenses || []), ...migrated],
   };
 }
 
@@ -310,6 +375,11 @@ export function DataProvider({ children }) {
         const migrated = migrateExpenseTypes(data);
         if (migrated !== data) {
           data = migrated;
+        }
+
+        const migratedOnetime = migrateOnetimeV2(data);
+        if (migratedOnetime !== data) {
+          data = migratedOnetime;
         }
 
         // Prune stale data BEFORE applyRecurring so the sequence is stable
@@ -494,7 +564,9 @@ export function DataProvider({ children }) {
           `[DataGuard] Save failed for "${docId}", reverting state. Error:`,
           err?.code || err?.message || err,
         );
-        alert(`Failed to save: ${err?.message || "Unknown error"}. The app will now revert to the last saved state.`);
+        alert(
+          `Failed to save: ${err?.message || "Unknown error"}. The app will now revert to the last saved state.`,
+        );
         throw err; // re-throw so callers can detect failure
       });
     },
