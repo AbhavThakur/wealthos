@@ -7,7 +7,7 @@ export function autoRecurringRules(data) {
     rules.push({
       id: id--,
       desc: inc.name,
-      amount: inc.amount,
+      amount: Number(inc.amount) || 0,
       type: "income",
       category: "Salary",
       dayOfMonth: 1,
@@ -25,10 +25,10 @@ export function autoRecurringRules(data) {
     rules.push({
       id: id--,
       desc: exp.name,
-      amount: -Math.abs(exp.amount),
+      amount: -Math.abs(Number(exp.amount) || 0),
       type: "expense",
       category: exp.category || "Others",
-      dayOfMonth: exp.date ? parseInt(exp.date.slice(8, 10), 10) : 1,
+      dayOfMonth: exp.date ? (parseInt(exp.date.slice(8, 10), 10) || 1) : 1,
       active: true,
       auto: true,
       sourceType: "expense",
@@ -45,7 +45,7 @@ export function autoRecurringRules(data) {
     const rule = {
       id: id--,
       desc: inv.name,
-      amount: -Math.abs(inv.amount),
+      amount: -Math.abs(Number(inv.amount) || 0),
       type: "investment",
       category: "Investment",
       dayOfMonth: inv.deductionDate || 15,
@@ -67,7 +67,7 @@ export function autoRecurringRules(data) {
     rules.push({
       id: id--,
       desc: debt.name + " EMI",
-      amount: -Math.abs(debt.emi),
+      amount: -Math.abs(Number(debt.emi) || 0),
       type: "expense",
       category: "EMI",
       dayOfMonth: 5,
@@ -85,10 +85,10 @@ export function autoRecurringRules(data) {
     rules.push({
       id: id--,
       desc: sub.name,
-      amount: -Math.abs(sub.amount),
+      amount: -Math.abs(Number(sub.amount) || 0),
       type: "expense",
       category: sub.category || "Subscription",
-      dayOfMonth: sub.startDate ? parseInt(sub.startDate.slice(8, 10), 10) : 1,
+      dayOfMonth: sub.startDate ? (parseInt(sub.startDate.slice(8, 10), 10) || 1) : 1,
       active: true,
       auto: true,
       sourceType: "subscription",
