@@ -509,7 +509,11 @@ export function DataProvider({ children }) {
         );
         return;
       }
-      let updated = { ...current, [key]: value };
+      let resolvedValue = value;
+      if (typeof value === "function") {
+        resolvedValue = value(current[key]);
+      }
+      let updated = { ...current, [key]: resolvedValue };
 
       // When any data source that feeds recurring rules changes,
       // invalidate this month's auto-generated transactions and re-derive.

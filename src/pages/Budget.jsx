@@ -1079,9 +1079,8 @@ export default function Budget({
     };
     const newEntries = [...(exp.entries || []), entry];
     const patch = { entries: newEntries };
-    updatePerson(
-      "expenses",
-      expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
+    updatePerson("expenses", (prev) =>
+      (prev || []).map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
     );
     setEntryForm((s) => ({
       ...s,
@@ -1091,9 +1090,8 @@ export default function Budget({
   const deleteEntry = (exp, entryId) => {
     const newEntries = (exp.entries || []).filter((e) => e.id !== entryId);
     const patch = { entries: newEntries };
-    updatePerson(
-      "expenses",
-      expenses.map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
+    updatePerson("expenses", (prev) =>
+      (prev || []).map((x) => (x.id === exp.id ? { ...x, ...patch } : x)),
     );
   };
   // editEntry state: key = `${expId}_${entryId}` → { date, amount, note }
@@ -1447,7 +1445,7 @@ export default function Budget({
   };
   const addOnetimeExpense = () => {
     const newId = nextId(expenses);
-    updatePerson("expenses", [
+    updatePerson("expenses", (prev) => [
       {
         id: newId,
         expenseType: "onetime",
@@ -1457,7 +1455,7 @@ export default function Budget({
         date: expMonth === _curYm ? localDateISO() : `${expMonth}-01`,
         recurrence: "once",
       },
-      ...expenses,
+      ...(prev || []),
     ]);
     setExpandedExp((s) => ({ ...s, [newId]: true }));
   };
@@ -4936,9 +4934,8 @@ export default function Budget({
                           value={exp.name}
                           label="Expense name"
                           onChange={(v) =>
-                            updatePerson(
-                              "expenses",
-                              expenses.map((x) =>
+                            updatePerson("expenses", (prev) =>
+                              (prev || []).map((x) =>
                                 x.id === exp.id ? { ...x, name: v } : x,
                               ),
                             )
@@ -4958,9 +4955,8 @@ export default function Budget({
                           <select
                             value={exp.category}
                             onChange={(e) =>
-                              updatePerson(
-                                "expenses",
-                                expenses.map((x) =>
+                              updatePerson("expenses", (prev) =>
+                                (prev || []).map((x) =>
                                   x.id === exp.id
                                     ? {
                                         ...x,
@@ -5438,9 +5434,8 @@ export default function Budget({
                                   `Remove "${exp.name}"?`,
                                 )
                               )
-                                updatePerson(
-                                  "expenses",
-                                  expenses.filter((x) => x.id !== exp.id),
+                                updatePerson("expenses", (prev) =>
+                                  (prev || []).filter((x) => x.id !== exp.id),
                                 );
                             }}
                           >
