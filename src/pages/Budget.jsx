@@ -260,6 +260,8 @@ const onetimeMatchesMonth = (exp, ym) => {
   return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
 };
 
+
+
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
 const buildExpByCategory = (expenses, ym) =>
   expenses.reduce((acc, e) => {
@@ -1346,9 +1348,12 @@ export default function Budget({
     (s, x) => s + (x.amount || 0),
     0,
   );
+  const onetimeV2Total = (data?.onetime_v2 || [])
+    .filter(e => (e.date || "").slice(0, 7) === expMonth)
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const totalExpenses =
     monthFilteredExpenses.reduce((s, x) => s + expAmount(x, expMonth), 0) +
-    sharedTripTotal;
+    sharedTripTotal + onetimeV2Total;
   const savingsRate =
     totalIncome > 0
       ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)
@@ -1358,6 +1363,9 @@ export default function Budget({
   const allExpensesForCategories = [
     ...monthFilteredExpenses,
     ...monthFilteredSharedTrips.map((t) => ({ ...t, expenseType: "trip" })),
+    ...(data?.onetime_v2 || [])
+      .filter(e => (e.date || "").slice(0, 7) === expMonth)
+      .map(t => ({ ...t, expenseType: "onetime" }))
   ];
   const expByCategory = buildExpByCategory(allExpensesForCategories, expMonth);
 
@@ -1443,22 +1451,7 @@ export default function Budget({
     );
     setExpandedTrips((s) => ({ ...s, [newId]: true }));
   };
-  const addOnetimeExpense = () => {
-    const newId = nextId(expenses);
-    updatePerson("expenses", (prev) => [
-      {
-        id: newId,
-        expenseType: "onetime",
-        name: "New purchase",
-        amount: 0,
-        category: "Others",
-        date: expMonth === _curYm ? localDateISO() : `${expMonth}-01`,
-        recurrence: "once",
-      },
-      ...(prev || []),
-    ]);
-    setExpandedExp((s) => ({ ...s, [newId]: true }));
-  };
+
 
   // ── Move expense between types ─────────────────────────────────────────
   const buildItemsFromExpense = (exp) => {
@@ -4754,8 +4747,85 @@ export default function Budget({
             </div>
           )}
 
-          {/* ══════════════════ ONE-TIME EXPENSES ══════════════════ */}
+          {/* ══════════════════ ONE-TIME EXPENSES (V2) ══════════════════ */}
           {expTab === "onetime" && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  <CreditCard size={14} style={{ marginRight: 6, opacity: 0.5 }} />
+                  One-time Purchases
+                </div>
+                <button
+                  className="btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  onClick={() => {
+                    const newId = `otv2_${genEntryId()}`;
+                    updatePerson("onetime_v2", (prev) => [
+                      { id: newId, name: "New purchase", amount: 0, date: expMonth === _curYm ? localDateISO() : `${expMonth}-01`, note: "" },
+                      ...(prev || []),
+                    ]);
+                  }}
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+
+              {!(data?.onetime_v2?.filter(e => (e.date || "").slice(0, 7) === expMonth)?.length > 0) && (
+                <div style={{ fontSize: 13, color: "var(--text-muted)", padding: "1rem 0", textAlign: "center" }}>
+                  No one-time expenses in {expMonthLabel}. Add big purchases here.
+                </div>
+              )}
+
+              {(data?.onetime_v2 || [])
+                .filter(e => (e.date || "").slice(0, 7) === expMonth)
+                .map((exp) => (
+                  <div key={exp.id} style={{ background: "var(--bg-card2)", borderRadius: "var(--radius-sm)", padding: "12px 14px", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <MobileInput
+                        value={exp.name}
+                        onChange={(v) => updatePerson("onetime_v2", (prev) => (prev || []).map(x => x.id === exp.id ? { ...x, name: v } : x))}
+                        style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontWeight: 600, fontSize: 14 }}
+                        placeholder="Expense name"
+                      />
+                      <MobileInput
+                        type="number"
+                        value={exp.amount}
+                        onChange={(v) => updatePerson("onetime_v2", (prev) => (prev || []).map(x => x.id === exp.id ? { ...x, amount: Number(v) || 0 } : x))}
+                        style={{ flex: "0 0 80px", background: "transparent", border: "none", color: "var(--text-primary)", fontWeight: 600, fontSize: 14, textAlign: "right" }}
+                        placeholder="₹0"
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                      <input
+                        type="date"
+                        value={exp.date}
+                        onChange={(e) => updatePerson("onetime_v2", (prev) => (prev || []).map(x => x.id === exp.id ? { ...x, date: e.target.value } : x))}
+                        style={{ flex: "0 0 130px", fontSize: 12 }}
+                      />
+                      <MobileInput
+                        value={exp.note || ""}
+                        onChange={(v) => updatePerson("onetime_v2", (prev) => (prev || []).map(x => x.id === exp.id ? { ...x, note: v } : x))}
+                        style={{ flex: 1, fontSize: 12, background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.2)" }}
+                        placeholder="Add a note..."
+                      />
+                      <button
+                        onClick={() => {
+                          if (confirm(`Remove "${exp.name}"?`)) {
+                            updatePerson("onetime_v2", (prev) => (prev || []).filter(x => x.id !== exp.id));
+                          }
+                        }}
+                        style={{ background: "transparent", border: "none", color: "var(--red)", cursor: "pointer", padding: 4 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+              ))}
+            </div>
+          )}
+
+          {/* ══════════════════ LEGACY ONE-TIME EXPENSES ══════════════════ */}
+          {expTab === "onetime" && filteredOnetimeExps.length > 0 && (
             <div className="card">
               <div
                 style={{
@@ -4770,7 +4840,7 @@ export default function Budget({
                     size={14}
                     style={{ marginRight: 6, opacity: 0.5 }}
                   />
-                  One-time Purchases
+                  Legacy One-time Purchases
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   {filteredOnetimeExps.length >= 2 && (
@@ -4798,13 +4868,7 @@ export default function Budget({
                       {mergeMode ? "Cancel" : "Select"}
                     </button>
                   )}
-                  <button
-                    className="btn-primary"
-                    style={{ display: "flex", alignItems: "center", gap: 6 }}
-                    onClick={addOnetimeExpense}
-                  >
-                    <Plus size={13} /> Add
-                  </button>
+                  {/* Legacy Add Button Removed */}
                 </div>
               </div>
 

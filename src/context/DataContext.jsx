@@ -230,11 +230,11 @@ function applyRecurring(data) {
       result.unshift({
         id: maxId,
         date: dateStr,
-        desc: rule.desc,
-        amount: rule.amount,
-        type: rule.type,
-        category: rule.category,
-        recurringId: rule.id,
+        desc: rule.desc || "Untitled",
+        amount: Number(rule.amount) || 0,
+        type: rule.type || "expense",
+        category: rule.category || "Others",
+        recurringId: rule.id || 0,
         auto: true,
       });
     }
@@ -491,9 +491,10 @@ export function DataProvider({ children }) {
         data,
       ).catch((err) => {
         console.error(
-          `[Save] Firestore write failed for "${docId}":`,
+          `[DataGuard] Save failed for "${docId}", reverting state. Error:`,
           err?.code || err?.message || err,
         );
+        alert(`Failed to save: ${err?.message || "Unknown error"}. The app will now revert to the last saved state.`);
         throw err; // re-throw so callers can detect failure
       });
     },
