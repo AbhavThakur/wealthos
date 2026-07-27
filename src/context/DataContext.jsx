@@ -573,6 +573,84 @@ export function DataProvider({ children }) {
     [user, isWriteSafe, backupBeforeSave],
   );
 
+  // ── Debounced writes ─────────────────────────────────────────────────────
+  // Every keystroke in any form (expense name, amount, etc.) used to trigger
+  // an immediate full-document Firestore write via save(). On a fast typist
+  // that's a write-per-character — costly, and the resulting onSnapshot echo
+  // (re-running migrations/prunePersonData/applyRecurring on the whole person
+  // doc) could re-render every visible card on every keystroke, which is what
+  // made editing feel laggy/"weird". We now coalesce rapid edits to the same
+  // doc and write once, DEBOUNCE_MS after the user pauses. Local React state
+  // still updates synchronously so typing itself always feels instant.
+  const DEBOUNCE_MS = 700;
+  const pendingSavesRef = useRef({}); // docId -> { data, revertTo, timer }
+
+  const revertDoc = useCallback((docId, snapshot) => {
+    if (docId === "p1") {
+      p1Ref.current = snapshot;
+      setP1(snapshot);
+    } else if (docId === "p2") {
+      p2Ref.current = snapshot;
+      setP2(snapshot);
+    } else {
+      sharedRef.current = snapshot;
+      setShared(snapshot);
+    }
+  }, []);
+
+  const flushPendingSave = useCallback(
+    (docId) => {
+      const pending = pendingSavesRef.current[docId];
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      delete pendingSavesRef.current[docId];
+      save(docId, pending.data).catch((err) => {
+        console.error(
+          `[DataGuard] Debounced save failed for "${docId}", reverting state. Error:`,
+          err?.code || err?.message || err,
+        );
+        revertDoc(docId, pending.revertTo);
+      });
+    },
+    [save, revertDoc],
+  );
+
+  const scheduleSave = useCallback(
+    (docId, data, revertTo) => {
+      const existing = pendingSavesRef.current[docId];
+      if (existing) clearTimeout(existing.timer);
+      // Keep the earliest revert point in this batch of rapid edits, so a
+      // failed write rolls back to state before ANY of the coalesced edits.
+      const revertSnapshot = existing ? existing.revertTo : revertTo;
+      const timer = setTimeout(() => flushPendingSave(docId), DEBOUNCE_MS);
+      pendingSavesRef.current[docId] = {
+        data,
+        revertTo: revertSnapshot,
+        timer,
+      };
+    },
+    [flushPendingSave],
+  );
+
+  // Flush immediately when the tab is hidden/closed so a debounced edit isn't
+  // lost mid-wait (visibilitychange fires reliably on mobile backgrounding;
+  // pagehide covers navigation/close).
+  useEffect(() => {
+    const flushAll = () => {
+      Object.keys(pendingSavesRef.current).forEach(flushPendingSave);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushAll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flushAll);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flushAll);
+      flushAll();
+    };
+  }, [flushPendingSave]);
+
   const updatePerson = useCallback(
     (person, key, value) => {
       const current = person === "p1" ? p1Ref.current : p2Ref.current;
@@ -607,23 +685,9 @@ export function DataProvider({ children }) {
         p2Ref.current = updated;
         setP2(updated);
       }
-      save(person, updated).catch((err) => {
-        // Firestore write failed — revert React state so UI matches Firestore.
-        // Without this, the user sees the change until reload, then it's gone.
-        console.error(
-          `[DataGuard] Save failed for "${person}.${key}", reverting state. Error:`,
-          err?.code || err?.message || err,
-        );
-        if (person === "p1") {
-          p1Ref.current = current;
-          setP1(current);
-        } else {
-          p2Ref.current = current;
-          setP2(current);
-        }
-      });
+      scheduleSave(person, updated, current);
     },
-    [save],
+    [scheduleSave],
   );
 
   const batchUpdatePerson = useCallback(
@@ -653,21 +717,9 @@ export function DataProvider({ children }) {
         p2Ref.current = updated;
         setP2(updated);
       }
-      save(person, updated).catch((err) => {
-        console.error(
-          `[DataGuard] Save failed for "${person}" batch update, reverting state. Error:`,
-          err?.code || err?.message || err,
-        );
-        if (person === "p1") {
-          p1Ref.current = current;
-          setP1(current);
-        } else {
-          p2Ref.current = current;
-          setP2(current);
-        }
-      });
+      scheduleSave(person, updated, current);
     },
-    [save],
+    [scheduleSave],
   );
 
   const updateShared = useCallback(
@@ -682,16 +734,9 @@ export function DataProvider({ children }) {
       const updated = { ...current, [key]: value };
       sharedRef.current = updated;
       setShared(updated);
-      save("shared", updated).catch((err) => {
-        console.error(
-          `[DataGuard] Save failed for shared.${key}, reverting state. Error:`,
-          err?.code || err?.message || err,
-        );
-        sharedRef.current = current;
-        setShared(current);
-      });
+      scheduleSave("shared", updated, current);
     },
-    [save],
+    [scheduleSave],
   );
 
   const resetData = useCallback(async () => {

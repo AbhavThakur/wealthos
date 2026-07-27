@@ -900,28 +900,28 @@ export default function Budget({
   );
   const createOneTimeExpense = () => {
     // Create a blank editable card immediately; the user fills it in inline
-    // via patchOneTimeExpense. Date is anchored to the month being viewed.
+    // via the purchase log. Date is anchored to the month being viewed.
+    // NOTE: entries starts empty — a pre-filled ₹0 entry used to be created
+    // here, which made every new card look like it already had a logged
+    // purchase. Instead, open the purchase log panel pre-filled with today's
+    // date so the user can type the amount straight away.
     const date = expMonth === _curYm ? localDateISO() : `${expMonth}-01`;
+    const newId = nextId(expenses);
     updatePerson("expenses", [
       {
-        id: nextId(expenses),
+        id: newId,
         expenseType: "onetime",
         name: "New purchase",
         amount: 0,
         category: "Others",
         date,
         recurrence: "once",
-        entries: [
-          {
-            id: genEntryId(),
-            date,
-            amount: 0,
-            note: "",
-          },
-        ],
+        entries: [],
       },
       ...expenses,
     ]);
+    setExpandedExp((s) => ({ ...s, [newId]: true }));
+    setEF(newId, { date, amount: "", note: "" });
   };
   const filteredTripExps = tripExps.filter(
     (e) => (e.startDate || e.date || "").slice(0, 7) === expMonth,
