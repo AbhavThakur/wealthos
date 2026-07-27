@@ -1116,14 +1116,6 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
   const old80E = (t.educationLoanInterest || 0) * 12;
   const totalOldDed =
     old80C + oldHRA + 50000 + oldNPS + oldMed + oldHL + old80E;
-  const oldTax = calcTax(annualIncome, OLD_SLABS, totalOldDed);
-  const newTax = calcTax(annualIncome, NEW_SLABS, 75000);
-  const better = oldTax <= newTax ? "old" : "new";
-  const saving = Math.abs(oldTax - newTax);
-  const remaining80C = Math.max(
-    0,
-    150000 - (elssMonthly * 12 + ppfMonthly * 12 + effectiveEPF + lifePremium),
-  );
 
   // Gross salary breakdown from payslip
   const grossMonthly =
@@ -1136,6 +1128,20 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
   // Annual incentives (Sep ₹71,542 + Mar ₹1,69,039.69 = ₹2,40,581.69)
   const annualIncentives = t.annualIncentives || 0;
   const grossAnnual = grossMonthly * 12 + annualIncentives;
+
+  // Prefer the more accurate payslip-derived gross salary when available;
+  // fall back to annualized "Budget" income (take-home) otherwise. Using
+  // take-home pay here previously understated tax and skewed the regime
+  // recommendation vs. the detailed payslip-based breakdown below.
+  const regimeIncome = grossAnnual > 0 ? grossAnnual : annualIncome;
+  const oldTax = calcTax(regimeIncome, OLD_SLABS, totalOldDed);
+  const newTax = calcTax(regimeIncome, NEW_SLABS, 75000);
+  const better = oldTax <= newTax ? "old" : "new";
+  const saving = Math.abs(oldTax - newTax);
+  const remaining80C = Math.max(
+    0,
+    150000 - (elssMonthly * 12 + ppfMonthly * 12 + effectiveEPF + lifePremium),
+  );
 
   // New Regime detailed breakdown (this year FY 2025-26)
   const newStdDed = 75000;
@@ -1309,7 +1315,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
               }}
             >
               <span className="muted">Taxable income</span>
-              <span>{fmt(Math.max(0, annualIncome - r.ded))}</span>
+              <span>{fmt(Math.max(0, regimeIncome - r.ded))}</span>
             </div>
             <div className="divider" />
             <div
@@ -1980,7 +1986,7 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
               text: `Old regime saves you ${fmt(saving)}/yr. Make sure to declare all deductions to your employer to reduce TDS.`,
             });
           // Advance tax
-          if (annualIncome > 0) {
+          if (regimeIncome > 0) {
             const betterTax = Math.min(oldTax, newTax);
             const monthlyTDS = Math.round(betterTax / 12);
             tips.push({

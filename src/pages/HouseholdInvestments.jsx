@@ -15,6 +15,7 @@ import {
   PortfolioCharts,
   ExportMenu,
   InfoModal,
+  BulkIsinMatch,
   MF_CAP_CATEGORIES,
 } from "./Investments";
 import {
@@ -896,6 +897,20 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
           />
         </div>
       )}
+
+      <BulkIsinMatch
+        investments={allInvestments}
+        onMatch={(inv, patch) => {
+          const owner = inv._owner;
+          const ownerData = owner === "p1" ? p1 : p2;
+          const list = ownerData?.investments || [];
+          updatePerson(
+            owner,
+            "investments",
+            list.map((x) => (x.id === inv.id ? { ...x, ...patch } : x)),
+          );
+        }}
+      />
 
       {/* Cards */}
       {filtered.map((inv) => {

@@ -3,10 +3,12 @@
 // All fetch results are cached in sessionStorage with configurable TTL.
 
 import { localDateISO } from "./date";
+import { computeInvRow } from "../pages/investmentHelpers";
 
 const CACHE_PREFIX = "wos_mkt_";
 const NAV_TTL = 30 * 60 * 1000; // 30 min
 const GOLD_TTL = 60 * 60 * 1000; // 1 hour
+const ISIN_INDEX_TTL = 24 * 60 * 60 * 1000; // 24 hours (AMFI data updates daily)
 
 // ── Local cache helpers ─────────────────────────────────────────────────────
 function getCache(key) {
@@ -85,6 +87,55 @@ export async function fetchAllMFNavs(investments) {
     }
   });
   return navMap;
+}
+
+/**
+ * Find a mutual fund scheme by its ISIN (e.g. as shown on Zerodha Coin,
+ * Groww, or a CAMS/KFintech CAS statement — this is the one identifier
+ * that's always unambiguous, unlike scheme names which vary by source).
+ *
+ * Fetches the full scheme list (with ISINs) once and caches it for a day,
+ * then matches locally — so repeated lookups are instant and free.
+ *
+ * Returns { schemeCode, schemeName, matchedOn: "growth"|"reinvestment" }
+ * or null if not found / on failure.
+ */
+export async function findMFByISIN(isin) {
+  const clean = (isin || "").trim().toUpperCase();
+  if (clean.length < 8) return null;
+
+  const cached = getCache("isin_index");
+  let list = cached?.data;
+  if (!list || Date.now() - cached.ts > ISIN_INDEX_TTL) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch("https://api.mfapi.in/mf/latest", {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const fresh = await res.json();
+        if (Array.isArray(fresh) && fresh.length) {
+          list = fresh;
+          setCache("isin_index", list);
+        }
+      }
+    } catch {
+      // network failure — fall back to whatever (possibly stale) cache we have
+    }
+  }
+  if (!Array.isArray(list)) return null;
+
+  const match = list.find(
+    (item) => item.isinGrowth === clean || item.isinDivReinvestment === clean,
+  );
+  if (!match) return null;
+  return {
+    schemeCode: match.schemeCode,
+    schemeName: match.schemeName,
+    matchedOn: match.isinGrowth === clean ? "growth" : "reinvestment",
+  };
 }
 
 // ── Gold Spot Price (INR per gram) ──────────────────────────────────────────
@@ -203,13 +254,11 @@ export function computePortfolioGainLoss(investments) {
   let totalCurrent = 0;
 
   for (const inv of investments || []) {
-    const current = inv.existingCorpus || 0;
-    const invested =
-      inv.type === "FD" || inv.frequency === "onetime"
-        ? inv.amount || 0
-        : Number(inv.totalInvested) || 0;
+    // Reuse the canonical row computation (same logic as Investments/HouseholdInvestments
+    // pages) so FD compounding and auto-calculated SIP totals are accounted for correctly.
+    const { cur, invested } = computeInvRow(inv);
     totalInvested += invested;
-    totalCurrent += current;
+    totalCurrent += cur;
   }
 
   const absoluteGain = totalCurrent - totalInvested;

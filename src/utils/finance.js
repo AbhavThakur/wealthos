@@ -18,6 +18,25 @@ export const onetimeEffective = (exp) => {
   return (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
 };
 
+// mfapi.in doesn't expose real expense ratios, so estimate from the fund
+// name — index/liquid/debt funds are much cheaper than active equity and
+// a single flat guess for every "Mutual Fund" row is misleading.
+export const estimateExpenseRatio = (inv) => {
+  if (inv.expenseRatio != null) return Number(inv.expenseRatio);
+  if (inv.type !== "Mutual Fund") return 0;
+  const name = (inv.name || "").toLowerCase();
+  if (/index fund|index plan|nifty.*index|\betf\b/.test(name)) return 0.25;
+  if (/liquid|overnight|money market/.test(name)) return 0.25;
+  if (
+    /\bdebt\b|gilt|corporate bond|banking (&|and) psu|short duration|ultra short|dynamic bond/.test(
+      name,
+    )
+  )
+    return 0.5;
+  if (/elss|tax saver/.test(name)) return 1.5;
+  return 1.2;
+};
+
 export const sipCorpus = (monthly, rateAnnual, years) => {
   const r = rateAnnual / 100 / 12;
   const n = years * 12;

@@ -10,6 +10,7 @@ import {
   totalCorpus,
   freqToMonthly,
   onetimeEffective,
+  estimateExpenseRatio,
 } from "./finance";
 import { compareISODateDesc } from "./date";
 
@@ -301,6 +302,38 @@ function topInvestmentInsight(p, name) {
   };
 }
 
+function fundFeesInsight(p, name) {
+  if (!p || p.investments.length === 0) return null;
+  const withFees = p.investments
+    .map((i) => ({
+      name: i.name,
+      er: estimateExpenseRatio(i),
+      corpus: i.existingCorpus || 0,
+    }))
+    .filter((i) => i.corpus > 0)
+    .sort((a, b) => b.er - a.er);
+  if (withFees.length === 0) return null;
+  const high = withFees.filter((i) => i.er > 1);
+  if (high.length === 0) {
+    return {
+      emoji: "✅",
+      title: "Fund Fees Look Fine",
+      body: `${name}, none of your funds have a high estimated expense ratio (>1%). Fees are estimated from fund names since mfapi.in doesn't expose them directly.`,
+    };
+  }
+  const lines = high
+    .map(
+      (i) =>
+        `• ${i.name}: ~${i.er}% (~${fmt(Math.round((i.corpus * i.er) / 100))}/yr on ${L(i.corpus)} corpus)`,
+    )
+    .join("\n");
+  return {
+    emoji: "💸",
+    title: "High Expense Ratio Funds",
+    body: `${name}, these funds have a high estimated expense ratio (>1%):\n${lines}\n\nConsider switching to a lower-cost index fund alternative (~0.25%) if this is an active fund without strong outperformance. Fees are estimated from fund names, not exact.`,
+  };
+}
+
 function householdCompareInsight(p1, p2, name1, name2) {
   if (!p1 || !p2 || !p1.income || !p2.income) return null;
   const total = p1.income + p2.income;
@@ -341,6 +374,12 @@ const INTENTS = [
   {
     patterns: [/invest|portfolio|top.*fund|top.*sip/i],
     handler: "investments",
+  },
+  {
+    patterns: [
+      /expense\s*ratio|high.?fee|fund.*fee|fee.*fund|expensive fund|costly fund/i,
+    ],
+    handler: "fund_fees",
   },
   { patterns: [/idle|surplus|extra.*cash|unused.*money/i], handler: "surplus" },
   { patterns: [/household|combined|family|both/i], handler: "household" },
@@ -401,6 +440,15 @@ const INTENTS = [
 
 function matchIntent(msg) {
   const lower = msg.toLowerCase();
+
+  // Fund fee questions mention "expense" (ratio) but should never fall through
+  // to the generic per-transaction expense search below.
+  if (
+    /expense\s*ratio|high.?fee|fund.*fee|fee.*fund|expensive fund|costly fund/i.test(
+      lower,
+    )
+  )
+    return "fund_fees";
 
   // If the user mentions a specific name + a generic word like "expense/spend",
   // route to search so we find the actual item instead of showing generic top-5
@@ -564,6 +612,11 @@ function handleIntent(
         insights.push(topInvestmentInsight(p, name));
         insights.push(allocationInsight(p, name));
         insights.push(sipStepUpInsight(p, name));
+      }
+      break;
+    case "fund_fees":
+      if (p) {
+        insights.push(fundFeesInsight(p, name));
       }
       break;
     case "surplus":

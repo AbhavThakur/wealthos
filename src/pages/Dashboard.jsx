@@ -16,6 +16,7 @@ import {
   unused80C,
   insuranceAdequacy,
   onetimeEffective,
+  estimateExpenseRatio,
 } from "../utils/finance";
 import {
   TrendingUp,
@@ -3926,20 +3927,10 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
       ...(p1?.investments || []),
       ...(p2?.investments || []),
     ];
-    const DEFAULT_ER = {
-      "Mutual Fund": 1.2,
-      "Index Fund": 0.15,
-      ELSS: 1.5,
-      ETF: 0.07,
-      SIP: 1.0,
-    };
     const fundsWithFees = allInvestments
       .map((inv) => {
         const corp = inv.existingCorpus || 0;
-        const er =
-          inv.expenseRatio != null
-            ? Number(inv.expenseRatio)
-            : DEFAULT_ER[inv.type] || 0;
+        const er = estimateExpenseRatio(inv);
         return {
           ...inv,
           er,

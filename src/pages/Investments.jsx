@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
-import { fetchAllMFNavs } from "../utils/marketData";
+import { fetchAllMFNavs, findMFByISIN } from "../utils/marketData";
 import {
   appsForType,
   BANK_LIST,
@@ -109,6 +109,8 @@ export const SIPCard = memo(function SIPCard({
   const { confirm, dialog } = useConfirm();
   const [navLoading, setNavLoading] = useState(false);
   const [navMsg, setNavMsg] = useState("");
+  const [isinInput, setIsinInput] = useState("");
+  const [isinLoading, setIsinLoading] = useState(false);
   const [showLogValue, setShowLogValue] = useState(false);
   const [logEntry, setLogEntry] = useState({
     date: localDateISO(),
@@ -786,6 +788,57 @@ export const SIPCard = memo(function SIPCard({
                 </div>
               )}
           </div>
+          {form.type === "Mutual Fund" && (
+            <div
+              style={{
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 8,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  ISIN (from Coin / Groww / CAS)
+                </label>
+                <input
+                  placeholder="e.g. INF200K01T51"
+                  value={isinInput}
+                  onChange={(e) => setIsinInput(e.target.value)}
+                />
+              </div>
+              <button
+                className="btn-ghost"
+                style={{ whiteSpace: "nowrap", opacity: isinLoading ? 0.6 : 1 }}
+                disabled={isinLoading || !isinInput}
+                onClick={async () => {
+                  setIsinLoading(true);
+                  setNavMsg("");
+                  const result = await findMFByISIN(isinInput);
+                  setIsinLoading(false);
+                  if (result) {
+                    setForm((f) => ({
+                      ...f,
+                      name: result.schemeName,
+                      schemeCode: String(result.schemeCode),
+                    }));
+                    setNavMsg(`\u2713 Matched: ${result.schemeName}`);
+                  } else {
+                    setNavMsg("No fund found for that ISIN");
+                  }
+                }}
+              >
+                {isinLoading ? "Looking up\u2026" : "Find fund"}
+              </button>
+            </div>
+          )}
           {form.type === "Mutual Fund" && (
             <div
               style={{
@@ -2408,6 +2461,137 @@ function computeHealthData(rows) {
   };
 }
 
+// ─── Bulk ISIN matcher — link all unmatched MF holdings in one place ────────
+// Shown above the investment list when one or more Mutual Fund entries are
+// missing a scheme code (blocks live NAV tracking + real expense ratios).
+export function BulkIsinMatch({ investments, onMatch }) {
+  const [inputs, setInputs] = useState({});
+  const [status, setStatus] = useState({});
+  const [dismissed, setDismissed] = useState(false);
+
+  const pending = (investments || []).filter(
+    (inv) => inv.type === "Mutual Fund" && !inv.schemeCode,
+  );
+
+  if (dismissed || pending.length === 0) return null;
+
+  const handleMatch = async (inv) => {
+    const isin = inputs[inv.id];
+    if (!isin) return;
+    setStatus((s) => ({ ...s, [inv.id]: { loading: true, msg: "" } }));
+    const result = await findMFByISIN(isin);
+    if (result) {
+      onMatch(inv, {
+        schemeCode: String(result.schemeCode),
+        name: result.schemeName,
+      });
+      setStatus((s) => ({
+        ...s,
+        [inv.id]: {
+          loading: false,
+          matched: true,
+          msg: `✓ ${result.schemeName}`,
+        },
+      }));
+    } else {
+      setStatus((s) => ({
+        ...s,
+        [inv.id]: { loading: false, msg: "No fund found for that ISIN" },
+      }));
+    }
+  };
+
+  return (
+    <div
+      className="card section-gap"
+      style={{ border: "1px solid var(--gold)" }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: 6,
+        }}
+      >
+        <div className="card-title">
+          🔗 Link {pending.length} fund{pending.length !== 1 ? "s" : ""} for
+          live NAV tracking
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+          }}
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--text-secondary)",
+          marginBottom: 12,
+        }}
+      >
+        Paste the ISIN from your Coin / Groww / CAS statement for each fund
+        below to enable live NAVs, real expense ratios, and accurate valuations.
+      </div>
+      {pending.map((inv) => {
+        const st = status[inv.id];
+        return (
+          <div
+            key={inv.id}
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              marginBottom: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: "1 1 220px", fontSize: 13 }}>{inv.name}</div>
+            <input
+              placeholder="e.g. INF200K01T51"
+              value={inputs[inv.id] || ""}
+              onChange={(e) =>
+                setInputs((i) => ({ ...i, [inv.id]: e.target.value }))
+              }
+              style={{ width: 160 }}
+              disabled={st?.matched}
+            />
+            <button
+              className="btn-secondary"
+              onClick={() => handleMatch(inv)}
+              disabled={st?.loading || st?.matched}
+            >
+              {st?.matched
+                ? "✓ Matched"
+                : st?.loading
+                  ? "Looking up…"
+                  : "Match"}
+            </button>
+            {st?.msg && (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: st?.matched ? "var(--green)" : "var(--red)",
+                }}
+              >
+                {st.msg}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Portfolio overview charts + health panel ────────────────────────────────
 export function PortfolioCharts({ rows, isHousehold }) {
   const { personNames } = useData() || {};
@@ -3316,6 +3500,9 @@ export default function Investments({
   const [showMfDropdown, setShowMfDropdown] = useState(false);
   const [navFetching, setNavFetching] = useState(false);
   const [navFetchMsg, setNavFetchMsg] = useState("");
+  const [isinInput, setIsinInput] = useState("");
+  const [isinLoading, setIsinLoading] = useState(false);
+  const [isinMsg, setIsinMsg] = useState("");
   const [batchSyncing, setBatchSyncing] = useState(false);
   const [batchSyncResult, setBatchSyncResult] = useState(null);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -3430,6 +3617,8 @@ export default function Investments({
     });
     setMfResults([]);
     setNavFetchMsg("");
+    setIsinInput("");
+    setIsinMsg("");
     setShowAdd(false);
   };
 
@@ -4822,6 +5011,16 @@ export default function Investments({
         </div>
       )}
 
+      <BulkIsinMatch
+        investments={investments}
+        onMatch={(inv, patch) =>
+          updatePerson(
+            "investments",
+            investments.map((x) => (x.id === inv.id ? { ...x, ...patch } : x)),
+          )
+        }
+      />
+
       {filteredInvestments.map((inv) => (
         <SIPCard
           key={inv.id}
@@ -4939,6 +5138,68 @@ export default function Investments({
                 </div>
               )}
             </div>
+            {newInv.type === "Mutual Fund" && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  Or find by ISIN (from Coin / Groww / CAS)
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    style={{ flex: 1 }}
+                    placeholder="e.g. INF200K01T51"
+                    value={isinInput}
+                    onChange={(e) => setIsinInput(e.target.value)}
+                  />
+                  <button
+                    className="btn-ghost"
+                    style={{
+                      whiteSpace: "nowrap",
+                      opacity: isinLoading ? 0.6 : 1,
+                    }}
+                    disabled={isinLoading || !isinInput}
+                    onClick={async () => {
+                      setIsinLoading(true);
+                      setIsinMsg("");
+                      const result = await findMFByISIN(isinInput);
+                      setIsinLoading(false);
+                      if (result) {
+                        setNewInv((n) => ({
+                          ...n,
+                          name: result.schemeName,
+                          schemeCode: String(result.schemeCode),
+                        }));
+                        setShowMfDropdown(false);
+                        setIsinMsg(`\u2713 Matched: ${result.schemeName}`);
+                      } else {
+                        setIsinMsg("No fund found for that ISIN");
+                      }
+                    }}
+                  >
+                    {isinLoading ? "Looking up\u2026" : "Find fund"}
+                  </button>
+                </div>
+                {isinMsg && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      marginTop: 3,
+                      color: isinMsg.startsWith("\u2713")
+                        ? "var(--green)"
+                        : "var(--red, #e55)",
+                    }}
+                  >
+                    {isinMsg}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label
                 style={{
