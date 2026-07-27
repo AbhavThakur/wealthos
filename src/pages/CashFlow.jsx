@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { fmt, nextId, EXPENSE_CATEGORIES, lumpCorpus } from "../utils/finance";
+import {
+  fmt,
+  nextId,
+  EXPENSE_CATEGORIES,
+  lumpCorpus,
+  weekdayCountInMonth,
+} from "../utils/finance";
 import {
   Plus,
   Trash2,
@@ -29,41 +35,55 @@ const ALL_CATS = ["Salary", "Investment", ...EXPENSE_CATEGORIES];
 
 // Filter rules to only those that actually occur in the given month
 function rulesForMonth(rules, year, month) {
-  return rules.filter((r) => {
-    // Skip one-time and variable expenses — they don't recur
-    const rec = r.recurrence;
-    if (rec === "once" || rec === "variable") return false;
+  return rules
+    .filter((r) => {
+      // Skip one-time and variable expenses — they don't recur
+      const rec = r.recurrence;
+      if (rec === "once" || rec === "variable") return false;
 
-    // Check recurrence-based gating (for autoRecurringRules expenses)
-    if (rec === "yearly") {
-      const dueMonth = r.recurrenceMonth ?? 0;
-      return month === dueMonth;
-    }
-    if (rec === "quarterly") {
-      const dueMonths = r.recurrenceMonths ?? [0, 3, 6, 9];
-      return dueMonths.includes(month);
-    }
+      // Check recurrence-based gating (for autoRecurringRules expenses)
+      if (rec === "yearly") {
+        const dueMonth = r.recurrenceMonth ?? 0;
+        return month === dueMonth;
+      }
+      if (rec === "quarterly") {
+        const dueMonths = r.recurrenceMonths ?? [0, 3, 6, 9];
+        return dueMonths.includes(month);
+      }
 
-    // Investment frequency gating
-    const freq = r.frequency || "monthly";
-    if (freq === "monthly" || freq === "weekly") return true;
-    if (freq === "yearly" && r.startDate) {
-      const startMonth = parseLocalDate(r.startDate)?.getMonth();
-      if (startMonth == null) return false;
-      return month === startMonth;
-    }
-    if (freq === "yearly" && r.recurrenceMonth != null) {
-      return month === r.recurrenceMonth;
-    }
-    if (freq === "quarterly" && r.startDate) {
-      const startMonth = parseLocalDate(r.startDate)?.getMonth();
-      if (startMonth == null) return false;
-      return ((month - startMonth + 12) % 12) % 3 === 0;
-    }
-    // non-investment rules (expenses, income) default to monthly
-    if (!r.frequency) return true;
-    return true;
-  });
+      // Investment frequency gating
+      const freq = r.frequency || "monthly";
+      if (freq === "monthly" || freq === "weekly") return true;
+      if (freq === "yearly" && r.startDate) {
+        const startMonth = parseLocalDate(r.startDate)?.getMonth();
+        if (startMonth == null) return false;
+        return month === startMonth;
+      }
+      if (freq === "yearly" && r.recurrenceMonth != null) {
+        return month === r.recurrenceMonth;
+      }
+      if (freq === "quarterly" && r.startDate) {
+        const startMonth = parseLocalDate(r.startDate)?.getMonth();
+        if (startMonth == null) return false;
+        return ((month - startMonth + 12) % 12) % 3 === 0;
+      }
+      // non-investment rules (expenses, income) default to monthly
+      if (!r.frequency) return true;
+      return true;
+    })
+    .map((r) => {
+      // Weekly SIPs store a PER-INSTALLMENT amount (e.g. ₹2,500/week) — scale it
+      // by how many times that weekday actually falls in this month so schedule
+      // totals match the "monthly equivalent" shown on the Investments page
+      // instead of counting a single installment as the whole month's amount.
+      if (r.frequency === "weekly" && r.deductionDay) {
+        const occurrences = weekdayCountInMonth(r.deductionDay, year, month);
+        if (occurrences > 0) {
+          return { ...r, amount: r.amount * occurrences };
+        }
+      }
+      return r;
+    });
 }
 
 const SOURCE_LABELS = {
