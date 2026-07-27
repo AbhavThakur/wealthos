@@ -5362,6 +5362,8 @@ export default function Investments({
               </label>
               <input
                 type="number"
+                min="0"
+                step="0.01"
                 placeholder={isFD(newInv.type) ? "e.g. 100000" : "e.g. 5000"}
                 value={newInv.amount}
                 onChange={(e) =>
@@ -5396,6 +5398,8 @@ export default function Investments({
                 </label>
                 <input
                   type="number"
+                  min="0"
+                  step="0.01"
                   placeholder={
                     newInv.frequency === "onetime"
                       ? "From your app (optional)"
@@ -5434,6 +5438,7 @@ export default function Investments({
               </label>
               <input
                 type="number"
+                min="0"
                 step="0.1"
                 value={newInv.returnPct}
                 onChange={(e) =>
@@ -5669,6 +5674,8 @@ export default function Investments({
                 </label>
                 <input
                   type="number"
+                  min="0"
+                  step="0.01"
                   placeholder="Auto-calculated if empty"
                   value={newInv.totalInvested}
                   onChange={(e) =>
@@ -5732,6 +5739,7 @@ export default function Investments({
                   </label>
                   <input
                     type="number"
+                    min="0"
                     step="0.001"
                     placeholder="From your app — enables auto valuation"
                     value={newInv.units}

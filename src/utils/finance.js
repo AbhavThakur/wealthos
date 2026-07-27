@@ -1,9 +1,37 @@
 import { parseLocalDate } from "./date";
 
-export const fmt = (n = 0) =>
-  "₹" + Math.abs(Math.round(Number(n) || 0)).toLocaleString("en-IN");
+const PRIVACY_KEY = "wealthos-privacy-mode";
+let privacyMode =
+  typeof localStorage !== "undefined" &&
+  localStorage.getItem(PRIVACY_KEY) === "true";
+
+export const getPrivacyMode = () => privacyMode;
+
+export const setPrivacyMode = (enabled) => {
+  privacyMode = Boolean(enabled);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(PRIVACY_KEY, String(privacyMode));
+  }
+};
+
+export const toMinorUnits = (amount = 0) =>
+  Math.round((Number(amount) || 0) * 100);
+
+export const fromMinorUnits = (minorUnits = 0) =>
+  (Number(minorUnits) || 0) / 100;
+
+export const sumMoney = (amounts) =>
+  fromMinorUnits(
+    amounts.reduce((total, amount) => total + toMinorUnits(amount), 0),
+  );
+
+export const fmt = (n = 0) => {
+  if (privacyMode) return "₹••••";
+  return "₹" + Math.abs(Math.round(Number(n) || 0)).toLocaleString("en-IN");
+};
 
 export const fmtCr = (n = 0) => {
+  if (privacyMode) return "₹••••";
   const a = Math.abs(Number(n) || 0);
   if (a >= 10000000) return "₹" + (a / 10000000).toFixed(2) + " Cr";
   if (a >= 100000) return "₹" + (a / 100000).toFixed(1) + " L";
@@ -15,7 +43,7 @@ export const nextId = (arr) => Math.max(0, ...arr.map((x) => x.id ?? 0)) + 1;
 /** For one-time expenses the effective amount is the sum of log entries only. */
 export const onetimeEffective = (exp) => {
   if (exp.expenseType !== "onetime") return exp.amount || 0;
-  return (exp.entries || []).reduce((s, e) => s + (e.amount || 0), 0);
+  return sumMoney((exp.entries || []).map((entry) => entry.amount || 0));
 };
 
 // mfapi.in doesn't expose real expense ratios, so estimate from the fund

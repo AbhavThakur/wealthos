@@ -138,12 +138,15 @@ export default function Login() {
               Email
             </label>
             <input
+              id="login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
               autoFocus
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "login-error" : undefined}
             />
           </div>
           <div style={{ marginBottom: "1rem" }}>
@@ -161,6 +164,7 @@ export default function Login() {
             </label>
             <div style={{ position: "relative" }}>
               <input
+                id="login-password"
                 type={showPwd ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -168,6 +172,8 @@ export default function Login() {
                 required
                 minLength={isSignup ? 6 : undefined}
                 style={{ paddingRight: 40 }}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : undefined}
               />
               <button
                 type="button"
@@ -209,11 +215,14 @@ export default function Login() {
                 Confirm Password
               </label>
               <input
+                id="login-confirm-password"
                 type="password"
                 value={confirmPwd}
                 onChange={(e) => setConfirmPwd(e.target.value)}
                 placeholder="••••••••"
                 required
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : undefined}
               />
             </div>
           )}
@@ -262,6 +271,8 @@ export default function Login() {
           )}
           {error && (
             <div
+              id="login-error"
+              role="alert"
               style={{
                 background: "var(--red-dim)",
                 border: "1px solid rgba(224,92,92,.25)",

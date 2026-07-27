@@ -28,7 +28,7 @@ export function autoRecurringRules(data) {
       amount: -Math.abs(Number(exp.amount) || 0),
       type: "expense",
       category: exp.category || "Others",
-      dayOfMonth: exp.date ? (parseInt(exp.date.slice(8, 10), 10) || 1) : 1,
+      dayOfMonth: exp.date ? parseInt(exp.date.slice(8, 10), 10) || 1 : 1,
       active: true,
       auto: true,
       sourceType: "expense",
@@ -89,7 +89,9 @@ export function autoRecurringRules(data) {
       amount: -Math.abs(Number(sub.amount) || 0),
       type: "expense",
       category: sub.category || "Subscription",
-      dayOfMonth: sub.startDate ? (parseInt(sub.startDate.slice(8, 10), 10) || 1) : 1,
+      dayOfMonth: sub.startDate
+        ? parseInt(sub.startDate.slice(8, 10), 10) || 1
+        : 1,
       active: true,
       auto: true,
       sourceType: "subscription",

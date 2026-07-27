@@ -18,6 +18,10 @@ import usePullToRefresh from "./hooks/usePullToRefresh";
 import { useOnlineStatus } from "./hooks/useOnlineStatus";
 import ADMIN_EMAILS from "./utils/adminEmails";
 import { parseLocalDate, goalDeadlineDate } from "./utils/date";
+import {
+  getPrivacyMode,
+  setPrivacyMode as setCurrencyPrivacyMode,
+} from "./utils/finance";
 
 // ── Non-critical shell components — lazy-loaded ─────────────────────────────
 const Login = lazy(() => import("./pages/Login"));
@@ -398,6 +402,14 @@ function AppInner() {
   // In solo mode, person2 doesn't exist — force profile to person1
   const effectiveProfile = isSolo && profile !== "p1" ? "p1" : profile;
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [privacyMode, setPrivacyMode] = useState(getPrivacyMode);
+  const togglePrivacyMode = useCallback(() => {
+    setPrivacyMode((current) => {
+      const next = !current;
+      setCurrencyPrivacyMode(next);
+      return next;
+    });
+  }, []);
 
   // ── PIN Lock (disabled in demo mode) ──────────────────────────────────
   const pinEnabled = !isDemo && shared?.pinEnabled !== false;
@@ -745,6 +757,8 @@ function AppInner() {
         personNames={personNames}
         isSolo={isSolo}
         onQuickAdd={() => setQuickAddOpen(true)}
+        privacyMode={privacyMode}
+        onTogglePrivacy={togglePrivacyMode}
       />
       <div className="app-layout">
         <OfflineBanner />

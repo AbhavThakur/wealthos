@@ -1,7 +1,9 @@
 const AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt";
 
 export function parseAmfiSchemeByISIN(text, isin) {
-  const clean = String(isin || "").trim().toUpperCase();
+  const clean = String(isin || "")
+    .trim()
+    .toUpperCase();
   if (!/^[A-Z]{3}[A-Z0-9]{9}$/.test(clean)) return null;
 
   for (const line of String(text || "").split(/\r?\n/)) {
@@ -29,7 +31,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  const isin = String(req.query?.isin || "").trim().toUpperCase();
+  const isin = String(req.query?.isin || "")
+    .trim()
+    .toUpperCase();
   if (!/^[A-Z]{3}[A-Z0-9]{9}$/.test(isin)) {
     return res.status(400).json({ ok: false, error: "Invalid ISIN" });
   }

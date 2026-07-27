@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { InfoModal } from "../components/InfoModal";
 import { useMarketData } from "../hooks/useMarketData";
+import { calculateNetWorth } from "../utils/netWorth";
 import MonthlySummary from "../components/MonthlySummary";
 import { localYearMonth, parseLocalDate } from "../utils/date";
 
@@ -1442,6 +1443,24 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
       ? Math.round(((hInvest + Math.max(0, hSavings)) / hIncome) * 100)
       : 0;
   const hCorpus20 = a.corpus20 + b.corpus20;
+  const p1NetWorth = calculateNetWorth(p1);
+  const p2NetWorth = calculateNetWorth(p2);
+  const householdNetWorth = p1NetWorth.net + p2NetWorth.net;
+  const householdAssets = p1NetWorth.assets + p2NetWorth.assets;
+  const monthlyCashFlow = hIncome - hExpenses - hInvest - hDebts;
+  const investedAssets =
+    p1NetWorth.invAssets.reduce((sum, asset) => sum + asset.value, 0) +
+    p2NetWorth.invAssets.reduce((sum, asset) => sum + asset.value, 0);
+  const liquidAssets = p1NetWorth.savingsTotal + p2NetWorth.savingsTotal;
+  const otherAssets = Math.max(
+    0,
+    householdAssets - investedAssets - liquidAssets,
+  );
+  const allocationRows = [
+    { label: "Investments", value: investedAssets, color: "var(--p1)" },
+    { label: "Cash", value: liquidAssets, color: "var(--green)" },
+    { label: "Other", value: otherAssets, color: "var(--gold)" },
+  ].filter((row) => row.value > 0);
 
   // ── Live market data ────────────────────────────────────────────────────
   const allInv = [...(p1?.investments || []), ...(p2?.investments || [])];
@@ -1628,43 +1647,214 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
 
   const sections = {
     metrics: (
-      <div className="grid-4 section-gap">
-        <div className="metric-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
-          >
-            <div className="metric-label">
-              Combined Income
-              <InfoModal title="Combined Income">
-                {_infoRow(
-                  `${personNames?.p1 || "Person 1"}'s income`,
-                  aStanding.income,
-                  "var(--p1)",
-                )}
-                {_infoRow(
-                  `${personNames?.p2 || "Person 2"}'s income`,
-                  bStanding.income,
-                  "var(--p2)",
-                )}
-                <div
+      <>
+        <div className="grid-3 section-gap dashboard-bluf">
+          <div className="metric-card">
+            <div className="metric-label">Net Worth</div>
+            <div className="metric-value gold-text">
+              {fmtCr(householdNetWorth)}
+            </div>
+            <div className="metric-sub">
+              Assets {fmtCr(householdAssets)} · Liabilities{" "}
+              {fmtCr(p1NetWorth.liabilities + p2NetWorth.liabilities)}
+            </div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Monthly Cash Flow</div>
+            <div
+              className="metric-value"
+              style={{
+                color: monthlyCashFlow >= 0 ? "var(--green)" : "var(--red)",
+              }}
+            >
+              {monthlyCashFlow >= 0 ? "+" : "−"}
+              {fmt(Math.abs(monthlyCashFlow))}
+            </div>
+            <div className="metric-sub">
+              After expenses, investments and EMIs
+            </div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Asset Allocation</div>
+            <div
+              style={{
+                display: "flex",
+                height: 8,
+                overflow: "hidden",
+                borderRadius: 4,
+                margin: "10px 0 8px",
+                background: "var(--border)",
+              }}
+              aria-label="Household asset allocation"
+            >
+              {allocationRows.map((row) => (
+                <span
+                  key={row.label}
                   style={{
-                    borderTop: "1px solid rgba(255,255,255,0.12)",
-                    marginTop: 6,
-                    paddingTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontWeight: 700,
-                    color: "var(--green)",
+                    width: `${householdAssets > 0 ? (row.value / householdAssets) * 100 : 0}%`,
+                    background: row.color,
                   }}
-                >
-                  <span>Total</span>
-                  <span>{fmt(aStanding.income + bStanding.income)}</span>
-                </div>
-                {usingTxData && (
+                />
+              ))}
+            </div>
+            <div className="metric-sub">
+              {allocationRows.length
+                ? allocationRows
+                    .map(
+                      (row) =>
+                        `${row.label} ${Math.round((row.value / householdAssets) * 100)}%`,
+                    )
+                    .join(" · ")
+                : "Add assets to see allocation"}
+            </div>
+          </div>
+        </div>
+        <div className="grid-4 section-gap">
+          <div className="metric-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
+            >
+              <div className="metric-label">
+                Combined Income
+                <InfoModal title="Combined Income">
+                  {_infoRow(
+                    `${personNames?.p1 || "Person 1"}'s income`,
+                    aStanding.income,
+                    "var(--p1)",
+                  )}
+                  {_infoRow(
+                    `${personNames?.p2 || "Person 2"}'s income`,
+                    bStanding.income,
+                    "var(--p2)",
+                  )}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 6,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color: "var(--green)",
+                    }}
+                  >
+                    <span>Total</span>
+                    <span>{fmt(aStanding.income + bStanding.income)}</span>
+                  </div>
+                  {usingTxData && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        fontSize: 11,
+                        color: "#777",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      Currently showing actual entries logged for the selected
+                      month. Standing budget total:{" "}
+                      {fmt(aStanding.income + bStanding.income)}.
+                    </div>
+                  )}
+                </InfoModal>
+              </div>
+              <TrendingUp
+                size={14}
+                color="var(--green)"
+                style={{ opacity: 0.7, flexShrink: 0 }}
+              />
+            </div>
+            <div className="metric-value" style={{ color: "var(--green)" }}>
+              {fmt(hIncome)}
+            </div>
+            <Sparkline
+              data={sparkData.map((d) => d.income)}
+              color="var(--green)"
+            />
+          </div>
+
+          <div className="metric-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
+            >
+              <div className="metric-label">
+                Combined Expenses
+                <InfoModal title="Combined Expenses">
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: "var(--p1)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {personNames?.p1 || "Person 1"} — {fmt(aStanding.expenses)}
+                  </div>
+                  {_infoRow("  Monthly", p1Monthly)}
+                  {p1Trips > 0 && _infoRow("  Trips (personal)", p1Trips)}
+                  {p1Onetime > 0 && _infoRow("  One-time", p1Onetime)}
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: "var(--p2)",
+                      marginTop: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {personNames?.p2 || "Person 2"} — {fmt(bStanding.expenses)}
+                  </div>
+                  {_infoRow("  Monthly", p2Monthly)}
+                  {p2Trips > 0 && _infoRow("  Trips (personal)", p2Trips)}
+                  {p2Onetime > 0 && _infoRow("  One-time", p2Onetime)}
+                  {sharedTripTotal > 0 && (
+                    <>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          color: "var(--green)",
+                          marginTop: 8,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Shared Trips — {fmt(sharedTripTotal)}
+                      </div>
+                      {sharedTrips.map((t) => (
+                        <div
+                          key={t.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "2px 0",
+                          }}
+                        >
+                          <span>🤝 {t.name}</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {fmt(t.amount || 0)}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 8,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color: "var(--red)",
+                    }}
+                  >
+                    <span>Total</span>
+                    <span>{fmt(hExpenses)}</span>
+                  </div>
                   <div
                     style={{
                       marginTop: 10,
@@ -1673,239 +1863,132 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
                       fontStyle: "italic",
                     }}
                   >
-                    Currently showing actual entries logged for the selected
-                    month. Standing budget total:{" "}
-                    {fmt(aStanding.income + bStanding.income)}.
+                    Includes all monthly, trip, one-time expenses from both
+                    persons + shared trips. This is the standing budget total.
                   </div>
-                )}
-              </InfoModal>
-            </div>
-            <TrendingUp
-              size={14}
-              color="var(--green)"
-              style={{ opacity: 0.7, flexShrink: 0 }}
-            />
-          </div>
-          <div className="metric-value" style={{ color: "var(--green)" }}>
-            {fmt(hIncome)}
-          </div>
-          <Sparkline
-            data={sparkData.map((d) => d.income)}
-            color="var(--green)"
-          />
-        </div>
-
-        <div className="metric-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
-          >
-            <div className="metric-label">
-              Combined Expenses
-              <InfoModal title="Combined Expenses">
-                <div
-                  style={{
-                    fontWeight: 600,
-                    color: "var(--p1)",
-                    marginBottom: 4,
-                  }}
-                >
-                  {personNames?.p1 || "Person 1"} — {fmt(aStanding.expenses)}
-                </div>
-                {_infoRow("  Monthly", p1Monthly)}
-                {p1Trips > 0 && _infoRow("  Trips (personal)", p1Trips)}
-                {p1Onetime > 0 && _infoRow("  One-time", p1Onetime)}
-                <div
-                  style={{
-                    fontWeight: 600,
-                    color: "var(--p2)",
-                    marginTop: 8,
-                    marginBottom: 4,
-                  }}
-                >
-                  {personNames?.p2 || "Person 2"} — {fmt(bStanding.expenses)}
-                </div>
-                {_infoRow("  Monthly", p2Monthly)}
-                {p2Trips > 0 && _infoRow("  Trips (personal)", p2Trips)}
-                {p2Onetime > 0 && _infoRow("  One-time", p2Onetime)}
-                {sharedTripTotal > 0 && (
-                  <>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        color: "var(--green)",
-                        marginTop: 8,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Shared Trips — {fmt(sharedTripTotal)}
-                    </div>
-                    {sharedTrips.map((t) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "2px 0",
-                        }}
-                      >
-                        <span>🤝 {t.name}</span>
-                        <span style={{ fontWeight: 600 }}>
-                          {fmt(t.amount || 0)}
-                        </span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                <div
-                  style={{
-                    borderTop: "1px solid rgba(255,255,255,0.12)",
-                    marginTop: 8,
-                    paddingTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontWeight: 700,
-                    color: "var(--red)",
-                  }}
-                >
-                  <span>Total</span>
-                  <span>{fmt(hExpenses)}</span>
-                </div>
-                <div
-                  style={{
-                    marginTop: 10,
-                    fontSize: 11,
-                    color: "#777",
-                    fontStyle: "italic",
-                  }}
-                >
-                  Includes all monthly, trip, one-time expenses from both
-                  persons + shared trips. This is the standing budget total.
-                </div>
-              </InfoModal>
-            </div>
-            <TrendingDown
-              size={14}
-              color="var(--red)"
-              style={{ opacity: 0.7, flexShrink: 0 }}
-            />
-          </div>
-          <div className="metric-value" style={{ color: "var(--red)" }}>
-            {fmt(hExpenses)}
-          </div>
-          <Sparkline
-            data={sparkData.map((d) => d.expenses)}
-            color="var(--red)"
-          />
-        </div>
-
-        <div className="metric-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
-          >
-            <div className="metric-label">
-              Investing / month
-              <InfoModal title="Monthly Investments">
-                {_infoRow(
-                  `${personNames?.p1 || "Person 1"}'s investments`,
-                  a.investments,
-                  "var(--p1)",
-                )}
-                {_infoRow(
-                  `${personNames?.p2 || "Person 2"}'s investments`,
-                  b.investments,
-                  "var(--p2)",
-                )}
-                <div
-                  style={{
-                    borderTop: "1px solid rgba(255,255,255,0.12)",
-                    marginTop: 6,
-                    paddingTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontWeight: 700,
-                    color: "var(--gold)",
-                  }}
-                >
-                  <span>Total</span>
-                  <span>{fmt(hInvest)}</span>
-                </div>
-              </InfoModal>
-            </div>
-            <TrendingUp
-              size={14}
-              color="var(--gold)"
-              style={{ opacity: 0.7, flexShrink: 0 }}
-            />
-          </div>
-          <div className="metric-value" style={{ color: "var(--gold)" }}>
-            {fmt(hInvest)}
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
-          >
-            <div className="metric-label">
-              Household Savings Rate
-              <InfoModal title="Household Savings Rate">
-                <p>Savings rate = (Investments + Surplus) / Income</p>
-                {_infoRow("Income", hIncome, "var(--green)")}
-                {_infoRow("Expenses", hExpenses, "var(--red)")}
-                {_infoRow("Investments", hInvest, "var(--gold)")}
-                {_infoRow("Debts / EMIs", hDebts)}
-                <div
-                  style={{
-                    borderTop: "1px solid rgba(255,255,255,0.12)",
-                    marginTop: 6,
-                    paddingTop: 6,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontWeight: 700,
-                    color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
-                  }}
-                >
-                  <span>Rate</span>
-                  <span>{hSavingsRate}%</span>
-                </div>
-              </InfoModal>
-            </div>
-            {hSavingsRate >= 20 ? (
-              <TrendingUp
+                </InfoModal>
+              </div>
+              <TrendingDown
                 size={14}
-                color="var(--green)"
+                color="var(--red)"
                 style={{ opacity: 0.7, flexShrink: 0 }}
               />
-            ) : (
-              <TrendingDown
+            </div>
+            <div className="metric-value" style={{ color: "var(--red)" }}>
+              {fmt(hExpenses)}
+            </div>
+            <Sparkline
+              data={sparkData.map((d) => d.expenses)}
+              color="var(--red)"
+            />
+          </div>
+
+          <div className="metric-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
+            >
+              <div className="metric-label">
+                Investing / month
+                <InfoModal title="Monthly Investments">
+                  {_infoRow(
+                    `${personNames?.p1 || "Person 1"}'s investments`,
+                    a.investments,
+                    "var(--p1)",
+                  )}
+                  {_infoRow(
+                    `${personNames?.p2 || "Person 2"}'s investments`,
+                    b.investments,
+                    "var(--p2)",
+                  )}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 6,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color: "var(--gold)",
+                    }}
+                  >
+                    <span>Total</span>
+                    <span>{fmt(hInvest)}</span>
+                  </div>
+                </InfoModal>
+              </div>
+              <TrendingUp
                 size={14}
                 color="var(--gold)"
                 style={{ opacity: 0.7, flexShrink: 0 }}
               />
-            )}
+            </div>
+            <div className="metric-value" style={{ color: "var(--gold)" }}>
+              {fmt(hInvest)}
+            </div>
           </div>
-          <div
-            className="metric-value"
-            style={{
-              color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
-            }}
-          >
-            {hSavingsRate}%
+
+          <div className="metric-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
+            >
+              <div className="metric-label">
+                Household Savings Rate
+                <InfoModal title="Household Savings Rate">
+                  <p>Savings rate = (Investments + Surplus) / Income</p>
+                  {_infoRow("Income", hIncome, "var(--green)")}
+                  {_infoRow("Expenses", hExpenses, "var(--red)")}
+                  {_infoRow("Investments", hInvest, "var(--gold)")}
+                  {_infoRow("Debts / EMIs", hDebts)}
+                  <div
+                    style={{
+                      borderTop: "1px solid rgba(255,255,255,0.12)",
+                      marginTop: 6,
+                      paddingTop: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontWeight: 700,
+                      color:
+                        hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
+                    }}
+                  >
+                    <span>Rate</span>
+                    <span>{hSavingsRate}%</span>
+                  </div>
+                </InfoModal>
+              </div>
+              {hSavingsRate >= 20 ? (
+                <TrendingUp
+                  size={14}
+                  color="var(--green)"
+                  style={{ opacity: 0.7, flexShrink: 0 }}
+                />
+              ) : (
+                <TrendingDown
+                  size={14}
+                  color="var(--gold)"
+                  style={{ opacity: 0.7, flexShrink: 0 }}
+                />
+              )}
+            </div>
+            <div
+              className="metric-value"
+              style={{
+                color: hSavingsRate >= 20 ? "var(--green)" : "var(--gold)",
+              }}
+            >
+              {hSavingsRate}%
+            </div>
           </div>
         </div>
-      </div>
+      </>
     ),
 
     healthcard: (() => {

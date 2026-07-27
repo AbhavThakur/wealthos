@@ -2,7 +2,7 @@
  * Unit tests for finance.js — critical calculation accuracy.
  * These tests ensure financial calculations are correct before deployment.
  */
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import {
   fmt,
   fmtCr,
@@ -13,7 +13,13 @@ import {
   ppfCorpus,
   fdCorpus,
   freqToMonthly,
+  fromMinorUnits,
+  setPrivacyMode,
+  sumMoney,
+  toMinorUnits,
 } from "./finance";
+
+afterEach(() => setPrivacyMode(false));
 
 describe("fmt — Indian currency formatting", () => {
   it("formats positive numbers with ₹ prefix", () => {
@@ -45,6 +51,20 @@ describe("fmtCr — crore/lakh formatting", () => {
 
   it("formats values < 1 L as regular fmt()", () => {
     expect(fmtCr(50000)).toBe("₹50,000");
+  });
+});
+
+describe("money precision and privacy", () => {
+  it("sums decimal amounts in minor units without floating-point drift", () => {
+    expect(sumMoney([0.1, 0.2, 19.99])).toBe(20.29);
+    expect(toMinorUnits(19.995)).toBe(2000);
+    expect(fromMinorUnits(2000)).toBe(20);
+  });
+
+  it("masks formatted values while privacy mode is enabled", () => {
+    setPrivacyMode(true);
+    expect(fmt(123456)).toBe("₹••••");
+    expect(fmtCr(12345678)).toBe("₹••••");
   });
 });
 

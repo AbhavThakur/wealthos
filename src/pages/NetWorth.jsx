@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Chart } from "../components/Chart";
-import { fmtCr, fmt, nextId, lumpCorpus } from "../utils/finance";
+import { fmtCr, fmt, nextId } from "../utils/finance";
 import { Camera, Download, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
-import { localYearMonth, parseLocalDate } from "../utils/date";
+import { localYearMonth } from "../utils/date";
+import { calculateNetWorth } from "../utils/netWorth";
 
 const MANUAL_ASSET_TYPES = [
   "cash",
@@ -31,80 +32,6 @@ const NW_BANK_LIST = [
   "Union Bank of India",
 ];
 
-/* ---------- auto-derive from investments & debts sections ---------- */
-function autoAssets(data) {
-  return (data?.investments || []).map((inv) => {
-    const isFDType = inv.type === "FD";
-    const isOneTime = inv.frequency === "onetime";
-    let value;
-    if (isFDType) {
-      const now = new Date();
-      const start = inv.startDate ? parseLocalDate(inv.startDate) || now : now;
-      const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
-      value = lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
-    } else if (isOneTime) {
-      const now = new Date();
-      const start = inv.startDate ? parseLocalDate(inv.startDate) || now : now;
-      const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
-      value = lumpCorpus(
-        (inv.existingCorpus || 0) + (inv.amount || 0),
-        inv.returnPct || 0,
-        elapsed,
-      );
-    } else {
-      // Regular SIP: existingCorpus IS the current portfolio value (from user's investment app)
-      value = inv.existingCorpus || 0;
-    }
-    return {
-      name: inv.name,
-      value: Math.round(value),
-      type: inv.type,
-      auto: true,
-    };
-  });
-}
-
-function autoLiabilities(data) {
-  return (data?.debts || []).map((d) => ({
-    name: d.name,
-    value: d.outstanding || 0,
-    type: "loan",
-    auto: true,
-  }));
-}
-
-function calcNetWorth(data) {
-  const invAssets = autoAssets(data);
-  const debtLiabilities = autoLiabilities(data);
-  const manualAssets = (data?.assets || []).filter((a) => !a.auto);
-  const manualLiabilities = (data?.liabilities || []).filter((l) => !l.auto);
-  const savingsAccounts = data?.savingsAccounts || [];
-  const savingsTotal = savingsAccounts.reduce(
-    (s, a) => s + (a.balance || 0),
-    0,
-  );
-
-  const totalAssets =
-    invAssets.reduce((s, a) => s + a.value, 0) +
-    manualAssets.reduce((s, a) => s + (a.value || 0), 0) +
-    savingsTotal;
-  const totalLiabilities =
-    debtLiabilities.reduce((s, l) => s + l.value, 0) +
-    manualLiabilities.reduce((s, l) => s + (l.value || 0), 0);
-
-  return {
-    assets: totalAssets,
-    liabilities: totalLiabilities,
-    net: totalAssets - totalLiabilities,
-    invAssets,
-    debtLiabilities,
-    manualAssets,
-    manualLiabilities,
-    savingsAccounts,
-    savingsTotal,
-  };
-}
-
 function AssetsEditor({
   person,
   data,
@@ -113,7 +40,7 @@ function AssetsEditor({
   confirm,
   personNames,
 }) {
-  const nw = calcNetWorth(data);
+  const nw = calculateNetWorth(data);
 
   const addAsset = () =>
     updatePerson(person, "assets", [
@@ -647,8 +574,8 @@ export default function NetWorth({
 
   const history = shared?.netWorthHistory || [];
 
-  const aStats = calcNetWorth(p1);
-  const bStats = calcNetWorth(p2);
+  const aStats = calculateNetWorth(p1);
+  const bStats = calculateNetWorth(p2);
   const hNet = aStats.net + bStats.net;
   const hAssets = aStats.assets + bStats.assets;
   const hLiabilities = aStats.liabilities + bStats.liabilities;

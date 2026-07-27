@@ -225,6 +225,9 @@ export default function PinLockScreen({ pin, onUnlock }) {
               onKeyDown={(e) => handleKeyDown(i, e)}
               disabled={isLocked}
               autoComplete="off"
+              aria-label={`PIN digit ${i + 1}`}
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "pin-error" : undefined}
               style={{
                 width: 52,
                 height: 60,
@@ -255,6 +258,9 @@ export default function PinLockScreen({ pin, onUnlock }) {
         {/* Error / lockout */}
         {error && (
           <div
+            id="pin-error"
+            role="alert"
+            aria-live="assertive"
             style={{
               fontSize: 13,
               color: "var(--red)",

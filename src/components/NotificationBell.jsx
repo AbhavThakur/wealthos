@@ -15,6 +15,7 @@ import {
   subscribeNotifications,
   createNotification,
   markAsRead,
+  dismissNotification,
   deleteNotification,
 } from "../utils/notificationCenter";
 import { useAuth } from "../context/AuthContext";
@@ -396,7 +397,8 @@ function NotificationDrawer({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      deleteNotification(n.id);
+                      if (isAdmin) deleteNotification(n.id);
+                      else if (userId) dismissNotification(n.id, userId);
                     }}
                     style={{
                       background: "none",
@@ -430,14 +432,14 @@ export default function NotificationBell({ isAdmin }) {
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-
-  useEffect(() => {
-    const unsub = subscribeNotifications(setNotifications);
-    return unsub;
-  }, []);
-
   const userId = user?.uid || "";
   const userEmail = user?.email || "";
+
+  useEffect(() => {
+    const unsub = subscribeNotifications(setNotifications, userId);
+    return unsub;
+  }, [userId]);
+
   const unreadCount = notifications.filter(
     (n) => !(n.readBy || []).includes(userId),
   ).length;

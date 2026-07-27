@@ -1,8 +1,6 @@
-/* ── WealthOS AI Advisor — Gemini 2.0 Flash (free tier) ───────────────────────
- *  Calls Google's Generative Language API directly.
- *  Requires VITE_GEMINI_KEY in .env.local
- *  Free tier: 15 RPM / 1 M tokens/min — more than enough for personal use.
- */
+import { auth } from "../firebase";
+
+/* ── WealthOS AI Advisor ─────────────────────────────────────────────────── */
 
 const SYSTEM_PROMPT = `You are WealthOS AI, a personal finance and investment advisor for an Indian household.
 You speak in a warm, direct, friendly tone. Keep responses under 200 words unless asked for detail.
@@ -31,120 +29,45 @@ Always give specific, actionable advice based on the user's exact numbers. Never
 Use ₹ for amounts. Use "L" for lakhs and "Cr" for crores when amounts are large.
 If the data is insufficient for a question, say exactly what's missing instead of guessing.`;
 
-const API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+async function askProvider(provider, userMessage, financialContext) {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) return "Sign in again to use the cloud advisor.";
 
-export async function askAdvisor(userMessage, financialContext) {
-  const key = import.meta.env.VITE_GEMINI_KEY;
-  if (!key) {
-    return "⚠️ No API key found. Add VITE_GEMINI_KEY to your .env.local file.\nGet a free key at aistudio.google.com";
-  }
-
-  const contextStr = JSON.stringify(financialContext, null, 2);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const res = await fetch(`${API_URL}?key=${encodeURIComponent(key)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `My financial data:\n${contextStr}\n\nQuestion: ${userMessage}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          maxOutputTokens: 800,
-          temperature: 0.65,
-        },
-      }),
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      if (res.status === 429)
-        return "Rate limited — wait a moment and try again.";
-      if (res.status === 403)
-        return "API key invalid or Gemini API not enabled. Check aistudio.google.com.";
-      const errText = await res.text().then((t) => t.slice(0, 200));
-      return `API error (${res.status}): ${errText}`;
-    }
-
-    const data = await res.json();
-    return (
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Sorry, couldn't get a response. Try again."
-    );
-  } catch (err) {
-    if (err.name === "AbortError") return "⏱️ Request timed out. Try again.";
-    return "❌ " + (err.message || "Something went wrong. Try again.");
-  }
-}
-
-// ── Groq API (free tier — Llama 3.3 70B, 1000 req/day) ───────────────────────
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-
-export async function askGroq(userMessage, financialContext) {
-  const key = import.meta.env.VITE_GROQ_KEY;
-  if (!key) {
-    return "⚠️ No Groq key found. Add VITE_GROQ_KEY to .env.local\nGet a free key at console.groq.com (1000 requests/day free)";
-  }
-
-  const contextStr = JSON.stringify(financialContext, null, 2);
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-
-    const res = await fetch(GROQ_URL, {
+    const response = await fetch("/api/ai-advisor", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${token}`,
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `My financial data:\n${contextStr}\n\nQuestion: ${userMessage}`,
-          },
-        ],
-        max_tokens: 800,
-        temperature: 0.65,
-      }),
+      body: JSON.stringify({ provider, userMessage, financialContext }),
     });
-    clearTimeout(timeout);
 
-    if (!res.ok) {
-      if (res.status === 429)
-        return "⏱️ Rate limited — you've hit today's free limit (1000 req/day). Try again tomorrow or switch mode.";
-      if (res.status === 401)
-        return "❌ Groq API key invalid. Check console.groq.com for a valid key.";
-      const errText = await res.text().then((t) => t.slice(0, 200));
-      return `API error (${res.status}): ${errText}`;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 429) return "Rate limited. Try again shortly.";
+      return data.error || `AI service error (${response.status}).`;
     }
-
-    const data = await res.json();
-    return (
-      data.choices?.[0]?.message?.content ||
-      "Sorry, couldn't get a response. Try again."
-    );
-  } catch (err) {
-    if (err.name === "AbortError") return "⏱️ Request timed out. Try again.";
-    return "❌ " + (err.message || "Something went wrong. Try again.");
+    return data.reply || "Sorry, couldn't get a response. Try again.";
+  } catch (error) {
+    if (error.name === "AbortError") return "Request timed out. Try again.";
+    return error.message || "Something went wrong. Try again.";
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+export async function askAdvisor(userMessage, financialContext) {
+  return askProvider("gemini", userMessage, financialContext);
+}
+
+// ── Groq API (free tier — Llama 3.3 70B, 1000 req/day) ───────────────────────
+export async function askGroq(userMessage, financialContext) {
+  return askProvider("groq", userMessage, financialContext);
 }
 
 // ── Generate a copy-paste report for use in ChatGPT / Claude web ─────────────

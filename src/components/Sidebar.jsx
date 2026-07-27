@@ -21,6 +21,8 @@ import {
   ArrowLeftRight,
   Plus,
   BarChart2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ADMIN_EMAILS from "../utils/adminEmails";
@@ -150,6 +152,8 @@ function SidebarContent({
   personNames,
   isAdmin,
   isSolo,
+  privacyMode,
+  onTogglePrivacy,
 }) {
   const allProfiles = PROFILES.map((p) => ({
     ...p,
@@ -265,6 +269,17 @@ function SidebarContent({
 
       <div className="nav-footer">
         <button
+          className="nav-item"
+          aria-pressed={privacyMode}
+          onClick={onTogglePrivacy}
+          title={
+            privacyMode ? "Show financial amounts" : "Hide financial amounts"
+          }
+        >
+          {privacyMode ? <Eye size={14} /> : <EyeOff size={14} />}
+          {privacyMode ? "Show amounts" : "Hide amounts"}
+        </button>
+        <button
           onClick={() => {
             setPage("settings");
             onClose?.();
@@ -295,6 +310,8 @@ export default function Sidebar({
   personNames,
   isSolo,
   onQuickAdd,
+  privacyMode,
+  onTogglePrivacy,
 }) {
   const { logout, user } = useAuth();
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
@@ -557,6 +574,14 @@ export default function Sidebar({
             </div>
             <button
               className="mobile-more-signout"
+              aria-pressed={privacyMode}
+              onClick={onTogglePrivacy}
+            >
+              {privacyMode ? <Eye size={16} /> : <EyeOff size={16} />}
+              {privacyMode ? "Show amounts" : "Hide amounts"}
+            </button>
+            <button
+              className="mobile-more-signout"
               onClick={() => {
                 setMoreOpen(false);
                 logout();
@@ -581,6 +606,8 @@ export default function Sidebar({
           personNames={personNames}
           isAdmin={isAdmin}
           isSolo={isSolo}
+          privacyMode={privacyMode}
+          onTogglePrivacy={onTogglePrivacy}
         />
       </aside>
     </>

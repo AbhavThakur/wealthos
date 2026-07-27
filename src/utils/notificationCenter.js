@@ -3,6 +3,7 @@ import {
   addDoc,
   query,
   orderBy,
+  limit,
   onSnapshot,
   doc,
   updateDoc,
@@ -14,17 +15,17 @@ import { db } from "../firebase";
 
 const NOTIFICATIONS_COL = "notifications";
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const deletingExpiredNotifications = new Set();
 
 /**
  * Subscribe to the global notifications collection (real-time).
- * Filters out notifications older than 30 days and auto-deletes them.
+ * Filters out notifications older than 30 days and those dismissed by the user.
  * Returns an unsubscribe function.
  */
-export function subscribeNotifications(callback) {
+export function subscribeNotifications(callback, userId) {
   const q = query(
     collection(db, NOTIFICATIONS_COL),
     orderBy("createdAt", "desc"),
+    limit(50),
   );
   return onSnapshot(q, (snapshot) => {
     const now = Date.now();
@@ -33,15 +34,10 @@ export function subscribeNotifications(callback) {
       const data = { id: d.id, ...d.data() };
       const created = data.createdAt?.toDate?.();
       if (created && now - created.getTime() > THIRTY_DAYS_MS) {
-        // Auto-delete expired notification (fire-and-forget)
-        if (!deletingExpiredNotifications.has(d.id)) {
-          deletingExpiredNotifications.add(d.id);
-          deleteDoc(doc(db, NOTIFICATIONS_COL, d.id))
-            .catch(() => {})
-            .finally(() => {
-              deletingExpiredNotifications.delete(d.id);
-            });
-        }
+        continue;
+      }
+      if (userId && (data.dismissedBy || []).includes(userId)) {
+        continue;
       } else {
         active.push(data);
       }
@@ -67,6 +63,7 @@ export async function createNotification({
     createdAt: serverTimestamp(),
     createdByEmail,
     readBy: [],
+    dismissedBy: [],
   });
 }
 
@@ -76,6 +73,11 @@ export async function createNotification({
 export async function markAsRead(notificationId, userId) {
   const ref = doc(db, NOTIFICATIONS_COL, notificationId);
   return updateDoc(ref, { readBy: arrayUnion(userId) });
+}
+
+export async function dismissNotification(notificationId, userId) {
+  const ref = doc(db, NOTIFICATIONS_COL, notificationId);
+  return updateDoc(ref, { dismissedBy: arrayUnion(userId) });
 }
 
 /**

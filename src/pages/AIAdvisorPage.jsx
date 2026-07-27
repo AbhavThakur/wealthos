@@ -42,18 +42,13 @@ export default function AIAdvisorPage({ p1, p2, shared, profile }) {
   const inputRef = useRef(null);
   const modeMenuRef = useRef(null);
 
-  const hasGroqKey = !!import.meta.env.VITE_GROQ_KEY;
   const MODES = [
     { id: "smart", label: "⚡ Local", desc: "Instant, no API" },
-    ...(hasGroqKey
-      ? [
-          {
-            id: "groq",
-            label: "🦙 Groq",
-            desc: "Llama 3.3 70B · 1000/day free",
-          },
-        ]
-      : []),
+    {
+      id: "groq",
+      label: "🦙 Groq",
+      desc: "Llama 3.3 70B · cloud",
+    },
   ];
   const currentMode = MODES.find((m) => m.id === mode) || MODES[0];
 
