@@ -102,7 +102,19 @@ export async function fetchAllMFNavs(investments) {
  */
 export async function findMFByISIN(isin) {
   const clean = (isin || "").trim().toUpperCase();
-  if (clean.length < 8) return null;
+  if (!/^[A-Z]{3}[A-Z0-9]{9}$/.test(clean)) return null;
+
+  try {
+    const official = await fetch(
+      `/api/mf-lookup?isin=${encodeURIComponent(clean)}`,
+    );
+    if (official.ok) {
+      const json = await official.json();
+      if (json.ok && json.data) return json.data;
+    }
+  } catch {
+    // Local Vite dev does not run Vercel functions; use MFAPI fallback below.
+  }
 
   const cached = getCache("isin_index");
   let list = cached?.data;
@@ -134,8 +146,46 @@ export async function findMFByISIN(isin) {
   return {
     schemeCode: match.schemeCode,
     schemeName: match.schemeName,
+    isin: clean,
     matchedOn: match.isinGrowth === clean ? "growth" : "reinvestment",
   };
+}
+
+/**
+ * Resolve authoritative scheme metadata after a user selects a search result.
+ * Folio numbers are AMC-specific account identifiers and cannot identify a
+ * scheme; ISIN + scheme code identify the exact Direct/Regular and Growth/IDCW
+ * plan across brokers.
+ */
+export async function fetchMFSchemeDetails(schemeCode) {
+  if (!schemeCode) return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const res = await fetch(
+      `https://api.mfapi.in/mf/${encodeURIComponent(schemeCode)}/latest`,
+      { signal: controller.signal },
+    );
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json.status !== "SUCCESS" || !json.meta) return null;
+    const meta = json.meta;
+    const name = meta.scheme_name || "";
+    return {
+      schemeCode: String(meta.scheme_code || schemeCode),
+      schemeName: name,
+      fundHouse: meta.fund_house || "",
+      category: meta.scheme_category || "",
+      isin: meta.isin_growth || meta.isin_div_reinvestment || "",
+      plan: /\bdirect\b/i.test(name) ? "Direct" : "Regular",
+      option: /\b(idcw|dividend)\b/i.test(name) ? "IDCW" : "Growth",
+      nav: Number(json.data?.[0]?.nav) || 0,
+      navDate: json.data?.[0]?.date || "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ── Gold Spot Price (INR per gram) ──────────────────────────────────────────

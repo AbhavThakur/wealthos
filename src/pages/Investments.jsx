@@ -26,7 +26,11 @@ import {
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
-import { fetchAllMFNavs, findMFByISIN } from "../utils/marketData";
+import {
+  fetchAllMFNavs,
+  fetchMFSchemeDetails,
+  findMFByISIN,
+} from "../utils/marketData";
 import {
   appsForType,
   BANK_LIST,
@@ -3493,16 +3497,21 @@ export default function Investments({
     units: "",
     capCategory: "",
     schemeCode: "",
+    isin: "",
+    folioNumber: "",
+    fundHouse: "",
+    schemeCategory: "",
+    plan: "",
+    option: "",
     notes: "",
   });
   const [mfResults, setMfResults] = useState([]);
   const [mfSearching, setMfSearching] = useState(false);
   const [showMfDropdown, setShowMfDropdown] = useState(false);
-  const [navFetching, setNavFetching] = useState(false);
-  const [navFetchMsg, setNavFetchMsg] = useState("");
   const [isinInput, setIsinInput] = useState("");
   const [isinLoading, setIsinLoading] = useState(false);
   const [isinMsg, setIsinMsg] = useState("");
+  const [mfVerifying, setMfVerifying] = useState(false);
   const [batchSyncing, setBatchSyncing] = useState(false);
   const [batchSyncResult, setBatchSyncResult] = useState(null);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -3513,7 +3522,8 @@ export default function Investments({
     if (
       newInv.type !== "Mutual Fund" ||
       !newInv.name ||
-      newInv.name.length < 2
+      newInv.name.length < 2 ||
+      newInv.schemeCode
     ) {
       return;
     }
@@ -3525,7 +3535,44 @@ export default function Investments({
       if (results.length > 0) setShowMfDropdown(true);
     }, 400);
     return () => clearTimeout(timer);
-  }, [newInv.name, newInv.type]);
+  }, [newInv.name, newInv.type, newInv.schemeCode]);
+
+  const selectMutualFund = async (candidate) => {
+    setMfVerifying(true);
+    setIsinMsg("");
+    const details = await fetchMFSchemeDetails(candidate.schemeCode);
+    setMfVerifying(false);
+    const verified = details || {
+      schemeCode: String(candidate.schemeCode),
+      schemeName: candidate.schemeName,
+      isin: candidate.isin || "",
+      plan: /\bdirect\b/i.test(candidate.schemeName) ? "Direct" : "Regular",
+      option: /\b(idcw|dividend)\b/i.test(candidate.schemeName)
+        ? "IDCW"
+        : "Growth",
+    };
+    setNewInv((current) => ({
+      ...current,
+      name: verified.schemeName,
+      schemeCode: String(verified.schemeCode),
+      isin: verified.isin || candidate.isin || "",
+      fundHouse: verified.fundHouse || "",
+      schemeCategory: verified.category || "",
+      plan: verified.plan || "",
+      option: verified.option || "",
+      latestNav: verified.nav || 0,
+      navDate: verified.navDate || "",
+    }));
+    if (verified.isin || candidate.isin) {
+      setIsinInput(verified.isin || candidate.isin);
+    }
+    setShowMfDropdown(false);
+    setIsinMsg(
+      details
+        ? `\u2713 Exact scheme verified by ISIN ${details.isin}`
+        : "\u2713 Exact scheme selected by scheme code; ISIN verification is temporarily unavailable",
+    );
+  };
 
   // Auto-sync MF NAVs on page load (once per session, silently in background)
   useEffect(() => {
@@ -3582,6 +3629,10 @@ export default function Investments({
 
   const add = () => {
     if (!newInv.name || !newInv.amount) return;
+    if (newInv.type === "Mutual Fund" && !newInv.schemeCode) {
+      setIsinMsg("Select and verify the exact fund before adding it");
+      return;
+    }
     const updated = [
       ...investments,
       {
@@ -3613,10 +3664,15 @@ export default function Investments({
       units: "",
       capCategory: "",
       schemeCode: "",
+      isin: "",
+      folioNumber: "",
+      fundHouse: "",
+      schemeCategory: "",
+      plan: "",
+      option: "",
       notes: "",
     });
     setMfResults([]);
-    setNavFetchMsg("");
     setIsinInput("");
     setIsinMsg("");
     setShowAdd(false);
@@ -5065,7 +5121,17 @@ export default function Investments({
                 value={newInv.name}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setNewInv({ ...newInv, name: v, schemeCode: "" });
+                  setNewInv({
+                    ...newInv,
+                    name: v,
+                    schemeCode: "",
+                    isin: "",
+                    fundHouse: "",
+                    schemeCategory: "",
+                    plan: "",
+                    option: "",
+                  });
+                  setIsinMsg("");
                   if (v.length < 2) {
                     setMfResults([]);
                     setShowMfDropdown(false);
@@ -5112,14 +5178,7 @@ export default function Investments({
                         fontSize: 13,
                         borderBottom: "1px solid var(--border)",
                       }}
-                      onMouseDown={() => {
-                        setNewInv({
-                          ...newInv,
-                          name: r.schemeName,
-                          schemeCode: String(r.schemeCode),
-                        });
-                        setShowMfDropdown(false);
-                      }}
+                      onMouseDown={() => selectMutualFund(r)}
                     >
                       <div style={{ fontWeight: 500, lineHeight: 1.3 }}>
                         {r.schemeName}
@@ -5163,26 +5222,22 @@ export default function Investments({
                       whiteSpace: "nowrap",
                       opacity: isinLoading ? 0.6 : 1,
                     }}
-                    disabled={isinLoading || !isinInput}
+                    disabled={isinLoading || mfVerifying || !isinInput}
                     onClick={async () => {
                       setIsinLoading(true);
                       setIsinMsg("");
                       const result = await findMFByISIN(isinInput);
                       setIsinLoading(false);
                       if (result) {
-                        setNewInv((n) => ({
-                          ...n,
-                          name: result.schemeName,
-                          schemeCode: String(result.schemeCode),
-                        }));
-                        setShowMfDropdown(false);
-                        setIsinMsg(`\u2713 Matched: ${result.schemeName}`);
+                        await selectMutualFund(result);
                       } else {
                         setIsinMsg("No fund found for that ISIN");
                       }
                     }}
                   >
-                    {isinLoading ? "Looking up\u2026" : "Find fund"}
+                    {isinLoading || mfVerifying
+                      ? "Verifying\u2026"
+                      : "Find exact fund"}
                   </button>
                 </div>
                 {isinMsg && (
@@ -5634,27 +5689,58 @@ export default function Investments({
               </div>
             )}
             {newInv.type === "Mutual Fund" && (
-              <div>
-                <label
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    display: "block",
-                    marginBottom: 4,
-                  }}
-                >
-                  Units held
-                </label>
-                <input
-                  type="number"
-                  step="0.001"
-                  placeholder="From your app — enables auto valuation"
-                  value={newInv.units}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, units: e.target.value })
-                  }
-                />
-              </div>
+              <>
+                <div>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Folio number
+                  </label>
+                  <input
+                    inputMode="numeric"
+                    placeholder="From Coin / Groww / CAS"
+                    value={newInv.folioNumber}
+                    onChange={(e) =>
+                      setNewInv({ ...newInv, folioNumber: e.target.value })
+                    }
+                  />
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 3,
+                    }}
+                  >
+                    Tracks your holding account; it does not identify the fund.
+                  </div>
+                </div>
+                <div>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Units held
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    placeholder="From your app — enables auto valuation"
+                    value={newInv.units}
+                    onChange={(e) =>
+                      setNewInv({ ...newInv, units: e.target.value })
+                    }
+                  />
+                </div>
+              </>
             )}
           </div>
           {newInv.amount && (
@@ -5747,51 +5833,33 @@ export default function Investments({
           {newInv.type === "Mutual Fund" && newInv.schemeCode && (
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
+                display: "grid",
+                gap: 6,
                 marginBottom: 10,
-                flexWrap: "wrap",
+                padding: "10px 12px",
+                border: "1px solid var(--green)",
+                borderRadius: "var(--radius-sm)",
+                background: "color-mix(in srgb, var(--green) 8%, transparent)",
               }}
             >
+              <strong style={{ fontSize: 13 }}>
+                {newInv.isin
+                  ? "Exact scheme verified by ISIN"
+                  : "Exact scheme selected"}
+              </strong>
+              <span style={{ fontSize: 12 }}>{newInv.name}</span>
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Scheme #{newInv.schemeCode}
+                {[newInv.fundHouse, newInv.plan, newInv.option]
+                  .filter(Boolean)
+                  .join(" \u00b7 ")}
               </span>
-              <button
-                className="btn-ghost"
-                style={{
-                  fontSize: 12,
-                  padding: "3px 10px",
-                  opacity: navFetching ? 0.6 : 1,
-                }}
-                disabled={navFetching}
-                onClick={async () => {
-                  setNavFetching(true);
-                  setNavFetchMsg("");
-                  const result = await mfLatestNAV(newInv.schemeCode);
-                  setNavFetching(false);
-                  if (result) {
-                    setNewInv((n) => ({ ...n, existingCorpus: result.nav }));
-                    setNavFetchMsg(
-                      `\u2713 NAV \u20b9${result.nav} as of ${result.date}`,
-                    );
-                  } else {
-                    setNavFetchMsg("Scheme not found");
-                  }
-                }}
-              >
-                {navFetching ? "Fetching\u2026" : "\u21bb Fetch live NAV"}
-              </button>
-              {navFetchMsg && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: navFetchMsg.startsWith("\u2713")
-                      ? "var(--green)"
-                      : "var(--red, #e55)",
-                  }}
-                >
-                  {navFetchMsg}
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                ISIN {newInv.isin || "unavailable"} \u00b7 Scheme #
+                {newInv.schemeCode}
+              </span>
+              {newInv.latestNav > 0 && (
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Latest NAV \u20b9{newInv.latestNav} as of {newInv.navDate}
                 </span>
               )}
             </div>
