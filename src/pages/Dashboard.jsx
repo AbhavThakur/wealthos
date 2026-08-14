@@ -156,7 +156,7 @@ const DASH_TABS = [
 ];
 const DASH_TAB_LS = "dashboard-active-tab";
 
-function personStats(data, ym) {
+export function personStats(data, ym) {
   if (!data)
     return {
       income: 0,
@@ -1594,7 +1594,45 @@ export default function Dashboard({
             </div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Monthly Cash Flow</div>
+            <div className="metric-label">
+              Monthly Cash Flow
+              <InfoModal title={`Monthly Cash Flow — ${selLabel}`}>
+                <p>Cash Flow = Income − Expenses − Investments − Debts/EMIs</p>
+                {_infoRow("Income", hIncome, "var(--green)")}
+                {_infoRow("Expenses", hExpenses, "var(--red)")}
+                {_infoRow("Investments", hInvest, "var(--gold)")}
+                {_infoRow("Debts / EMIs", hDebts)}
+                <div
+                  style={{
+                    borderTop: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 6,
+                    paddingTop: 6,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontWeight: 700,
+                    color: monthlyCashFlow >= 0 ? "var(--green)" : "var(--red)",
+                  }}
+                >
+                  <span>{monthlyCashFlow >= 0 ? "Surplus" : "Shortfall"}</span>
+                  <span>
+                    {monthlyCashFlow >= 0 ? "+" : "−"}
+                    {fmt(Math.abs(monthlyCashFlow))}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11,
+                    color: "#777",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Expenses use each expense's standing budget amount, not just
+                  logged transactions. Change the month using the picker at the
+                  top of the page — this defaults to the current month.
+                </div>
+              </InfoModal>
+            </div>
             <div
               className="metric-value"
               style={{
@@ -1605,7 +1643,7 @@ export default function Dashboard({
               {fmt(Math.abs(monthlyCashFlow))}
             </div>
             <div className="metric-sub">
-              After expenses, investments and EMIs
+              After expenses, investments and EMIs · {selLabel}
             </div>
           </div>
           <div className="metric-card">

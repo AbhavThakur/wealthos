@@ -25,7 +25,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db, IS_DEV } from "../firebase";
-import { lumpCorpus, freqToMonthly } from "../utils/finance";
+import { lumpCorpus, fdCorpus, freqToMonthly } from "../utils/finance";
 import { parseLocalDate } from "../utils/date";
 import { useAuth } from "./AuthContext";
 
@@ -786,8 +786,9 @@ export function DataProvider({ children }) {
           const start = inv.startDate
             ? parseLocalDate(inv.startDate) || now
             : now;
-          const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
-          return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
+          // Quarterly compounding, 365-day year (Indian bank standard) — matches fdCorpus
+          const elapsed = Math.max(0, (now - start) / (365 * 86400000));
+          return s + fdCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
         }
         if (inv.frequency === "onetime") {
           const start = inv.startDate
@@ -911,8 +912,9 @@ export function DataProvider({ children }) {
             const start = inv.startDate
               ? parseLocalDate(inv.startDate) || now
               : now;
-            const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
-            return s + lumpCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
+            // Quarterly compounding, 365-day year (Indian bank standard) — matches fdCorpus
+            const elapsed = Math.max(0, (now - start) / (365 * 86400000));
+            return s + fdCorpus(inv.amount || 0, inv.returnPct || 0, elapsed);
           }
           if (inv.frequency === "onetime") {
             const start = inv.startDate

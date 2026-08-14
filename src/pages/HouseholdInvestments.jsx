@@ -6,9 +6,18 @@ import {
   INVESTMENT_TYPES,
   totalCorpus,
   lumpCorpus,
+  fdCorpus,
   freqToMonthly,
 } from "../utils/finance";
-import { Plus, Trash2, Edit3, Check, X, Download, FileSpreadsheet } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Edit3,
+  Check,
+  X,
+  Download,
+  FileSpreadsheet,
+} from "lucide-react";
 import { useData } from "../context/DataContext";
 import { useViewMode } from "../context/ViewModeContext";
 import CASImportModal from "../components/CASImportModal";
@@ -160,7 +169,9 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
   } else if (sortBy === "sip_desc") {
     filtered = [...filtered].sort((a, b) => (b.amount || 0) - (a.amount || 0));
   } else if (sortBy === "return_desc") {
-    filtered = [...filtered].sort((a, b) => (b.returnPct || 0) - (a.returnPct || 0));
+    filtered = [...filtered].sort(
+      (a, b) => (b.returnPct || 0) - (a.returnPct || 0),
+    );
   } else if (sortBy === "maturity_asc") {
     filtered = [...filtered].sort((a, b) => {
       const dA = a.endDate || a.maturityDate || "9999-99-99";
@@ -168,7 +179,9 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
       return dA.localeCompare(dB);
     });
   } else if (sortBy === "name_asc") {
-    filtered = [...filtered].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    filtered = [...filtered].sort((a, b) =>
+      (a.name || "").localeCompare(b.name || ""),
+    );
   }
 
   const calcM = (list) => {
@@ -178,8 +191,8 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     );
     const current = list.reduce((s, x) => {
       if (isFD(x.type)) {
-        const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
-        return s + lumpCorpus(x.amount || 0, x.returnPct || 0, yrs);
+        const yrs = x.startDate ? elapsedYears(x.startDate, 365) : 0;
+        return s + fdCorpus(x.amount || 0, x.returnPct || 0, yrs);
       }
       if (x.frequency === "onetime") {
         const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
@@ -195,8 +208,10 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     const yr20 = list.reduce((s, x) => {
       if (isFD(x.type)) {
         const tenureYrs =
-          x.startDate && x.endDate ? rangeYears(x.startDate, x.endDate) : 5;
-        return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
+          x.startDate && x.endDate
+            ? rangeYears(x.startDate, x.endDate, 365)
+            : 5;
+        return s + fdCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
       }
       if (x.frequency === "onetime") {
         return (
@@ -221,12 +236,12 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     const { cost, currentForGain } = list.reduce(
       (acc, x) => {
         if (isFD(x.type)) {
-          const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
+          const yrs = x.startDate ? elapsedYears(x.startDate, 365) : 0;
           return {
             cost: acc.cost + (x.amount || 0),
             currentForGain:
               acc.currentForGain +
-              lumpCorpus(x.amount || 0, x.returnPct || 0, yrs),
+              fdCorpus(x.amount || 0, x.returnPct || 0, yrs),
           };
         }
         if (x.frequency === "onetime") {
@@ -322,7 +337,8 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
               fontSize: 13,
             }}
           >
-            Combined view across both profiles with automated portfolio ingestion.
+            Combined view across both profiles with automated portfolio
+            ingestion.
           </div>
         </div>
 
@@ -346,7 +362,12 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
           <button
             onClick={() => setShowAdd(true)}
             className="btn-primary"
-            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+            }}
           >
             <Plus size={14} /> Add Investment
           </button>
@@ -860,7 +881,13 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
           }}
         >
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                fontWeight: 600,
+              }}
+            >
               Owner:
             </span>
             {[
@@ -902,7 +929,13 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
 
           {/* Sort selector */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                fontWeight: 600,
+              }}
+            >
               Sort:
             </span>
             <select
@@ -942,7 +975,13 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                 borderTop: "1px dashed rgba(255,255,255,0.06)",
               }}
             >
-              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  fontWeight: 600,
+                }}
+              >
                 Asset:
               </span>
               {types.map((t) => {
@@ -1349,55 +1388,78 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                   }
                   {...(f.key === "bankName" ? { list: "bank-list-hh" } : {})}
                 />
-                {f.key === "name" && newInv.name && newInv.name.trim().length >= 2 && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      background: "rgba(201, 168, 76, 0.08)",
-                      border: "1px solid rgba(201, 168, 76, 0.25)",
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      fontSize: 11,
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--gold, #c9a84c)" }}>
-                      <span>✨</span>
-                      <span>
-                        <strong>Auto-detected:</strong> {addFormInferred.categoryLabel} · Benchmark: <strong>{addFormInferred.recommendedReturnPct}% CAGR</strong>
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewInv((c) => ({
-                          ...c,
-                          capCategory: addFormInferred.capCategory || c.capCategory,
-                          returnPct: String(addFormInferred.recommendedReturnPct),
-                        }));
-                      }}
+                {f.key === "name" &&
+                  newInv.name &&
+                  newInv.name.trim().length >= 2 && (
+                    <div
                       style={{
-                        background: "var(--gold, #c9a84c)",
-                        color: "#0c0c0f",
-                        border: "none",
-                        borderRadius: 4,
-                        padding: "3px 8px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        fontSize: 10,
-                        whiteSpace: "nowrap",
+                        marginTop: 6,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        background: "rgba(201, 168, 76, 0.08)",
+                        border: "1px solid rgba(201, 168, 76, 0.25)",
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        fontSize: 11,
+                        gap: 8,
                       }}
                     >
-                      Auto-Fill
-                    </button>
-                  </div>
-                )}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          color: "var(--gold, #c9a84c)",
+                        }}
+                      >
+                        <span>✨</span>
+                        <span>
+                          <strong>Auto-detected:</strong>{" "}
+                          {addFormInferred.categoryLabel} · Benchmark:{" "}
+                          <strong>
+                            {addFormInferred.recommendedReturnPct}% CAGR
+                          </strong>
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewInv((c) => ({
+                            ...c,
+                            capCategory:
+                              addFormInferred.capCategory || c.capCategory,
+                            returnPct: String(
+                              addFormInferred.recommendedReturnPct,
+                            ),
+                          }));
+                        }}
+                        style={{
+                          background: "var(--gold, #c9a84c)",
+                          color: "#0c0c0f",
+                          border: "none",
+                          borderRadius: 4,
+                          padding: "3px 8px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontSize: 10,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Auto-Fill
+                      </button>
+                    </div>
+                  )}
                 {f.key === "returnPct" && (
                   <>
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 5,
+                        flexWrap: "wrap",
+                        marginTop: 6,
+                      }}
+                    >
                       {[
                         { label: "🛡️ Safe 7%", val: "7.0" },
                         { label: "⚖️ Moderate 12%", val: "12.0" },
@@ -1410,7 +1472,9 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                         <button
                           key={chip.label}
                           type="button"
-                          onClick={() => setNewInv((c) => ({ ...c, returnPct: chip.val }))}
+                          onClick={() =>
+                            setNewInv((c) => ({ ...c, returnPct: chip.val }))
+                          }
                           style={{
                             fontSize: 10,
                             padding: "2px 8px",
@@ -1768,10 +1832,10 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                       Maturity:{" "}
                       <strong style={{ color: "var(--green)" }}>
                         {fmtCr(
-                          lumpCorpus(
+                          fdCorpus(
                             Number(newInv.amount),
                             Number(newInv.returnPct),
-                            rangeYears(newInv.startDate, newInv.endDate),
+                            rangeYears(newInv.startDate, newInv.endDate, 365),
                           ),
                         )}
                       </strong>

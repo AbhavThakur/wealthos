@@ -391,8 +391,16 @@ export const SIPCard = memo(function SIPCard({
 
   const cardTheme = ASSET_TYPE_THEMES[inv.type] || ASSET_TYPE_THEMES.Other;
   const riskBadge = getRiskBadge(inv.type);
-  const cardGuidance = getReturnGuidance(inv.returnPct, inv.capCategory, inv.type);
-  const maturityDateStr = isFDInv ? inv.endDate : isPPF ? inv.maturityDate : null;
+  const cardGuidance = getReturnGuidance(
+    inv.returnPct,
+    inv.capCategory,
+    inv.type,
+  );
+  const maturityDateStr = isFDInv
+    ? inv.endDate
+    : isPPF
+      ? inv.maturityDate
+      : null;
   const maturityBadge = maturityDateStr
     ? getMaturityBadge(maturityDateStr, isFDInv ? "FD Matures" : "PPF Matures")
     : null;
@@ -1277,7 +1285,10 @@ export const SIPCard = memo(function SIPCard({
           {/* Key numbers */}
           <div className="grid-4" style={{ marginBottom: "1rem" }}>
             <div className="metric-card">
-              <div className="metric-label" style={{ display: "flex", alignItems: "center" }}>
+              <div
+                className="metric-label"
+                style={{ display: "flex", alignItems: "center" }}
+              >
                 {isFDInv
                   ? "Principal"
                   : isOneTimeInv
@@ -1349,7 +1360,10 @@ export const SIPCard = memo(function SIPCard({
                 gridColumn: isPPF ? "span 2" : isFDInv ? undefined : "span 1",
               }}
             >
-              <div className="metric-label" style={{ display: "flex", alignItems: "center" }}>
+              <div
+                className="metric-label"
+                style={{ display: "flex", alignItems: "center" }}
+              >
                 {isFDInv
                   ? "Maturity value"
                   : isPPF
@@ -2249,7 +2263,12 @@ const typeColor = (t) => TYPE_COLORS[t] || "#888888";
 // Each entry: { value (stored), label (shown), buckets (cap weights), isActive }
 // eslint-disable-next-line react-refresh/only-export-components
 export const MF_CAP_CATEGORIES = [
-  { value: "", label: "✨ Auto-detect from Fund Name", buckets: null, isActive: null },
+  {
+    value: "",
+    label: "✨ Auto-detect from Fund Name",
+    buckets: null,
+    isActive: null,
+  },
   {
     value: "large_index",
     label: "Large Cap — Index",
@@ -3558,7 +3577,12 @@ export default function Investments({
   personColor,
   updatePerson,
 }) {
-  const { p1, p2, personNames, updatePerson: updateDataPerson } = useData() || {};
+  const {
+    p1,
+    p2,
+    personNames,
+    updatePerson: updateDataPerson,
+  } = useData() || {};
   const investments = useMemo(
     () => data?.investments || [],
     [data?.investments],
@@ -3585,7 +3609,8 @@ export default function Investments({
   const hasMaturityItems = useMemo(
     () =>
       investments.some(
-        (x) => x.endDate || x.maturityDate || x.type === "FD" || x.type === "PPF",
+        (x) =>
+          x.endDate || x.maturityDate || x.type === "FD" || x.type === "PPF",
       ),
     [investments],
   );
@@ -3627,7 +3652,9 @@ export default function Investments({
         return dA.localeCompare(dB);
       });
     } else if (sortBy === "name_asc") {
-      list = [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      list = [...list].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || ""),
+      );
     }
 
     return list;
@@ -3723,7 +3750,7 @@ export default function Investments({
     const inferred = inferMFCapCategoryAndReturn(
       verified.schemeName,
       verified.category || "",
-      "Mutual Fund"
+      "Mutual Fund",
     );
 
     setNewInv((current) => ({
@@ -3866,8 +3893,8 @@ export default function Investments({
   );
   const totalCurrent = filteredInvestments.reduce((s, x) => {
     if (isFD(x.type)) {
-      const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
-      return s + lumpCorpus(x.amount || 0, x.returnPct || 0, yrs);
+      const yrs = x.startDate ? elapsedYears(x.startDate, 365) : 0;
+      return s + fdCorpus(x.amount || 0, x.returnPct || 0, yrs);
     }
     if (x.frequency === "onetime") {
       const _yrs = x.startDate ? elapsedYears(x.startDate) : 0;
@@ -3884,9 +3911,9 @@ export default function Investments({
     if (isFD(x.type)) {
       const tenureYrs =
         x.startDate && x.endDate
-          ? (rangeYears(x.startDate, x.endDate) ?? 0)
+          ? (rangeYears(x.startDate, x.endDate, 365) ?? 0)
           : 5;
-      return s + lumpCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
+      return s + fdCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
     }
     if (x.frequency === "onetime") {
       return (
@@ -3913,12 +3940,12 @@ export default function Investments({
   const { totalCostBasis, totalCurrentForGain } = filteredInvestments.reduce(
     (acc, x) => {
       if (isFD(x.type)) {
-        const yrs = x.startDate ? elapsedYears(x.startDate) : 0;
+        const yrs = x.startDate ? elapsedYears(x.startDate, 365) : 0;
         return {
           totalCostBasis: acc.totalCostBasis + (x.amount || 0),
           totalCurrentForGain:
             acc.totalCurrentForGain +
-            lumpCorpus(x.amount || 0, x.returnPct || 0, yrs),
+            fdCorpus(x.amount || 0, x.returnPct || 0, yrs),
         };
       }
       if (x.frequency === "onetime") {
@@ -3976,7 +4003,8 @@ export default function Investments({
               marginBottom: "0.25rem",
             }}
           >
-            <span style={{ color: personColor }}>{personName}'s</span> Investments
+            <span style={{ color: personColor }}>{personName}'s</span>{" "}
+            Investments
           </div>
           <div
             style={{
@@ -3984,11 +4012,19 @@ export default function Investments({
               fontSize: 13,
             }}
           >
-            Invested auto-updates from SIP start date. Current value auto-syncs from live MF NAVs.
+            Invested auto-updates from SIP start date. Current value auto-syncs
+            from live MF NAVs.
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             onClick={() => setCasModalOpen(true)}
             className="btn-secondary"
@@ -4005,60 +4041,67 @@ export default function Investments({
           >
             <FileSpreadsheet size={14} /> 📥 Import CAS / eCAS
           </button>
-          {investments.some((x) => x.type === "Mutual Fund" && x.schemeCode) && (
+          {investments.some(
+            (x) => x.type === "Mutual Fund" && x.schemeCode,
+          ) && (
             <button
               className="btn-ghost"
               disabled={batchSyncing}
               onClick={async () => {
-              setBatchSyncing(true);
-              setBatchSyncResult(null);
-              try {
-                const navs = await fetchAllMFNavs(investments);
-                let updated = 0;
-                const newList = investments.map((inv) => {
-                  if (inv.type !== "Mutual Fund" || !inv.schemeCode) return inv;
-                  const nd = navs.get(inv.schemeCode);
-                  if (!nd) return inv;
-                  updated++;
-                  const patch = { ...inv, latestNav: nd.nav, navDate: nd.date };
-                  const units =
-                    Number(inv.units) > 0
-                      ? inv.units
-                      : Number(inv.existingCorpus) > 0 &&
-                          Number(inv.latestNav) > 0
-                        ? Math.round(
-                            (inv.existingCorpus / inv.latestNav) * 10000,
-                          ) / 10000
-                        : 0;
-                  if (units > 0) {
-                    patch.units = units;
-                    patch.existingCorpus =
-                      Math.round(units * nd.nav * 100) / 100;
-                  }
-                  return patch;
-                });
-                if (updated > 0) updatePerson("investments", newList);
-                setBatchSyncResult(
-                  `${updated} NAV${updated !== 1 ? "s" : ""} synced`,
-                );
-              } catch (err) {
-                setBatchSyncResult("❌ Sync failed — check your connection");
-                console.error("[NAV Sync]", err);
-              } finally {
-                setBatchSyncing(false);
-                setTimeout(() => setBatchSyncResult(null), 4000);
-              }
-            }}
-            style={{
-              whiteSpace: "nowrap",
-              opacity: batchSyncing ? 0.5 : 1,
-              fontSize: 12,
-              padding: "4px 10px",
-            }}
-          >
-            {batchSyncing ? "Syncing…" : "⟳ Sync All MF NAVs"}
-          </button>
-        )}
+                setBatchSyncing(true);
+                setBatchSyncResult(null);
+                try {
+                  const navs = await fetchAllMFNavs(investments);
+                  let updated = 0;
+                  const newList = investments.map((inv) => {
+                    if (inv.type !== "Mutual Fund" || !inv.schemeCode)
+                      return inv;
+                    const nd = navs.get(inv.schemeCode);
+                    if (!nd) return inv;
+                    updated++;
+                    const patch = {
+                      ...inv,
+                      latestNav: nd.nav,
+                      navDate: nd.date,
+                    };
+                    const units =
+                      Number(inv.units) > 0
+                        ? inv.units
+                        : Number(inv.existingCorpus) > 0 &&
+                            Number(inv.latestNav) > 0
+                          ? Math.round(
+                              (inv.existingCorpus / inv.latestNav) * 10000,
+                            ) / 10000
+                          : 0;
+                    if (units > 0) {
+                      patch.units = units;
+                      patch.existingCorpus =
+                        Math.round(units * nd.nav * 100) / 100;
+                    }
+                    return patch;
+                  });
+                  if (updated > 0) updatePerson("investments", newList);
+                  setBatchSyncResult(
+                    `${updated} NAV${updated !== 1 ? "s" : ""} synced`,
+                  );
+                } catch (err) {
+                  setBatchSyncResult("❌ Sync failed — check your connection");
+                  console.error("[NAV Sync]", err);
+                } finally {
+                  setBatchSyncing(false);
+                  setTimeout(() => setBatchSyncResult(null), 4000);
+                }
+              }}
+              style={{
+                whiteSpace: "nowrap",
+                opacity: batchSyncing ? 0.5 : 1,
+                fontSize: 12,
+                padding: "4px 10px",
+              }}
+            >
+              {batchSyncing ? "Syncing…" : "⟳ Sync All MF NAVs"}
+            </button>
+          )}
         </div>
       </div>
       {batchSyncResult && (
@@ -5129,7 +5172,10 @@ export default function Investments({
           >
             {investments.length > 0 &&
               (() => {
-                const types = ["All", ...new Set(investments.map((x) => x.type))];
+                const types = [
+                  "All",
+                  ...new Set(investments.map((x) => x.type)),
+                ];
                 return (
                   <div
                     style={{
@@ -5154,7 +5200,8 @@ export default function Investments({
                         t === "All"
                           ? investments.length
                           : investments.filter((x) => x.type === t).length;
-                      const theme = ASSET_TYPE_THEMES[t] || ASSET_TYPE_THEMES.Other;
+                      const theme =
+                        ASSET_TYPE_THEMES[t] || ASSET_TYPE_THEMES.Other;
                       const isSelected = filterType === t;
                       return (
                         <button
@@ -5207,7 +5254,13 @@ export default function Investments({
 
             {/* Sort Dropdown */}
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  fontWeight: 600,
+                }}
+              >
                 Sort:
               </span>
               <select
@@ -5227,14 +5280,18 @@ export default function Investments({
                 <option value="val_desc">Highest Portfolio Value (₹)</option>
                 <option value="sip_desc">Highest Monthly SIP (₹)</option>
                 <option value="return_desc">Highest Expected Return (%)</option>
-                <option value="maturity_asc">Maturity: Soonest First (⏳)</option>
+                <option value="maturity_asc">
+                  Maturity: Soonest First (⏳)
+                </option>
                 <option value="name_asc">Name (A → Z)</option>
               </select>
             </div>
           </div>
 
           {/* Row 2: Maturity filters for FDs / PPFs */}
-          {(hasMaturityItems || filterType === "FD" || filterType === "PPF") && (
+          {(hasMaturityItems ||
+            filterType === "FD" ||
+            filterType === "PPF") && (
             <div
               style={{
                 display: "flex",
@@ -5576,10 +5633,21 @@ export default function Investments({
                     gap: 8,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--gold, #c9a84c)" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      color: "var(--gold, #c9a84c)",
+                    }}
+                  >
                     <span>✨</span>
                     <span>
-                      <strong>Auto-detected:</strong> {addFormInferred.categoryLabel} · Benchmark: <strong>{addFormInferred.recommendedReturnPct}% CAGR</strong>
+                      <strong>Auto-detected:</strong>{" "}
+                      {addFormInferred.categoryLabel} · Benchmark:{" "}
+                      <strong>
+                        {addFormInferred.recommendedReturnPct}% CAGR
+                      </strong>
                     </span>
                   </div>
                   <button
@@ -5587,7 +5655,8 @@ export default function Investments({
                     onClick={() => {
                       setNewInv((c) => ({
                         ...c,
-                        capCategory: addFormInferred.capCategory || c.capCategory,
+                        capCategory:
+                          addFormInferred.capCategory || c.capCategory,
                         returnPct: String(addFormInferred.recommendedReturnPct),
                       }));
                     }}
@@ -5856,7 +5925,14 @@ export default function Investments({
                   setNewInv({ ...newInv, returnPct: e.target.value })
                 }
               />
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 5,
+                  flexWrap: "wrap",
+                  marginTop: 6,
+                }}
+              >
                 {[
                   { label: "🛡️ Safe 7%", val: "7.0" },
                   { label: "⚖️ Moderate 12%", val: "12.0" },
@@ -5869,7 +5945,9 @@ export default function Investments({
                   <button
                     key={chip.label}
                     type="button"
-                    onClick={() => setNewInv((c) => ({ ...c, returnPct: chip.val }))}
+                    onClick={() =>
+                      setNewInv((c) => ({ ...c, returnPct: chip.val }))
+                    }
                     style={{
                       fontSize: 10,
                       padding: "2px 8px",
@@ -6234,12 +6312,16 @@ export default function Investments({
                       Maturity:{" "}
                       <strong style={{ color: "var(--green)" }}>
                         {fmtCr(
-                          lumpCorpus(
+                          fdCorpus(
                             Number(newInv.amount),
                             Number(newInv.returnPct),
                             Math.max(
                               0,
-                              rangeYears(newInv.startDate, newInv.endDate) || 0,
+                              rangeYears(
+                                newInv.startDate,
+                                newInv.endDate,
+                                365,
+                              ) || 0,
                             ),
                           ),
                         )}

@@ -55,18 +55,47 @@ export const onetimeMatchesMonth = (exp, ym) => {
   return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
 };
 
+/**
+ * Resolve a recurring expense's amount as it was in a past month, by walking
+ * `amountHistory` (sorted by date). Falls back to the original pre-history
+ * amount when no change applies yet, or `exp.amount` when there's no history.
+ */
+const effectiveAmount = (exp, ym) => {
+  const hist = exp.amountHistory;
+  if (!hist || hist.length === 0) return exp.amount || 0;
+  const sorted = [...hist].sort((a, b) => a.date.localeCompare(b.date));
+  let amount = sorted[0].from;
+  for (const h of sorted) {
+    const hYm = (h.date || "").slice(0, 7);
+    if (hYm <= ym) {
+      amount = h.to;
+    } else {
+      break;
+    }
+  }
+  return amount;
+};
+
 export const expAmount = (e, ym) => {
   if (!e) return 0;
   if (e.expenseType === "onetime") {
     if (!ym) return onetimeEffective(e);
     const entrySum = (e.entries || []).reduce(
       (s, entry) =>
-        (entry.date || "").slice(0, 7) === ym ? s + (Number(entry.amount) || 0) : s,
+        (entry.date || "").slice(0, 7) === ym
+          ? s + (Number(entry.amount) || 0)
+          : s,
       0,
     );
     if (entrySum > 0) return entrySum;
     if ((e.date || "").slice(0, 7) === ym) return Number(e.amount) || 0;
     return 0;
+  }
+  // For past months, resolve the historical amount when it has since changed.
+  if (ym && e.amountHistory && e.amountHistory.length > 0) {
+    const d = new Date();
+    const curYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (ym < curYm) return effectiveAmount(e, ym);
   }
   return Number(e.amount) || 0;
 };

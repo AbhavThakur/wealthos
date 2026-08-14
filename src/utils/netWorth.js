@@ -1,4 +1,4 @@
-import { lumpCorpus, sumMoney } from "./finance";
+import { lumpCorpus, fdCorpus, sumMoney } from "./finance";
 import { parseLocalDate } from "./date";
 
 export function deriveInvestmentAssets(data, now = new Date()) {
@@ -11,8 +11,9 @@ export function deriveInvestmentAssets(data, now = new Date()) {
       const start = investment.startDate
         ? parseLocalDate(investment.startDate) || now
         : now;
-      const elapsed = Math.max(0, (now - start) / (365.25 * 86400000));
-      value = lumpCorpus(
+      // Quarterly compounding, 365-day year (Indian bank standard) — matches fdCorpus
+      const elapsed = Math.max(0, (now - start) / (365 * 86400000));
+      value = fdCorpus(
         investment.amount || 0,
         investment.returnPct || 0,
         elapsed,

@@ -1,5 +1,6 @@
 import {
   lumpCorpus,
+  fdCorpus,
   freqToMonthly,
   totalCorpus,
   weekdayCountInMonth,
@@ -254,12 +255,17 @@ export function getInvested(inv) {
 // Shared row-computation helper (used in both single-person and household views)
 export function computeInvRow(x) {
   const parsedStart = x.startDate ? parseLocalDate(x.startDate) : null;
+  // FD: quarterly compounding, 365-day year (Indian bank standard) — matches fdCorpus
+  const fdElapsedYrs =
+    isFD(x.type) && parsedStart
+      ? Math.max(0, (new Date() - parsedStart) / (365 * 24 * 3600 * 1000))
+      : 0;
   const elapsedYrs =
-    (isFD(x.type) || x.frequency === "onetime") && parsedStart
+    x.frequency === "onetime" && parsedStart
       ? Math.max(0, (new Date() - parsedStart) / (365.25 * 24 * 3600 * 1000))
       : 0;
   const cur = isFD(x.type)
-    ? lumpCorpus(x.amount || 0, x.returnPct || 0, elapsedYrs)
+    ? fdCorpus(x.amount || 0, x.returnPct || 0, fdElapsedYrs)
     : x.frequency === "onetime"
       ? x.existingCorpus > 0
         ? x.existingCorpus

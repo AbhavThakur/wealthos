@@ -3,7 +3,7 @@ import {
   fmt,
   nextId,
   EXPENSE_CATEGORIES,
-  lumpCorpus,
+  fdCorpus,
   weekdayCountInMonth,
 } from "../utils/finance";
 import {
@@ -778,16 +778,12 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
                         0,
                         ((parseLocalDate(inv.endDate)?.getTime() || 0) -
                           (parseLocalDate(inv.startDate)?.getTime() || 0)) /
-                          (365.25 * 24 * 3600 * 1000),
+                          (365 * 24 * 3600 * 1000),
                       )
                     : null;
                   const matVal =
                     tenureYrs !== null
-                      ? lumpCorpus(
-                          inv.amount || 0,
-                          inv.returnPct || 0,
-                          tenureYrs,
-                        )
+                      ? fdCorpus(inv.amount || 0, inv.returnPct || 0, tenureYrs)
                       : null;
                   return (
                     <div
@@ -2083,16 +2079,12 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
                         0,
                         ((parseLocalDate(inv.endDate)?.getTime() || 0) -
                           (parseLocalDate(inv.startDate)?.getTime() || 0)) /
-                          (365.25 * 24 * 3600 * 1000),
+                          (365 * 24 * 3600 * 1000),
                       )
                     : null;
                   const matVal =
                     tenureYrs !== null
-                      ? lumpCorpus(
-                          inv.amount || 0,
-                          inv.returnPct || 0,
-                          tenureYrs,
-                        )
+                      ? fdCorpus(inv.amount || 0, inv.returnPct || 0, tenureYrs)
                       : null;
                   return (
                     <div

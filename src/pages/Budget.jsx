@@ -8,6 +8,8 @@ import {
   fmt,
   nextId,
   onetimeEffective,
+  expAmount,
+  onetimeMatchesMonth,
   EXPENSE_CATEGORIES,
   EXPENSE_SUBCATEGORIES,
   EXPENSE_TYPES,
@@ -221,7 +223,9 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
         title="Split with partner"
         style={{
           background: isSplit ? "var(--gold-dim)" : "rgba(255,255,255,0.04)",
-          border: isSplit ? "1px solid var(--gold-border)" : "1px solid var(--border)",
+          border: isSplit
+            ? "1px solid var(--gold-border)"
+            : "1px solid var(--border)",
           color: isSplit ? "var(--gold)" : "var(--text-muted)",
           borderRadius: 6,
           padding: "3px 7px",
@@ -234,7 +238,11 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
         }}
       >
         <ArrowRightLeft size={11} />
-        {isSplit ? (mode === "custom" ? `${exp.p1SharePct || 50}%` : mode) : "Split"}
+        {isSplit
+          ? mode === "custom"
+            ? `${exp.p1SharePct || 50}%`
+            : mode
+          : "Split"}
       </button>
 
       {open && (
@@ -258,9 +266,26 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
               width: 220,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600 }}>Split Expense</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, cursor: "pointer" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600 }}>
+                Split Expense
+              </span>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 11,
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={isSplit}
@@ -280,12 +305,21 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
             {isSplit && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                  <label
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      display: "block",
+                      marginBottom: 2,
+                    }}
+                  >
                     Split Ratio
                   </label>
                   <select
                     value={mode}
-                    onChange={(e) => onUpdate({ ...exp, splitMode: e.target.value })}
+                    onChange={(e) =>
+                      onUpdate({ ...exp, splitMode: e.target.value })
+                    }
                     style={{ width: "100%", fontSize: 11, padding: "4px 6px" }}
                   >
                     <option value="50:50">50:50 (Equal)</option>
@@ -299,7 +333,14 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
 
                 {mode === "custom" && (
                   <div>
-                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                    <label
+                      style={{
+                        fontSize: 10,
+                        color: "var(--text-muted)",
+                        display: "block",
+                        marginBottom: 2,
+                      }}
+                    >
                       {personNames?.p1 || "P1"} Share: {exp.p1SharePct ?? 50}%
                     </label>
                     <input
@@ -321,12 +362,21 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
                 )}
 
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                  <label
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      display: "block",
+                      marginBottom: 2,
+                    }}
+                  >
                     Paid By
                   </label>
                   <select
                     value={exp.paidBy || "p1"}
-                    onChange={(e) => onUpdate({ ...exp, paidBy: e.target.value })}
+                    onChange={(e) =>
+                      onUpdate({ ...exp, paidBy: e.target.value })
+                    }
                     style={{ width: "100%", fontSize: 11, padding: "4px 6px" }}
                   >
                     <option value="p1">{personNames?.p1 || "Person 1"}</option>
@@ -347,58 +397,9 @@ function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
 const tripTotal = (trip) =>
   (trip.items || []).reduce((s, i) => s + (i.amount || 0), 0);
 
-// Helper: resolve the effective monthly amount for a given year-month (YYYY-MM).
-// Walks amountHistory (sorted by date) to find the last change whose effective
-// date is ≤ the last day of `ym`. Falls back to exp.amount when no history.
-const effectiveAmount = (exp, ym) => {
-  const hist = exp.amountHistory;
-  if (!hist || hist.length === 0) return exp.amount || 0;
-  // Build a chronological timeline: original amount → each change
-  // The first entry's `from` is the original amount before any change.
-  const sorted = [...hist].sort((a, b) => a.date.localeCompare(b.date));
-  const originalAmt = sorted[0].from;
-  // Walk forward: find the last entry whose effective date's YYYY-MM is ≤ ym
-  let amount = originalAmt;
-  for (const h of sorted) {
-    const hYm = (h.date || "").slice(0, 7);
-    if (hYm <= ym) {
-      amount = h.to;
-    } else {
-      break;
-    }
-  }
-  return amount;
-};
-
-// Helper: get the amount for a non-onetime expense, optionally date-aware.
-// For past months (before current calendar month), resolves from amountHistory.
-// For current month and future, always uses exp.amount (the live value).
-const _curYmStatic = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-})();
-const expAmount = (e, ym) => {
-  if (e.expenseType === "onetime") {
-    // When a month is specified, only count entries from that month.
-    // This prevents double-counting when a card has entries spanning multiple months.
-    if (!ym) return onetimeEffective(e);
-    return (e.entries || []).reduce(
-      (s, entry) =>
-        (entry.date || "").slice(0, 7) === ym ? s + (entry.amount || 0) : s,
-      0,
-    );
-  }
-  if (ym && ym < _curYmStatic && e.amountHistory && e.amountHistory.length > 0)
-    return effectiveAmount(e, ym);
-  return e.amount || 0;
-};
-
-const onetimeMatchesMonth = (exp, ym) => {
-  const primaryYm = (exp.date || "").slice(0, 7);
-  if (primaryYm === ym) return true;
-  const entries = exp.entries || [];
-  return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
-};
+// expAmount/onetimeMatchesMonth are imported from ../utils/finance (canonical,
+// amountHistory-aware) — do not reimplement locally, see settlement.js which
+// relies on the same canonical helper for past-month split calculations.
 
 // Helper: aggregate ALL expenses by category (works across monthly, trip items, onetime)
 const buildExpByCategory = (expenses, ym) =>
@@ -3652,7 +3653,9 @@ export default function Budget({
                         onUpdate={(updated) =>
                           updatePerson(
                             "expenses",
-                            expenses.map((x) => (x.id === exp.id ? updated : x)),
+                            expenses.map((x) =>
+                              x.id === exp.id ? updated : x,
+                            ),
                           )
                         }
                         isSolo={isSolo}
@@ -6447,7 +6450,10 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
                   fontSize: 11,
                   color: "var(--text-muted)",
                   marginTop: 3,
-                  marginBottom: (!isSimple || showGranular) && subEntries.length > 0 ? 6 : 0,
+                  marginBottom:
+                    (!isSimple || showGranular) && subEntries.length > 0
+                      ? 6
+                      : 0,
                 }}
               >
                 {(av || 0) > 0 && (
