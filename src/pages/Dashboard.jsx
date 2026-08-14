@@ -1342,6 +1342,11 @@ export default function Dashboard({
 
   const aStanding = personStats(p1, selectedMonth); // standing config (for corpus20)
   const bStanding = personStats(p2, selectedMonth);
+  // Previous month standing config — investments must use standing (SIP plan),
+  // not raw transaction logs, since many SIPs are auto-debited and never
+  // manually logged (same reasoning as aStanding/bStanding above).
+  const aPrevStanding = personStats(p1, prevYm);
+  const bPrevStanding = personStats(p2, prevYm);
 
   // Always use standing expenses (matches Budget page totals) so per-person
   // cards are consistent with the Budget page. Income uses actual entries
@@ -3601,11 +3606,14 @@ export default function Dashboard({
       ? (() => {
           const curIncome = aTxStats.income + bTxStats.income;
           const curExp = aTxStats.expenses + bTxStats.expenses;
-          const curInvest = aTxStats.investments + bTxStats.investments;
+          // Standing SIP plan (not raw transaction logs) — matches the
+          // Investing/month hero card and People-tab cards exactly.
+          const curInvest = a.investments + b.investments;
           const curSavings = curIncome - curExp - curInvest;
           const prvIncome = aPrevTx.income + bPrevTx.income;
           const prvExp = aPrevTx.expenses + bPrevTx.expenses;
-          const prvInvest = aPrevTx.investments + bPrevTx.investments;
+          const prvInvest =
+            aPrevStanding.investments + bPrevStanding.investments;
           const prvSavings = prvIncome - prvExp - prvInvest;
           const [pY, pM] = prevYm.split("-");
           const prevLabel = `${MONTH_NAMES[parseInt(pM, 10) - 1]} ${pY}`;
