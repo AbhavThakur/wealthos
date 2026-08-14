@@ -7,16 +7,18 @@ import {
   fmtCr,
   totalCorpus,
   lumpCorpus,
+  fdCorpus,
   CAT_COLORS,
   freqToMonthly,
   fireRatio,
   retirementCorpus,
   requiredSIP,
   assetAllocation,
-  currentCorpus,
   unused80C,
   insuranceAdequacy,
   onetimeEffective,
+  onetimeMatchesMonth,
+  expAmount,
   estimateExpenseRatio,
 } from "../utils/finance";
 import {
@@ -42,6 +44,7 @@ import SankeyDiagram from "../components/SankeyDiagram";
 import MoneyDateModal from "../components/MoneyDateModal";
 import { localYearMonth, parseLocalDate } from "../utils/date";
 import { useViewMode } from "../context/ViewModeContext";
+import { isFD, computeInvRow, rangeYears } from "./investmentHelpers";
 
 function Sparkline({ data, color, width = 64, height = 24 }) {
   if (!data || data.length < 2) return null;
@@ -161,6 +164,7 @@ export function personStats(data, ym) {
     return {
       income: 0,
       expenses: 0,
+      subsTotal: 0,
       investments: 0,
       debts: 0,
       savings: 0,
@@ -188,8 +192,8 @@ export function personStats(data, ym) {
     : new Date().getMonth();
   const expenses = (data.expenses || []).reduce((s, x) => {
     if (x.expenseType === "onetime") {
-      // Only include if date falls in selected month — use entry sum
-      return s + (x.date?.slice(0, 7) === ym ? onetimeEffective(x) : 0);
+      // Match on entry dates too, and only count entries logged in this month
+      return s + (onetimeMatchesMonth(x, ym) ? expAmount(x, ym) : 0);
     }
     if (x.expenseType === "trip") {
       // Only include if startDate falls in selected month
@@ -204,7 +208,8 @@ export function personStats(data, ym) {
       const months = x.recurrenceMonths || [0, 3, 6, 9];
       if (!months.includes(curMonth)) return s;
     }
-    return s + x.amount;
+    // expAmount resolves amountHistory, so past months use the amount in effect then
+    return s + expAmount(x, ym);
   }, 0);
   // Include active subscriptions as monthly expenses
   const subsTotal =
@@ -215,7 +220,7 @@ export function personStats(data, ym) {
     ) ?? 0;
   const investments =
     data.investments?.reduce(
-      (s, x) => s + freqToMonthly(x.amount, x.frequency),
+      (s, x) => s + (isFD(x.type) ? 0 : freqToMonthly(x.amount, x.frequency)),
       0,
     ) ?? 0;
   const debts = data.debts?.reduce((s, x) => s + x.emi, 0) ?? 0;
@@ -226,10 +231,22 @@ export function personStats(data, ym) {
       : 0;
   const corpus20 =
     data.investments?.reduce((s, x) => {
+      // Mirrors Investments.jsx total20 — FDs mature at their own tenure, not 20yr
+      if (isFD(x.type)) {
+        const tenureYrs =
+          x.startDate && x.endDate
+            ? (rangeYears(x.startDate, x.endDate, 365) ?? 0)
+            : 5;
+        return s + fdCorpus(x.amount || 0, x.returnPct || 0, tenureYrs);
+      }
       if (x.frequency === "onetime") {
         return (
           s +
-          lumpCorpus((x.existingCorpus || 0) + (x.amount || 0), x.returnPct, 20)
+          lumpCorpus(
+            x.existingCorpus > 0 ? x.existingCorpus : x.amount || 0,
+            x.returnPct,
+            20,
+          )
         );
       }
       return (
@@ -245,6 +262,7 @@ export function personStats(data, ym) {
   return {
     income,
     expenses: expenses + subsTotal,
+    subsTotal,
     investments,
     debts,
     savings,
@@ -321,6 +339,11 @@ function buildCashFlow(
   p1Incs,
   p2Incs,
   sharedTrips,
+  standingYm,
+  p1Invs,
+  p2Invs,
+  p1Debts,
+  p2Debts,
 ) {
   const map = {}; // key: "2026-03" → { income, expenses, investments, emis, detail }
 
@@ -342,6 +365,9 @@ function buildCashFlow(
   const txnCoveredThisMonth = new Set();
   // Track which expenses have been covered by dated entries (keyed by id)
   const entryCoveredThisMonth = new Set();
+  // Track logged investment / EMI transactions (keyed by "name::ym")
+  const invCovered = new Set();
+  const emiCovered = new Set();
 
   const process = (txns) => {
     for (const t of txns || []) {
@@ -361,8 +387,10 @@ function buildCashFlow(
         });
       } else if (t.type === "investment") {
         map[ym].investments += amt;
+        invCovered.add(`${t.desc}::${ym}`);
       } else if (t.category === "EMI") {
         map[ym].emis += amt;
+        emiCovered.add(`${t.desc}::${ym}`);
         map[ym].detail.push({
           expName: t.desc,
           category: "EMI",
@@ -445,9 +473,10 @@ function buildCashFlow(
   processIncs(p1Incs);
   processIncs(p2Incs);
 
-  // ── Include standing amounts for current month (fallback) ──────────────
-  const curYm = localYearMonth();
-  const curMonth = new Date().getMonth();
+  // ── Include standing amounts for the fallback month ────────────────────
+  // Follows the dashboard's selected month so this card agrees with the hero cards.
+  const curYm = standingYm || localYearMonth();
+  const curMonth = parseInt(curYm.split("-")[1], 10) - 1;
 
   // Standing income — for incomes without variable income entries this month
   const incomeCovered = new Set();
@@ -485,17 +514,39 @@ function buildCashFlow(
     // Skip if already covered by entries (by id) or transactions (by name)
     if (entryCoveredThisMonth.has(`${exp.id}::${curYm}`)) continue;
     if (txnCoveredThisMonth.has(`${exp.name}::${curYm}`)) continue;
-    if (exp.amount > 0) {
+    const standingAmt = expAmount(exp, curYm);
+    if (standingAmt > 0) {
       ensure(curYm);
-      map[curYm].expenses += exp.amount;
+      map[curYm].expenses += standingAmt;
       map[curYm].detail.push({
         expName: exp.name,
         category: exp.category || "Others",
         subCategory: exp.subCategory || "",
         date: `${curYm}-01`,
-        amount: exp.amount,
+        amount: standingAmt,
         note: "budgeted",
       });
+    }
+  }
+
+  // Standing SIPs — for investments without a logged transaction this month
+  for (const inv of [...(p1Invs || []), ...(p2Invs || [])]) {
+    if (isFD(inv.type) || inv.frequency === "onetime") continue;
+    if (invCovered.has(`${inv.name}::${curYm}`)) continue;
+    const standingAmt = freqToMonthly(inv.amount, inv.frequency);
+    if (standingAmt > 0) {
+      ensure(curYm);
+      map[curYm].investments += standingAmt;
+    }
+  }
+
+  // Standing EMIs — for debts without a logged transaction this month
+  for (const debt of [...(p1Debts || []), ...(p2Debts || [])]) {
+    if (emiCovered.has(`${debt.name}::${curYm}`)) continue;
+    const standingAmt = debt.emi || 0;
+    if (standingAmt > 0) {
+      ensure(curYm);
+      map[curYm].emis += standingAmt;
     }
   }
 
@@ -585,6 +636,11 @@ function MonthlyCashFlow({ p1, p2, shared, selectedMonth }) {
     p1?.incomes,
     p2?.incomes,
     shared?.trips,
+    selectedMonth,
+    p1?.investments,
+    p2?.investments,
+    p1?.debts,
+    p2?.debts,
   );
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [expandedCats, setExpandedCats] = useState({});
@@ -1324,7 +1380,7 @@ export default function Dashboard({
       (e) =>
         (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
     )
-    .reduce((s, x) => s + x.amount, 0);
+    .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const p1Trips = (p1?.expenses || [])
     .filter(
       (e) =>
@@ -1335,16 +1391,15 @@ export default function Dashboard({
   const p1Onetime = (p1?.expenses || [])
     .filter(
       (e) =>
-        e.expenseType === "onetime" &&
-        (e.date || "").slice(0, 7) === selectedMonth,
+        e.expenseType === "onetime" && onetimeMatchesMonth(e, selectedMonth),
     )
-    .reduce((s, x) => s + onetimeEffective(x), 0);
+    .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const p2Monthly = (p2?.expenses || [])
     .filter(
       (e) =>
         (!e.expenseType || e.expenseType === "monthly") && isMonthlyActive(e),
     )
-    .reduce((s, x) => s + x.amount, 0);
+    .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const p2Trips = (p2?.expenses || [])
     .filter(
       (e) =>
@@ -1355,10 +1410,9 @@ export default function Dashboard({
   const p2Onetime = (p2?.expenses || [])
     .filter(
       (e) =>
-        e.expenseType === "onetime" &&
-        (e.date || "").slice(0, 7) === selectedMonth,
+        e.expenseType === "onetime" && onetimeMatchesMonth(e, selectedMonth),
     )
-    .reduce((s, x) => s + onetimeEffective(x), 0);
+    .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const aHasData =
     aTxStats.income > 0 || aTxStats.expenses > 0 || aTxStats.investments > 0;
   const bHasData =
@@ -1559,7 +1613,15 @@ export default function Dashboard({
     const bSt = personStats(p2, m);
     const inc = (aS.income || aSt.income) + (bS.income || bSt.income);
     const exp = (aS.expenses || aSt.expenses) + (bS.expenses || bSt.expenses);
-    return { income: inc, expenses: exp, savings: inc - exp };
+    const inv = aSt.investments + bSt.investments;
+    const debts = aSt.debts + bSt.debts;
+    return {
+      income: inc,
+      expenses: exp,
+      savings: inc - exp,
+      investments: inv,
+      debts,
+    };
   });
 
   // ── Section renderers ───────────────────────────────────────────────────
@@ -1726,9 +1788,9 @@ export default function Dashboard({
                         fontStyle: "italic",
                       }}
                     >
-                      Currently showing actual entries logged for the selected
-                      month. Standing budget total:{" "}
-                      {fmt(aStanding.income + bStanding.income)}.
+                      Income shown is your standing budget. Logged transactions
+                      exist for this month but only variable income entries
+                      (bonus, freelance) are added on top.
                     </div>
                   )}
                 </InfoModal>
@@ -1771,6 +1833,8 @@ export default function Dashboard({
                   {_infoRow("  Monthly", p1Monthly)}
                   {p1Trips > 0 && _infoRow("  Trips (personal)", p1Trips)}
                   {p1Onetime > 0 && _infoRow("  One-time", p1Onetime)}
+                  {aStanding.subsTotal > 0 &&
+                    _infoRow("  Subscriptions", aStanding.subsTotal)}
                   <div
                     style={{
                       fontWeight: 600,
@@ -1784,6 +1848,8 @@ export default function Dashboard({
                   {_infoRow("  Monthly", p2Monthly)}
                   {p2Trips > 0 && _infoRow("  Trips (personal)", p2Trips)}
                   {p2Onetime > 0 && _infoRow("  One-time", p2Onetime)}
+                  {bStanding.subsTotal > 0 &&
+                    _infoRow("  Subscriptions", bStanding.subsTotal)}
                   {sharedTripTotal > 0 && (
                     <>
                       <div
@@ -2132,7 +2198,7 @@ export default function Dashboard({
       ];
       const allDebts = [...(p1?.debts || []), ...(p2?.debts || [])];
       const allIns = [...(p1?.insurances || []), ...(p2?.insurances || [])];
-      const corpus = currentCorpus(allInvestments);
+      const corpus = investedAssets;
       const allInv80c = allInvestments;
       const unused80c = unused80C(allInv80c, allIns);
       const retireAge = shared?.profile?.retireAge || 60;
@@ -2329,10 +2395,13 @@ export default function Dashboard({
         ...(p1?.insurances || []),
         ...(p2?.insurances || []),
       ];
-      const corpus = currentCorpus(allInvestments);
+      const corpus = investedAssets;
       const annualExpenses = hExpenses * 12;
       const fire = fireRatio(corpus, annualExpenses);
-      const allocation = assetAllocation(allInvestments);
+      const allocation = assetAllocation(
+        allInvestments,
+        (inv) => computeInvRow(inv).cur,
+      );
 
       // Retirement: assume retire at 60, current age ~30 (configurable)
       const retireAge = shared?.profile?.retireAge || 60;
@@ -3071,8 +3140,7 @@ export default function Dashboard({
                 >
                   {mfInvs.map((inv) => {
                     const nd = navMap.get(inv.schemeCode);
-                    const invested = Number(inv.totalInvested) || 0;
-                    const current = inv.existingCorpus || 0;
+                    const { cur: current, invested } = computeInvRow(inv);
                     const gain = current - invested;
                     const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
                     return (
@@ -3667,10 +3735,10 @@ export default function Dashboard({
           <div className="card-title">🏠 Shared Goals</div>
           {sharedGoals.map((g) => {
             const totalSaved = (g.p1Saved || 0) + (g.p2Saved || 0);
-            const pct = Math.min(
-              100,
-              Math.round((totalSaved / g.target) * 100),
-            );
+            const pct =
+              g.target > 0
+                ? Math.min(100, Math.round((totalSaved / g.target) * 100))
+                : 0;
             return (
               <div key={g.id} style={{ marginBottom: "1.25rem" }}>
                 <div
@@ -3807,7 +3875,7 @@ export default function Dashboard({
 
     cashforecast: (() => {
       const hInc = aStanding.income + bStanding.income;
-      const hExp = aStanding.expenses + bStanding.expenses;
+      const hExp = aStanding.expenses + bStanding.expenses + sharedTripTotal;
       const hInv = aStanding.investments + bStanding.investments;
       const hDebt = aStanding.debts + bStanding.debts;
       const monthlyNet = hInc - hExp - hInv - hDebt;
@@ -3916,9 +3984,18 @@ export default function Dashboard({
         const m = sparkMonths[i];
         const [y, mo] = m.split("-");
         const label = `${MONTH_NAMES[parseInt(mo, 10) - 1]} ${y.slice(2)}`;
+        // Same formula as hSavingsRate / personStats, so the chart agrees with the cards
         const rate =
           d.income > 0
-            ? Math.round((Math.max(0, d.income - d.expenses) / d.income) * 100)
+            ? Math.round(
+                ((d.investments +
+                  Math.max(
+                    0,
+                    d.income - d.expenses - d.investments - d.debts,
+                  )) /
+                  d.income) *
+                  100,
+              )
             : 0;
         return { label, rate };
       });
@@ -3994,7 +4071,7 @@ export default function Dashboard({
     ];
     const fundsWithFees = allInvestments
       .map((inv) => {
-        const corp = inv.existingCorpus || 0;
+        const corp = computeInvRow(inv).cur;
         const er = estimateExpenseRatio(inv);
         return {
           ...inv,
@@ -4178,11 +4255,7 @@ export default function Dashboard({
 
   // ── Retirement Scenario Planner ───────────────────────────────────────────
   const retirementScenarioSection = (() => {
-    const allInvestments = [
-      ...(p1?.investments || []),
-      ...(p2?.investments || []),
-    ];
-    const corp = currentCorpus(allInvestments);
+    const corp = investedAssets;
     const retireAge = shared?.profile?.retireAge || 60;
     const currentAge = shared?.profile?.currentAge || 30;
     const yearsToRetire = Math.max(1, retireAge - currentAge);

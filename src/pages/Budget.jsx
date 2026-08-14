@@ -36,6 +36,7 @@ import {
   Edit3,
   ClipboardPaste,
   GitMerge,
+  TrendingUp,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
@@ -43,6 +44,7 @@ import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
 import SettlementCard from "../components/SettlementCard";
 import SmartStatementModal from "../components/SmartStatementModal";
+import CategoryTrendModal from "../components/CategoryTrendModal";
 import { useData } from "../context/DataContext";
 import { useViewMode } from "../context/ViewModeContext";
 import { yearMonthToDate } from "../utils/date";
@@ -439,6 +441,67 @@ const buildExpGrouped = (expenses, ym) =>
     }
     return acc;
   }, {});
+
+// Helper: does a recurring/monthly expense apply to month `ym`? (yearly/quarterly gating)
+const monthlyExpenseActiveInMonth = (e, ym) => {
+  const monthNum = parseInt(ym.split("-")[1], 10) - 1;
+  if (e.recurrence === "yearly" && (e.recurrenceMonth ?? 0) !== monthNum)
+    return false;
+  if (e.recurrence === "quarterly") {
+    const months = e.recurrenceMonths || [0, 3, 6, 9];
+    if (!months.includes(monthNum)) return false;
+  }
+  return true;
+};
+
+// Helper: filter a raw expenses[] list down to what's "active" in month `ym`
+// (mirrors the recurrence/onetime/trip gating used throughout this file, but
+// parameterized by month instead of relying on component state).
+const expensesActiveInMonth = (expenses, ym) =>
+  (expenses || []).filter((x) => {
+    if (x.expenseType === "onetime") return onetimeMatchesMonth(x, ym);
+    if (x.expenseType === "trip")
+      return (x.startDate || x.date || "").slice(0, 7) === ym;
+    return monthlyExpenseActiveInMonth(x, ym);
+  });
+
+// Helper: trailing N "yyyy-MM" strings ending at (and including) `endYm`
+const trailingMonths = (endYm, n) => {
+  const [y, m] = endYm.split("-").map(Number);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+};
+
+// Helper: build [{ ym, label, amount }] trend data for one category across a
+// trailing window of months, given lists of per-person expenses + shared trips.
+const buildCategoryTrend = (
+  category,
+  endYm,
+  range,
+  expenseLists,
+  sharedTrips,
+) =>
+  trailingMonths(endYm, range).map((ym) => {
+    const monthExp = [
+      ...expenseLists.flatMap((list) => expensesActiveInMonth(list, ym)),
+      ...(sharedTrips || [])
+        .filter((t) => (t.startDate || "").slice(0, 7) === ym)
+        .map((t) => ({ ...t, expenseType: "trip" })),
+    ];
+    const label = yearMonthToDate(ym).toLocaleString("en-IN", {
+      month: "short",
+      year: "2-digit",
+    });
+    return {
+      ym,
+      label,
+      amount: buildExpByCategory(monthExp, ym)[category] || 0,
+    };
+  });
 
 const BUDGET_RULES = {
   "50/30/20": {
@@ -978,6 +1041,8 @@ export default function Budget({
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
+  const [trendCategory, setTrendCategory] = useState(null);
+  const [trendRange, setTrendRange] = useState(6);
 
   // ── Month selector for expense tabs ────────────────────────────────────
   const _now = new Date();
@@ -1158,6 +1223,7 @@ export default function Budget({
   // per-income-id expanded state + pending salary-change form
   const [expandedHistory, setExpandedHistory] = useState({});
   const [salaryForm, setSalaryForm] = useState({}); // id → { newAmount, note, date }
+  const [editHistForm, setEditHistForm] = useState(null); // { incId, idx, date, from, to, note }
   // per-expense-id amount change form (rent hike, etc.)
   const [expandedAmtHistory, setExpandedAmtHistory] = useState({});
   const [rentForm, setRentForm] = useState({}); // expId → { newAmount, note, date }
@@ -1441,6 +1507,57 @@ export default function Budget({
     cancelSalaryChange(inc.id);
   };
 
+  // Remove a mistaken/incorrect salary-change history entry (e.g. typo'd amount)
+  const deleteSalaryHistoryEntry = (inc, idx) => {
+    const updated = (inc.salaryHistory || []).filter((_, i) => i !== idx);
+    updatePerson(
+      "incomes",
+      incomes.map((x) =>
+        x.id === inc.id ? { ...x, salaryHistory: updated } : x,
+      ),
+    );
+  };
+
+  const openEditHistoryEntry = (inc, idx) => {
+    const h = (inc.salaryHistory || [])[idx];
+    if (!h) return;
+    setEditHistForm({
+      incId: inc.id,
+      idx,
+      date: h.date || localDateISO(),
+      from: String(h.from ?? ""),
+      to: String(h.to ?? ""),
+      note: h.note || "",
+    });
+  };
+
+  // Correct a history entry in place. Editing the newest entry also re-syncs the
+  // income's current amount, so history and the live figure can't drift apart.
+  const saveEditHistoryEntry = (inc) => {
+    const f = editHistForm;
+    if (!f || f.incId !== inc.id) return;
+    const history = inc.salaryHistory || [];
+    const from = Number(f.from) || 0;
+    const to = Number(f.to) || 0;
+    const updated = history.map((h, i) =>
+      i === f.idx ? { ...h, date: f.date, from, to, note: f.note.trim() } : h,
+    );
+    const isNewest = f.idx === history.length - 1;
+    updatePerson(
+      "incomes",
+      incomes.map((x) =>
+        x.id === inc.id
+          ? {
+              ...x,
+              salaryHistory: updated,
+              ...(isNewest ? { amount: to } : {}),
+            }
+          : x,
+      ),
+    );
+    setEditHistForm(null);
+  };
+
   // ── Expense amount change (rent hike, subscription price change, etc.) ──
   const openRentChange = (exp) =>
     setRentForm((s) => ({
@@ -1531,6 +1648,17 @@ export default function Budget({
 
   // Grouped: { Food: { total, subs: { Groceries: X, "Dining Out": Y, "": Z } } }
   const expGrouped = buildExpGrouped(allExpensesForCategories, expMonth);
+
+  // Multi-month spend trend for whichever category the user clicks (Expenses by category card)
+  const trendData = trendCategory
+    ? buildCategoryTrend(
+        trendCategory,
+        expMonth,
+        trendRange,
+        [expenses],
+        sharedTrips,
+      )
+    : [];
 
   const addIncome = () =>
     updatePerson("incomes", [
@@ -2416,6 +2544,16 @@ export default function Budget({
           )}
           <div className="card">
             <div className="card-title">Expenses by category</div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginTop: -8,
+                marginBottom: 10,
+              }}
+            >
+              Tap a category to view its spend trend
+            </div>
             {Object.entries(expGrouped)
               .sort((a, b) => b[1].total - a[1].total)
               .map(([cat, { total, subs }]) => {
@@ -2434,14 +2572,21 @@ export default function Budget({
                       }}
                     >
                       <span
+                        onClick={() => setTrendCategory(cat)}
+                        title={`View ${cat} spend trend`}
                         style={{
                           flex: 1,
                           fontSize: 13,
                           fontWeight: subEntries.length > 0 ? 600 : 400,
                           color: "var(--text-secondary)",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
                         }}
                       >
                         {cat}
+                        <TrendingUp size={11} style={{ opacity: 0.55 }} />
                       </span>
                       <div style={{ flex: 2 }}>
                         <div className="progress-track">
@@ -2637,6 +2782,33 @@ export default function Budget({
                     style={{ flex: 1, minWidth: 0 }}
                     min="0"
                   />
+                  {(data?.savingsAccounts || []).length > 0 && (
+                    <select
+                      value={inc.linkedAccountId ?? ""}
+                      title="Credits to which bank account? (auto-updates that account's balance)"
+                      onChange={(e) =>
+                        updatePerson(
+                          "incomes",
+                          incomes.map((x) =>
+                            x.id === inc.id
+                              ? {
+                                  ...x,
+                                  linkedAccountId: e.target.value || null,
+                                }
+                              : x,
+                          ),
+                        )
+                      }
+                      style={{ flex: 1.3, minWidth: 0, fontSize: 12 }}
+                    >
+                      <option value="">No account link</option>
+                      {(data?.savingsAccounts || []).map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          → {acc.bankName || "Unnamed account"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <div
                     className="budget-exp-actions"
                     style={{
@@ -3086,10 +3258,114 @@ export default function Budget({
                       }}
                     >
                       {[...inc.salaryHistory].reverse().map((h, i) => {
+                        const origIdx = inc.salaryHistory.length - 1 - i;
                         const pct =
                           h.from > 0
                             ? (((h.to - h.from) / h.from) * 100).toFixed(1)
                             : null;
+                        const isEditing =
+                          editHistForm?.incId === inc.id &&
+                          editHistForm?.idx === origIdx;
+                        if (isEditing)
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                padding: "8px 0",
+                                borderBottom: "1px solid var(--border)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 6,
+                              }}
+                            >
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <input
+                                  type="date"
+                                  value={editHistForm.date}
+                                  onChange={(e) =>
+                                    setEditHistForm((s) => ({
+                                      ...s,
+                                      date: e.target.value,
+                                    }))
+                                  }
+                                  style={{ flex: 1, fontSize: 12 }}
+                                />
+                              </div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <input
+                                  type="number"
+                                  aria-label="Amount before change"
+                                  placeholder="From"
+                                  value={editHistForm.from}
+                                  onChange={(e) =>
+                                    setEditHistForm((s) => ({
+                                      ...s,
+                                      from: e.target.value,
+                                    }))
+                                  }
+                                  style={{ flex: 1, fontSize: 12 }}
+                                />
+                                <input
+                                  type="number"
+                                  aria-label="Amount after change"
+                                  placeholder="To"
+                                  value={editHistForm.to}
+                                  onChange={(e) =>
+                                    setEditHistForm((s) => ({
+                                      ...s,
+                                      to: e.target.value,
+                                    }))
+                                  }
+                                  style={{ flex: 1, fontSize: 12 }}
+                                />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Note (e.g. annual hike)"
+                                value={editHistForm.note}
+                                onChange={(e) =>
+                                  setEditHistForm((s) => ({
+                                    ...s,
+                                    note: e.target.value,
+                                  }))
+                                }
+                                style={{ fontSize: 12 }}
+                              />
+                              {origIdx === inc.salaryHistory.length - 1 && (
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  Newest entry — saving also updates the current
+                                  income amount.
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  className="btn-primary"
+                                  onClick={() => saveEditHistoryEntry(inc)}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 10px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                  }}
+                                >
+                                  <Check size={11} /> Save
+                                </button>
+                                <button
+                                  className="btn-ghost"
+                                  onClick={() => setEditHistForm(null)}
+                                  style={{ fontSize: 11, padding: "3px 10px" }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          );
                         return (
                           <div
                             key={i}
@@ -3104,12 +3380,13 @@ export default function Budget({
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "baseline",
+                                gap: 6,
                               }}
                             >
                               <span style={{ color: "var(--text-muted)" }}>
                                 {h.date}
                               </span>
-                              <span>
+                              <span style={{ flex: 1, textAlign: "right" }}>
                                 {fmt(h.from)} →{" "}
                                 <strong
                                   style={{
@@ -3136,6 +3413,34 @@ export default function Budget({
                                   </span>
                                 )}
                               </span>
+                              <button
+                                className="btn-icon"
+                                aria-label="Edit this history entry"
+                                title="Correct this entry"
+                                onClick={() =>
+                                  openEditHistoryEntry(inc, origIdx)
+                                }
+                                style={{ padding: 2, flexShrink: 0 }}
+                              >
+                                <Edit3 size={11} />
+                              </button>
+                              <button
+                                className="btn-icon"
+                                aria-label="Delete this history entry"
+                                title="Remove incorrect entry"
+                                onClick={async () => {
+                                  if (
+                                    await confirm(
+                                      "Remove history entry?",
+                                      `Delete the ${fmt(h.from)} → ${fmt(h.to)} salary change record? This can't be undone.`,
+                                    )
+                                  )
+                                    deleteSalaryHistoryEntry(inc, origIdx);
+                                }}
+                                style={{ padding: 2, flexShrink: 0 }}
+                              >
+                                <X size={11} />
+                              </button>
                             </div>
                             {h.note && (
                               <div
@@ -5935,6 +6240,15 @@ export default function Budget({
         personNames={personNames}
         updatePerson={updatePerson}
       />
+      <CategoryTrendModal
+        open={!!trendCategory}
+        onClose={() => setTrendCategory(null)}
+        category={trendCategory}
+        data={trendData}
+        color={personColor}
+        range={trendRange}
+        onRangeChange={setTrendRange}
+      />
     </div>
   );
 }
@@ -5944,6 +6258,8 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
   const { isSimple } = useViewMode() || {};
   const [showGranular, setShowGranular] = useState(false);
   const [statementModalOpen, setStatementModalOpen] = useState(false);
+  const [trendCategory, setTrendCategory] = useState(null);
+  const [trendRange, setTrendRange] = useState(6);
   // ── Month selector ─────────────────────────────────────────────────────
   const _hhNow = new Date();
   const _hhCurYm = `${_hhNow.getFullYear()}-${String(_hhNow.getMonth() + 1).padStart(2, "0")}`;
@@ -6104,6 +6420,17 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
   const hhExpByCategory = Object.fromEntries(
     Object.entries(grouped).map(([c, v]) => [c, v.total]),
   );
+
+  // Multi-month household spend trend for whichever category the user clicks
+  const trendData = trendCategory
+    ? buildCategoryTrend(
+        trendCategory,
+        hhMonth,
+        trendRange,
+        [p1?.expenses, p2?.expenses],
+        sharedTrips,
+      )
+    : [];
 
   const [rule, setRule] = useState("50/30/20");
 
@@ -6395,6 +6722,16 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
             </button>
           )}
         </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            marginTop: -6,
+            marginBottom: 10,
+          }}
+        >
+          Tap a category to view its spend trend
+        </div>
         {allCats.map((cat) => {
           const { total, p1: av, p2: anv, subs } = grouped[cat];
           const subEntries = Object.entries(subs)
@@ -6411,7 +6748,20 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
                   fontWeight: subEntries.length > 0 ? 600 : 400,
                 }}
               >
-                <span style={{ color: "var(--text-secondary)" }}>{cat}</span>
+                <span
+                  onClick={() => setTrendCategory(cat)}
+                  title={`View ${cat} spend trend`}
+                  style={{
+                    color: "var(--text-secondary)",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                  }}
+                >
+                  {cat}
+                  <TrendingUp size={11} style={{ opacity: 0.55 }} />
+                </span>
                 <span style={{ fontWeight: 500 }}>{fmt(total)}</span>
               </div>
               <div
@@ -6535,6 +6885,15 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
         p2={p2}
         personNames={personNames}
         updatePerson={updatePerson}
+      />
+      <CategoryTrendModal
+        open={!!trendCategory}
+        onClose={() => setTrendCategory(null)}
+        category={trendCategory}
+        data={trendData}
+        color="var(--gold)"
+        range={trendRange}
+        onRangeChange={setTrendRange}
       />
     </div>
   );

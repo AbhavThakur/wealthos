@@ -5,6 +5,12 @@ import { Camera, Download, Plus, Trash2 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { localYearMonth } from "../utils/date";
 import { calculateNetWorth } from "../utils/netWorth";
+import { InfoModal } from "../components/InfoModal";
+import {
+  computeAccountFlows,
+  isSyncPending,
+  applyAccountSync,
+} from "../utils/bankSync";
 
 const MANUAL_ASSET_TYPES = [
   "cash",
@@ -137,135 +143,248 @@ function AssetsEditor({
             letterSpacing: ".05em",
             marginTop: nw.invAssets.length > 0 ? 12 : 0,
             marginBottom: 6,
+            display: "flex",
+            alignItems: "center",
           }}
         >
           Savings &amp; Bank Accounts
+          <InfoModal title="How Bank Account Syncing Works">
+            <p style={{ margin: "0 0 10px" }}>
+              Link an income or investment to an account (Budget/Investments
+              pages) and its balance stays roughly current — no manual top-ups
+              needed.
+            </p>
+            <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+              <li style={{ marginBottom: 6 }}>
+                <strong>Salary income</strong> linked to an account credits it
+                every month.
+              </li>
+              <li style={{ marginBottom: 6 }}>
+                <strong>Recurring SIPs</strong> linked to an account debit it
+                every month.
+              </li>
+              <li style={{ marginBottom: 6 }}>
+                <strong>SWP investments</strong> (flagged "This is an SWP")
+                credit it instead of debiting.
+              </li>
+              <li>
+                <strong>One-time investments</strong> (incl. FDs) are never
+                included — they don't touch the linked account.
+              </li>
+            </ul>
+            <p style={{ margin: "0 0 10px" }}>
+              Nothing updates silently: when a month has pending activity, the
+              account here shows a banner with the computed salary/SIP/SWP
+              breakdown. Click <strong>Apply to balance</strong> to add it to
+              the stored balance — once applied, it won't apply again until next
+              month.
+            </p>
+            <p style={{ margin: 0, fontStyle: "italic", color: "#888" }}>
+              This uses your standing recurring amounts (not logged
+              transactions), so keep those figures accurate for the sync to be
+              reliable.
+            </p>
+          </InfoModal>
         </div>
+        {nw.savingsAccounts.length > 0 && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginBottom: 8,
+            }}
+          >
+            💡 Balances auto-update from salary income and recurring SIPs linked
+            to an account (Budget/Investments pages). One-time purchases and FDs
+            aren&apos;t included — link and apply below when ready.
+          </div>
+        )}
         {nw.savingsAccounts.map((acc) => {
           const rate = acc.interestRate ?? 3.5;
           const annualInterest = Math.round(((acc.balance || 0) * rate) / 100);
+          const flows = computeAccountFlows(acc.id, data);
+          const syncMonth = localYearMonth();
+          const pendingSync = isSyncPending(acc, flows, syncMonth);
           return (
-            <div
-              key={acc.id}
-              style={{
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                marginBottom: 6,
-              }}
-            >
-              <input
-                value={acc.bankName || ""}
-                placeholder="Bank name"
-                list={`nw-bank-list-${person}`}
-                onChange={(e) =>
-                  updatePerson(
-                    person,
-                    "savingsAccounts",
-                    (data?.savingsAccounts || []).map((x) =>
-                      x.id === acc.id ? { ...x, bankName: e.target.value } : x,
-                    ),
-                  )
-                }
-                style={{ flex: 2, minWidth: 0 }}
-              />
-              <datalist id={`nw-bank-list-${person}`}>
-                {NW_BANK_LIST.map((b) => (
-                  <option key={b} value={b} />
-                ))}
-              </datalist>
-              <input
-                type="number"
-                value={acc.balance || ""}
-                placeholder="Balance ₹"
-                min="0"
-                onChange={(e) =>
-                  updatePerson(
-                    person,
-                    "savingsAccounts",
-                    (data?.savingsAccounts || []).map((x) =>
-                      x.id === acc.id
-                        ? { ...x, balance: Number(e.target.value) }
-                        : x,
-                    ),
-                  )
-                }
-                style={{ flex: 1.5, minWidth: 0 }}
-              />
+            <div key={acc.id} style={{ marginBottom: 6 }}>
               <div
                 style={{
                   display: "flex",
+                  gap: 6,
                   alignItems: "center",
-                  gap: 3,
-                  flexShrink: 0,
                 }}
               >
                 <input
-                  type="number"
-                  value={rate}
-                  step="0.1"
-                  min="0"
-                  max="15"
-                  title="Interest rate % p.a."
+                  value={acc.bankName || ""}
+                  placeholder="Bank name"
+                  list={`nw-bank-list-${person}`}
                   onChange={(e) =>
                     updatePerson(
                       person,
                       "savingsAccounts",
                       (data?.savingsAccounts || []).map((x) =>
                         x.id === acc.id
-                          ? { ...x, interestRate: Number(e.target.value) }
+                          ? { ...x, bankName: e.target.value }
                           : x,
                       ),
                     )
                   }
-                  style={{ width: 52 }}
+                  style={{ flex: 2, minWidth: 0 }}
                 />
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  %
-                </span>
-              </div>
-              {acc.balance > 0 && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--green)",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                    minWidth: 64,
-                    textAlign: "right",
-                  }}
-                  title={`₹${annualInterest.toLocaleString("en-IN")} interest per year at ${rate}%`}
-                >
-                  {fmt(acc.balance)}
-                </span>
-              )}
-              <button
-                className="btn-danger"
-                aria-label={`Remove ${acc.bankName || "account"}`}
-                onClick={async () => {
-                  if (
-                    await confirm(
-                      "Remove account?",
-                      `Remove "${acc.bankName || "this account"}"?`,
-                    )
-                  )
+                <datalist id={`nw-bank-list-${person}`}>
+                  {NW_BANK_LIST.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
+                <input
+                  type="number"
+                  value={acc.balance || ""}
+                  placeholder="Balance ₹"
+                  min="0"
+                  onChange={(e) =>
                     updatePerson(
                       person,
                       "savingsAccounts",
-                      (data?.savingsAccounts || []).filter(
-                        (x) => x.id !== acc.id,
+                      (data?.savingsAccounts || []).map((x) =>
+                        x.id === acc.id
+                          ? { ...x, balance: Number(e.target.value) }
+                          : x,
                       ),
-                    );
-                }}
-              >
-                <Trash2 size={12} />
-              </button>
+                    )
+                  }
+                  style={{ flex: 1.5, minWidth: 0 }}
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    flexShrink: 0,
+                  }}
+                >
+                  <input
+                    type="number"
+                    value={rate}
+                    step="0.1"
+                    min="0"
+                    max="15"
+                    title="Interest rate % p.a."
+                    onChange={(e) =>
+                      updatePerson(
+                        person,
+                        "savingsAccounts",
+                        (data?.savingsAccounts || []).map((x) =>
+                          x.id === acc.id
+                            ? { ...x, interestRate: Number(e.target.value) }
+                            : x,
+                        ),
+                      )
+                    }
+                    style={{ width: 52 }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    %
+                  </span>
+                </div>
+                {acc.balance > 0 && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--green)",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                      minWidth: 64,
+                      textAlign: "right",
+                    }}
+                    title={`₹${annualInterest.toLocaleString("en-IN")} interest per year at ${rate}%`}
+                  >
+                    {fmt(acc.balance)}
+                  </span>
+                )}
+                <button
+                  className="btn-danger"
+                  aria-label={`Remove ${acc.bankName || "account"}`}
+                  onClick={async () => {
+                    if (
+                      await confirm(
+                        "Remove account?",
+                        `Remove "${acc.bankName || "this account"}"?`,
+                      )
+                    )
+                      updatePerson(
+                        person,
+                        "savingsAccounts",
+                        (data?.savingsAccounts || []).filter(
+                          (x) => x.id !== acc.id,
+                        ),
+                      );
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              {pendingSync && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    background: "var(--bg-card2)",
+                    borderRadius: 6,
+                    padding: "5px 8px",
+                    marginTop: 4,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    🔄 {syncMonth}:
+                    {flows.salaryCredit > 0 &&
+                      ` +${fmt(flows.salaryCredit)} salary`}
+                    {flows.sipDebit > 0 &&
+                      ` −${fmt(flows.sipDebit)} SIP/invest`}
+                    {flows.swpCredit > 0 && ` +${fmt(flows.swpCredit)} SWP`}
+                    {" · net "}
+                    <strong
+                      style={{
+                        color: flows.net >= 0 ? "var(--green)" : "var(--red)",
+                      }}
+                    >
+                      {flows.net >= 0 ? "+" : ""}
+                      {fmt(flows.net)}
+                    </strong>
+                  </span>
+                  <button
+                    className="btn-ghost"
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      marginLeft: "auto",
+                      flexShrink: 0,
+                    }}
+                    onClick={() =>
+                      updatePerson(
+                        person,
+                        "savingsAccounts",
+                        (data?.savingsAccounts || []).map((x) =>
+                          x.id === acc.id
+                            ? applyAccountSync(x, flows, syncMonth)
+                            : x,
+                        ),
+                      )
+                    }
+                  >
+                    Apply to balance
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

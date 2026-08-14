@@ -122,6 +122,7 @@ export const SIPCard = memo(function SIPCard({
   onUpdate,
   onDelete,
   personColor,
+  savingsAccounts = [],
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(inv);
@@ -560,6 +561,69 @@ export const SIPCard = memo(function SIPCard({
                   )}
               </div>
             ))}
+            {savingsAccounts.length > 0 && (
+              <div>
+                <label
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  Auto-track bank balance
+                </label>
+                <select
+                  value={form.linkedAccountId ?? ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      linkedAccountId: e.target.value || null,
+                    })
+                  }
+                >
+                  <option value="">Not linked</option>
+                  {savingsAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.bankName || "Unnamed account"}
+                    </option>
+                  ))}
+                </select>
+                {form.linkedAccountId && form.frequency !== "onetime" && (
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12,
+                      marginTop: 6,
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!form.isSWP}
+                      onChange={(e) =>
+                        setForm({ ...form, isSWP: e.target.checked })
+                      }
+                    />
+                    This is an SWP (money credited to my account monthly)
+                  </label>
+                )}
+                {form.linkedAccountId && form.frequency === "onetime" && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 6,
+                    }}
+                  >
+                    ⚠️ One-time investments (incl. FDs) aren&apos;t deducted
+                    from the linked account — only recurring SIPs are.
+                  </div>
+                )}
+              </div>
+            )}
             {hasInvestmentApp(form.type) && (
               <div>
                 <label
@@ -3670,6 +3734,8 @@ export default function Investments({
     endDate: "",
     appName: "",
     bankName: "",
+    linkedAccountId: null,
+    isSWP: false,
     deductionDate: "",
     deductionDay: "",
     totalInvested: "",
@@ -3867,6 +3933,8 @@ export default function Investments({
       endDate: "",
       appName: "",
       bankName: "",
+      linkedAccountId: null,
+      isSWP: false,
       deductionDate: "",
       deductionDay: "",
       totalInvested: "",
@@ -5503,6 +5571,7 @@ export default function Investments({
             key={inv.id}
             inv={inv}
             personColor={personColor}
+            savingsAccounts={data?.savingsAccounts || []}
             onUpdate={(updated) =>
               updatePerson(
                 "investments",
@@ -6109,6 +6178,69 @@ export default function Investments({
                   <option key={b} value={b} />
                 ))}
               </datalist>
+              {(data?.savingsAccounts || []).length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <label
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Auto-track bank balance
+                  </label>
+                  <select
+                    value={newInv.linkedAccountId ?? ""}
+                    onChange={(e) =>
+                      setNewInv({
+                        ...newInv,
+                        linkedAccountId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">Not linked</option>
+                    {(data?.savingsAccounts || []).map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName || "Unnamed account"}
+                      </option>
+                    ))}
+                  </select>
+                  {newInv.linkedAccountId && newInv.frequency !== "onetime" && (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 12,
+                        marginTop: 6,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!newInv.isSWP}
+                        onChange={(e) =>
+                          setNewInv({ ...newInv, isSWP: e.target.checked })
+                        }
+                      />
+                      This is an SWP (money credited to my account monthly)
+                    </label>
+                  )}
+                  {newInv.linkedAccountId && newInv.frequency === "onetime" && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 6,
+                      }}
+                    >
+                      ⚠️ One-time investments (incl. FDs) aren&apos;t deducted
+                      from the linked account — only recurring SIPs are.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {hasDeductionDate(newInv.type, newInv.frequency) && (
               <div>

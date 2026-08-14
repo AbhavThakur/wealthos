@@ -2,7 +2,16 @@ import { useState } from "react";
 import { hashPin } from "../utils/hashPin";
 import { useSessionState } from "../hooks/useSessionState";
 import { fmt, nextId, EXPENSE_CATEGORIES, calcEMI } from "../utils/finance";
-import { Plus, Trash2, Search, Sparkles, Calendar } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Search,
+  Sparkles,
+  Calendar,
+  ClipboardPaste,
+} from "lucide-react";
+import { toast } from "sonner";
+import { parsePayslipText } from "../utils/payslipParser";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
@@ -1038,6 +1047,24 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
     (data?.incomes || []).reduce((s, x) => s + x.amount, 0) * 12;
   const update = (key, val) => updatePerson("taxInfo", { ...t, [key]: val });
 
+  const [showPayslipPaste, setShowPayslipPaste] = useState(false);
+  const [payslipText, setPayslipText] = useState("");
+
+  const parsePayslip = () => {
+    const parsed = parsePayslipText(payslipText);
+    const keys = Object.keys(parsed);
+    if (keys.length === 0) {
+      toast.error("Couldn't find any recognizable fields in that text.");
+      return;
+    }
+    updatePerson("taxInfo", { ...t, ...parsed });
+    toast.success(
+      `Filled ${keys.length} field${keys.length > 1 ? "s" : ""} from payslip — review below.`,
+    );
+    setPayslipText("");
+    setShowPayslipPaste(false);
+  };
+
   // Auto-detect ELSS & PPF SIPs from investments if user hasn't entered manually
   const invs = data?.investments || [];
   const autoELSS = invs
@@ -1621,7 +1648,95 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
         )}
       </div>
       <div className="card section-gap">
-        <div className="card-title">Your details (monthly amounts)</div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: showPayslipPaste ? 12 : 0,
+          }}
+        >
+          <div className="card-title" style={{ marginBottom: 0 }}>
+            Your details (monthly amounts)
+          </div>
+          <button
+            className="btn-secondary"
+            onClick={() => setShowPayslipPaste((v) => !v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              padding: "6px 10px",
+            }}
+          >
+            <ClipboardPaste size={13} />
+            Paste payslip
+          </button>
+        </div>
+        {showPayslipPaste && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: "var(--radius-sm)",
+              background: "var(--bg-input)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                marginBottom: 8,
+              }}
+            >
+              Paste your payslip text below (copy from the PDF) — we'll match
+              Basic, HRA, LTA, Special/Communication allowance and NPS lines and
+              fill the fields below. Review the filled values afterward, since
+              layouts vary.
+            </div>
+            <textarea
+              value={payslipText}
+              onChange={(e) => setPayslipText(e.target.value)}
+              placeholder={
+                "e.g.\nBasic Salary        96,545.00\nHRA                 38,618.00\nSpecial Allowance   84,572.00"
+              }
+              style={{
+                width: "100%",
+                minHeight: 100,
+                fontSize: 13,
+                fontFamily: "var(--font-body)",
+                resize: "vertical",
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                marginTop: 8,
+              }}
+            >
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setPayslipText("");
+                  setShowPayslipPaste(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                onClick={parsePayslip}
+                disabled={!payslipText.trim()}
+              >
+                Parse &amp; fill
+              </button>
+            </div>
+          </div>
+        )}
         <div className="grid-2">
           <div
             style={{
@@ -3810,7 +3925,10 @@ function ReleaseNotesAccordion() {
 function QuickLogWebhookSettings() {
   const [webhookKey, setWebhookKey] = useState(() => {
     try {
-      return localStorage.getItem("wealthos_webhook_key") || "wos_" + Math.random().toString(36).slice(2, 10);
+      return (
+        localStorage.getItem("wealthos_webhook_key") ||
+        "wos_" + Math.random().toString(36).slice(2, 10)
+      );
     } catch {
       return "wos_key";
     }
@@ -3819,7 +3937,10 @@ function QuickLogWebhookSettings() {
   const [testText, setTestText] = useState("450 Swiggy P1");
   const [testResult, setTestResult] = useState(null);
 
-  const endpointUrl = typeof window !== "undefined" ? `${window.location.origin}/api/quick-log` : "https://your-domain.com/api/quick-log";
+  const endpointUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/quick-log`
+      : "https://your-domain.com/api/quick-log";
 
   const handleCopy = (text) => {
     navigator.clipboard?.writeText(text);
@@ -3846,19 +3967,54 @@ function QuickLogWebhookSettings() {
 
   return (
     <div className="card section-gap">
-      <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div
+        className="card-title"
+        style={{ display: "flex", alignItems: "center", gap: 8 }}
+      >
         <span>⚡ Quick-Log & Webhook Integration</span>
-        <span style={{ fontSize: 11, background: "var(--gold-dim)", color: "var(--gold)", padding: "2px 8px", borderRadius: 12 }}>
+        <span
+          style={{
+            fontSize: 11,
+            background: "var(--gold-dim)",
+            color: "var(--gold)",
+            padding: "2px 8px",
+            borderRadius: 12,
+          }}
+        >
           iOS Shortcuts / Telegram / Quick Tiles
         </span>
       </div>
-      <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-        Log expenses instantly without opening a browser! Send shorthand messages like <code>"450 Swiggy P1"</code> or <code>"Petrol 2000 P2"</code> via Apple Siri Shortcuts, Telegram Bot, or Android Quick Settings.
+      <p
+        style={{
+          fontSize: 13,
+          color: "var(--text-secondary)",
+          lineHeight: 1.6,
+          marginBottom: 12,
+        }}
+      >
+        Log expenses instantly without opening a browser! Send shorthand
+        messages like <code>"450 Swiggy P1"</code> or{" "}
+        <code>"Petrol 2000 P2"</code> via Apple Siri Shortcuts, Telegram Bot, or
+        Android Quick Settings.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginBottom: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
         <div>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+          <label
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
             Webhook Endpoint URL
           </label>
           <div style={{ display: "flex", gap: 8 }}>
@@ -3866,17 +4022,34 @@ function QuickLogWebhookSettings() {
               type="text"
               readOnly
               value={endpointUrl}
-              style={{ flex: 1, fontSize: 12, padding: "8px 12px", background: "rgba(255,255,255,0.04)" }}
+              style={{
+                flex: 1,
+                fontSize: 12,
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.04)",
+              }}
             />
-            <button className="btn-secondary" onClick={() => handleCopy(endpointUrl)} style={{ fontSize: 12 }}>
+            <button
+              className="btn-secondary"
+              onClick={() => handleCopy(endpointUrl)}
+              style={{ fontSize: 12 }}
+            >
               {copied ? "Copied!" : "Copy URL"}
             </button>
           </div>
         </div>
 
         <div>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-            Webhook Secret Token (Header: <code>x-webhook-token</code> or query <code>?token=...</code>)
+          <label
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Webhook Secret Token (Header: <code>x-webhook-token</code> or query{" "}
+            <code>?token=...</code>)
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -3884,16 +4057,30 @@ function QuickLogWebhookSettings() {
               value={webhookKey}
               onChange={(e) => {
                 setWebhookKey(e.target.value);
-                try { localStorage.setItem("wealthos_webhook_key", e.target.value); } catch { /* ignore */ }
+                try {
+                  localStorage.setItem("wealthos_webhook_key", e.target.value);
+                } catch {
+                  /* ignore */
+                }
               }}
-              style={{ flex: 1, fontSize: 12, padding: "8px 12px", background: "rgba(255,255,255,0.04)" }}
+              style={{
+                flex: 1,
+                fontSize: 12,
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.04)",
+              }}
             />
             <button
               className="btn-secondary"
               onClick={() => {
-                const nextKey = "wos_" + Math.random().toString(36).slice(2, 10);
+                const nextKey =
+                  "wos_" + Math.random().toString(36).slice(2, 10);
                 setWebhookKey(nextKey);
-                try { localStorage.setItem("wealthos_webhook_key", nextKey); } catch { /* ignore */ }
+                try {
+                  localStorage.setItem("wealthos_webhook_key", nextKey);
+                } catch {
+                  /* ignore */
+                }
               }}
               style={{ fontSize: 12 }}
             >
@@ -3912,7 +4099,9 @@ function QuickLogWebhookSettings() {
           padding: 12,
         }}
       >
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Test Shorthand Dispatch</div>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+          Test Shorthand Dispatch
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <input
             type="text"
@@ -3921,7 +4110,11 @@ function QuickLogWebhookSettings() {
             placeholder="450 Swiggy P1 or Petrol 2000 P2"
             style={{ flex: 1, fontSize: 12, padding: "6px 10px" }}
           />
-          <button className="btn-primary" onClick={handleTest} style={{ fontSize: 12, padding: "6px 14px" }}>
+          <button
+            className="btn-primary"
+            onClick={handleTest}
+            style={{ fontSize: 12, padding: "6px 14px" }}
+          >
             Test Webhook
           </button>
         </div>
@@ -3933,8 +4126,12 @@ function QuickLogWebhookSettings() {
               padding: 8,
               borderRadius: 6,
               fontSize: 11,
-              background: testResult.success ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-              border: testResult.success ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(239,68,68,0.3)",
+              background: testResult.success
+                ? "rgba(34,197,94,0.1)"
+                : "rgba(239,68,68,0.1)",
+              border: testResult.success
+                ? "1px solid rgba(34,197,94,0.3)"
+                : "1px solid rgba(239,68,68,0.3)",
               color: testResult.success ? "var(--green)" : "var(--red)",
             }}
           >

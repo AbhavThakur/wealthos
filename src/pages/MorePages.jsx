@@ -669,7 +669,7 @@ export function EmergencyFundCard({ p1, p2 }) {
     (data?.expenses || [])
       .filter(
         (e) =>
-          e.expenseType === "monthly" &&
+          (!e.expenseType || e.expenseType === "monthly") &&
           essentialCategories.includes(e.category),
       )
       .reduce((s, e) => s + (e.amount || 0), 0);
@@ -730,7 +730,8 @@ export function EmergencyFundCard({ p1, p2 }) {
   const liquidAssets = (data) =>
     (data?.assets || [])
       .filter((a) => a.type === "cash" || a.type === "savings")
-      .reduce((s, a) => s + (a.value || 0), 0);
+      .reduce((s, a) => s + (a.value || 0), 0) +
+    (data?.savingsAccounts || []).reduce((s, a) => s + (a.balance || 0), 0);
   const totalLiquid = liquidAssets(p1) + liquidAssets(p2);
 
   const monthsCovered = monthlyNeed > 0 ? totalLiquid / monthlyNeed : 0;

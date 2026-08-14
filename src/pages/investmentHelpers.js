@@ -86,6 +86,15 @@ export function ordinalSuffix(n) {
 }
 
 export const isFD = (t) => t === "FD";
+
+// Years between two dates. Pass 365 for FD tenure (Indian bank convention).
+export const rangeYears = (startDate, endDate, daysPerYear = 365.25) => {
+  const startMs = parseLocalDate(startDate)?.getTime();
+  const endMs = parseLocalDate(endDate)?.getTime();
+  if (startMs == null || endMs == null) return null;
+  return Math.max(0, (endMs - startMs) / (daysPerYear * 24 * 3600 * 1000));
+};
+
 export const hasSIPFreq = (t) =>
   ["Mutual Fund", "Stocks", "Gold", "ULIP"].includes(t);
 export const hasDeductionDate = (t, freq) =>

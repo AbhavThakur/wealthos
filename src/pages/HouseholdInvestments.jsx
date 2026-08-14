@@ -1249,6 +1249,7 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
             <SIPCard
               inv={cleanInv}
               personColor={pColor(owner)}
+              savingsAccounts={ownerData?.savingsAccounts || []}
               onUpdate={(updated) => {
                 const list = ownerData?.investments || [];
                 updatePerson(

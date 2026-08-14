@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Zap, Send, ArrowRight } from "lucide-react";
 import useDraggable from "../hooks/useDraggable";
 import { haptic } from "../utils/haptic";
 import { parseQuickLogText } from "../utils/quickLog";
 import { useData } from "../context/DataContext";
 import { toast } from "sonner";
-import { fmt } from "../utils/finance";
+import { fmt, nextId } from "../utils/finance";
+import { localDateISO, localYearMonth } from "../utils/date";
 
 export default function QuickAdd({
   setPage,
@@ -17,24 +18,31 @@ export default function QuickAdd({
   const drag = useDraggable("quickadd", { bottom: 148, right: 28 });
   const [internalOpen, setInternalOpen] = useState(false);
   const [quickText, setQuickText] = useState("");
-  const { updatePerson1, updatePerson2, p1, p2 } = useData() || {};
+  const [selectedPerson, setSelectedPerson] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(localYearMonth());
+  const { updatePerson, p1, p2 } = useData() || {};
+  const pushedHistoryRef = useRef(false);
 
   const open = externalOpen || internalOpen;
   const close = useCallback(() => {
     setInternalOpen(false);
     setQuickText("");
+    setSelectedPerson(null);
+    setSelectedMonth(localYearMonth());
     if (setExternalOpen) setExternalOpen(false);
+    if (pushedHistoryRef.current) {
+      pushedHistoryRef.current = false;
+      window.history.back();
+    }
   }, [setExternalOpen]);
 
   const toggle = useCallback(() => {
     if (externalOpen || internalOpen) {
-      setInternalOpen(false);
-      setQuickText("");
-      if (setExternalOpen) setExternalOpen(false);
+      close();
     } else {
       setInternalOpen(true);
     }
-  }, [externalOpen, internalOpen, setExternalOpen]);
+  }, [externalOpen, internalOpen, close]);
 
   // Keyboard shortcut: Ctrl+E or Cmd+E
   useEffect(() => {
@@ -49,6 +57,24 @@ export default function QuickAdd({
     return () => document.removeEventListener("keydown", handler);
   }, [open, close, toggle]);
 
+  // PWA: intercept the mobile back button so it closes the modal instead of the app
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ quickAddModal: true }, "");
+    pushedHistoryRef.current = true;
+    const handlePopState = () => {
+      pushedHistoryRef.current = false;
+      setInternalOpen(false);
+      setQuickText("");
+      setSelectedPerson(null);
+      setSelectedMonth(localYearMonth());
+      if (setExternalOpen) setExternalOpen(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const navigate = (person) => {
     haptic("medium");
     setProfile(person);
@@ -57,22 +83,41 @@ export default function QuickAdd({
     close();
   };
 
-  // Preview parsed text in real-time
-  const parsedPreview = quickText.trim() ? parseQuickLogText(quickText, "p1", personNames) : null;
+  // Preview parsed text in real-time — text tags (P1/P2) still override if present
+  const parsedPreview = quickText.trim()
+    ? parseQuickLogText(quickText, selectedPerson || "p1", personNames)
+    : null;
+  const effectivePerson = selectedPerson || parsedPreview?.person || "p1";
+
+  // Clamp today's day-of-month into the chosen month (e.g. logging for a shorter month)
+  const dateForMonth = (ym) => {
+    if (!ym || ym === localYearMonth()) return localDateISO();
+    const [y, m] = ym.split("-").map(Number);
+    const day = Math.min(new Date().getDate(), new Date(y, m, 0).getDate());
+    return `${ym}-${String(day).padStart(2, "0")}`;
+  };
 
   const handleQuickSubmit = (e) => {
     e?.preventDefault();
     if (!parsedPreview) return;
 
     haptic("success");
-    const targetPerson = parsedPreview.person === "p2" ? "p2" : "p1";
-    const updateFn = targetPerson === "p2" ? updatePerson2 : updatePerson1;
-    const existingTxns = (targetPerson === "p2" ? p2?.transactions : p1?.transactions) || [];
+    const targetPerson = effectivePerson === "p2" ? "p2" : "p1";
+    const existingTxns =
+      (targetPerson === "p2" ? p2?.transactions : p1?.transactions) || [];
+    const finalTxn = {
+      id: nextId(existingTxns),
+      date: dateForMonth(selectedMonth),
+      desc: parsedPreview.name,
+      amount: -Math.abs(parsedPreview.amount),
+      type: "expense",
+      category: parsedPreview.category,
+    };
 
-    if (updateFn) {
-      updateFn("transactions", [parsedPreview, ...existingTxns]);
+    if (updatePerson) {
+      updatePerson(targetPerson, "transactions", [finalTxn, ...existingTxns]);
       toast.success(
-        `Logged ${fmt(parsedPreview.amount)} for ${parsedPreview.name} (${parsedPreview.category}) for ${personNames?.[targetPerson] || targetPerson.toUpperCase()}!`
+        `Logged ${fmt(parsedPreview.amount)} for ${parsedPreview.name} (${parsedPreview.category}) for ${personNames?.[targetPerson] || targetPerson.toUpperCase()}!`,
       );
     }
 
@@ -117,6 +162,74 @@ export default function QuickAdd({
             >
               <Zap size={16} color="var(--gold)" />
               <span>Instant Quick-Log</span>
+            </div>
+
+            {/* Who + which month */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 12,
+                alignItems: "flex-end",
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  For
+                </label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["p1", "p2"].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() =>
+                        setSelectedPerson((cur) => (cur === p ? null : p))
+                      }
+                      className={
+                        "profile-pill" +
+                        (effectivePerson === p ? " active" : "")
+                      }
+                      style={{
+                        "--pill-color": p === "p1" ? "var(--p1)" : "var(--p2)",
+                        "--pill-dim":
+                          p === "p1" ? "var(--p1-dim)" : "var(--p2-dim)",
+                        flex: 1,
+                        justifyContent: "center",
+                        padding: "6px 8px",
+                        fontSize: 12,
+                      }}
+                    >
+                      <span className="profile-pill-dot" />
+                      {personNames?.[p] || p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
+                  Month
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  style={{ width: "100%" }}
+                />
+              </div>
             </div>
 
             {/* Natural language Quick Input */}
@@ -179,7 +292,9 @@ export default function QuickAdd({
                     ✓ {parsedPreview.name} ({parsedPreview.category})
                   </span>
                   <strong>
-                    {fmt(parsedPreview.amount)} · {personNames?.[parsedPreview.person] || parsedPreview.person.toUpperCase()}
+                    {fmt(parsedPreview.amount)} ·{" "}
+                    {personNames?.[effectivePerson] ||
+                      effectivePerson.toUpperCase()}
                   </strong>
                 </div>
               )}
@@ -204,7 +319,8 @@ export default function QuickAdd({
                   className="profile-pill active"
                   style={{
                     "--pill-color": p === "p1" ? "var(--p1)" : "var(--p2)",
-                    "--pill-dim": p === "p1" ? "var(--p1-dim)" : "var(--p2-dim)",
+                    "--pill-dim":
+                      p === "p1" ? "var(--p1-dim)" : "var(--p2-dim)",
                     flex: 1,
                     justifyContent: "center",
                     padding: "10px 14px",

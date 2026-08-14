@@ -375,7 +375,12 @@ export const requiredSIP = (targetAmount, rateAnnual, months) => {
  * Asset allocation breakdown from an investments array.
  * Returns { equity, debt, gold, cash, other } as percentages.
  */
-export const assetAllocation = (investments) => {
+// `valueOf` lets callers supply the canonical current value (computeInvRow.cur).
+// The default is a rough fallback: for SIPs `amount` is a monthly instalment, not a corpus.
+export const assetAllocation = (
+  investments,
+  valueOf = (inv) => inv.existingCorpus || inv.amount || 0,
+) => {
   const EQUITY_TYPES = ["Mutual Fund", "Stocks", "ULIP"];
   const DEBT_TYPES = ["PPF", "FD", "EPF", "NPS"];
   const GOLD_TYPES = ["Gold"];
@@ -385,7 +390,7 @@ export const assetAllocation = (investments) => {
     gold = 0,
     other = 0;
   for (const inv of investments || []) {
-    const val = inv.existingCorpus || inv.amount || 0;
+    const val = valueOf(inv) || 0;
     if (EQUITY_TYPES.includes(inv.type)) equity += val;
     else if (DEBT_TYPES.includes(inv.type)) debt += val;
     else if (GOLD_TYPES.includes(inv.type)) gold += val;
@@ -416,12 +421,24 @@ export const unused80C = (investments, insurances) => {
   const MAX = 150000;
   let used = 0;
   for (const inv of investments || []) {
-    const amt = freqToMonthly(inv.amount, inv.frequency) * 12;
+    // One-time contributions (e.g. a yearly PPF top-up) still count toward 80C
+    const amt =
+      inv.frequency === "onetime"
+        ? inv.amount || 0
+        : freqToMonthly(inv.amount, inv.frequency) * 12;
     if (inv.type === "Mutual Fund" && /elss/i.test(inv.name)) used += amt;
     else if (["PPF", "EPF", "ULIP"].includes(inv.type)) used += amt;
   }
   for (const ins of insurances || []) {
-    if (ins.type === "Life") used += ins.premium || 0;
+    // Match the Tax Planner: any life/term policy, annualised by premium frequency
+    if (!/life|term/i.test(ins.type || "")) continue;
+    const premium = ins.premium || 0;
+    used +=
+      ins.premiumFreq === "monthly"
+        ? premium * 12
+        : ins.premiumFreq === "quarterly"
+          ? premium * 4
+          : premium;
   }
   return Math.max(0, MAX - Math.min(used, MAX));
 };

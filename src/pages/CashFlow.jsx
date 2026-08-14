@@ -291,7 +291,7 @@ export function CashFlow({ data, personName, personColor, updatePerson }) {
       (t) =>
         t.date?.startsWith(historyMonth) &&
         (filterType === "all" || t.type === filterType) &&
-        (t.desc.toLowerCase().includes(search.toLowerCase()) ||
+        ((t.desc || "").toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
     .sort((a, b) => compareISODateDesc(a.date, b.date));
@@ -1694,7 +1694,7 @@ export function HouseholdCashFlow({ p1, p2, updatePerson }) {
     .filter(
       (t) =>
         (filterType === "all" || t.type === filterType) &&
-        (t.desc.toLowerCase().includes(search.toLowerCase()) ||
+        ((t.desc || "").toLowerCase().includes(search.toLowerCase()) ||
           (t.category || "").toLowerCase().includes(search.toLowerCase())),
     )
     .sort((a, b) => compareISODateDesc(a.date, b.date));
