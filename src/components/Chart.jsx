@@ -9,7 +9,13 @@
  */
 import { memo, useMemo, useRef, useEffect } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart, PieChart } from "echarts/charts";
+import {
+  BarChart,
+  LineChart,
+  PieChart,
+  SankeyChart as ESankeyChart,
+  TreemapChart as ETreemapChart,
+} from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -22,6 +28,8 @@ echarts.use([
   BarChart,
   LineChart,
   PieChart,
+  ESankeyChart,
+  ETreemapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
@@ -331,4 +339,195 @@ const DonutChart = memo(function DonutChart({
   );
 });
 
-export { Chart, DonutChart };
+/* ─── <SankeyChart> ─── */
+
+const SankeyChart = memo(function SankeyChart({
+  nodes = [],
+  links = [],
+  height = 400,
+  width = "100%",
+  style,
+  fmt: formatFn,
+  nodeGap = 12,
+  nodeWidth = 18,
+}) {
+  const option = useMemo(() => {
+    return {
+      tooltip: {
+        ...TOOLTIP,
+        trigger: "item",
+        triggerOn: "mousemove",
+        formatter: (params) => {
+          if (params.dataType === "edge") {
+            const val = formatFn ? formatFn(params.data.value) : params.data.value;
+            return `${params.data.source} → ${params.data.target}<br/><b>${val}</b>`;
+          }
+          const val = formatFn ? formatFn(params.data.value) : params.data.value;
+          return `<b>${params.data.name}</b>${val != null ? `<br/>${val}` : ""}`;
+        },
+      },
+      series: [
+        {
+          type: "sankey",
+          layout: "none",
+          layoutIterations: 32,
+          nodeAlign: "justify",
+          nodeGap,
+          nodeWidth,
+          emphasis: {
+            focus: "adjacency",
+          },
+          data: nodes.map((n) => ({
+            name: n.name,
+            value: n.value,
+            itemStyle: n.itemStyle || (n.color ? { color: res(n.color) } : undefined),
+            label: {
+              color: "#e2e8f0",
+              fontSize: 11,
+              fontFamily: "inherit",
+              formatter: (p) => {
+                const val = formatFn && p.data.value ? ` (${formatFn(p.data.value)})` : "";
+                return `${p.name}${val}`;
+              },
+            },
+          })),
+          links: links.map((l) => ({
+            source: l.source,
+            target: l.target,
+            value: l.value,
+            lineStyle: {
+              color: l.color ? res(l.color) : "gradient",
+              curveness: 0.5,
+              opacity: 0.38,
+            },
+          })),
+          lineStyle: {
+            curveness: 0.5,
+            opacity: 0.35,
+          },
+        },
+      ],
+    };
+  }, [nodes, links, formatFn, nodeGap, nodeWidth]);
+
+  const digest = useMemo(() => {
+    try {
+      return JSON.stringify({ nodes, links, nodeGap, nodeWidth });
+    } catch {
+      return `err_${++digestCounter}`;
+    }
+  }, [nodes, links, nodeGap, nodeWidth]);
+
+  return (
+    <EChart
+      option={option}
+      digest={digest}
+      style={{ height, width, ...style }}
+    />
+  );
+});
+
+/* ─── <TreemapChart> ─── */
+
+const TreemapChart = memo(function TreemapChart({
+  data = [],
+  height = 360,
+  width = "100%",
+  style,
+  fmt: formatFn,
+  leafDepth = 1,
+}) {
+  const option = useMemo(() => {
+    return {
+      tooltip: {
+        ...TOOLTIP,
+        formatter: (info) => {
+          const val = formatFn ? formatFn(info.value) : info.value;
+          const treePathInfo = info.treePathInfo;
+          const path = [];
+          for (let i = 1; i < treePathInfo.length; i++) {
+            path.push(treePathInfo[i].name);
+          }
+          return `<div style="font-size:12px;font-weight:600">${path.join(" / ")}</div>
+                  <div style="font-size:13px;color:var(--gold,#eab308);margin-top:2px">${val}</div>`;
+        },
+      },
+      series: [
+        {
+          type: "treemap",
+          visibleMin: 300,
+          leafDepth,
+          roam: false,
+          nodeClick: "zoomToNode",
+          breadcrumb: {
+            show: false,
+          },
+          label: {
+            show: true,
+            formatter: (p) => {
+              const val = formatFn ? `\n${formatFn(p.value)}` : "";
+              return `${p.name}${val}`;
+            },
+            fontSize: 12,
+            fontWeight: "bold",
+            color: "#ffffff",
+            textShadowColor: "rgba(0, 0, 0, 0.8)",
+            textShadowBlur: 4,
+            textShadowOffsetX: 0,
+            textShadowOffsetY: 1,
+          },
+          upperLabel: {
+            show: true,
+            height: 24,
+            color: "#ffffff",
+            fontWeight: "bold",
+            fontSize: 13,
+            textShadowColor: "rgba(0, 0, 0, 0.8)",
+            textShadowBlur: 4,
+          },
+          itemStyle: {
+            borderColor: "rgba(255,255,255,0.12)",
+            borderWidth: 1,
+            gapWidth: 2,
+          },
+          levels: [
+            {
+              itemStyle: {
+                borderColor: "#181824",
+                borderWidth: 2,
+                gapWidth: 3,
+              },
+            },
+            {
+              colorSaturation: [0.35, 0.65],
+              itemStyle: {
+                borderWidth: 1,
+                gapWidth: 1,
+                borderColorSaturation: 0.6,
+              },
+            },
+          ],
+          data,
+        },
+      ],
+    };
+  }, [data, formatFn, leafDepth]);
+
+  const digest = useMemo(() => {
+    try {
+      return JSON.stringify({ data, leafDepth });
+    } catch {
+      return `err_${++digestCounter}`;
+    }
+  }, [data, leafDepth]);
+
+  return (
+    <EChart
+      option={option}
+      digest={digest}
+      style={{ height, width, ...style }}
+    />
+  );
+});
+
+export { Chart, DonutChart, SankeyChart, TreemapChart };

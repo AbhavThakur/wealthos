@@ -39,7 +39,10 @@ import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
+import SettlementCard from "../components/SettlementCard";
+import SmartStatementModal from "../components/SmartStatementModal";
 import { useData } from "../context/DataContext";
+import { useViewMode } from "../context/ViewModeContext";
 import { yearMonthToDate } from "../utils/date";
 
 const localDateISO = (d = new Date()) =>
@@ -199,6 +202,143 @@ function MobileInput({
       style={style}
       {...rest}
     />
+  );
+}
+
+// ─── Couple Expense Split Badge & Popover ──────────────────────────────────
+function SplitBadgeButton({ exp, onUpdate, isSolo, personNames }) {
+  const [open, setOpen] = useState(false);
+  if (isSolo) return null;
+
+  const isSplit = !!exp.isSplit;
+  const mode = exp.splitMode || "50:50";
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        title="Split with partner"
+        style={{
+          background: isSplit ? "var(--gold-dim)" : "rgba(255,255,255,0.04)",
+          border: isSplit ? "1px solid var(--gold-border)" : "1px solid var(--border)",
+          color: isSplit ? "var(--gold)" : "var(--text-muted)",
+          borderRadius: 6,
+          padding: "3px 7px",
+          fontSize: 11,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          flexShrink: 0,
+        }}
+      >
+        <ArrowRightLeft size={11} />
+        {isSplit ? (mode === "custom" ? `${exp.p1SharePct || 50}%` : mode) : "Split"}
+      </button>
+
+      {open && (
+        <>
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 998 }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              marginTop: 4,
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              padding: "12px",
+              zIndex: 999,
+              width: 220,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>Split Expense</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={isSplit}
+                  onChange={(e) => {
+                    onUpdate({
+                      ...exp,
+                      isSplit: e.target.checked,
+                      splitMode: exp.splitMode || "50:50",
+                    });
+                  }}
+                  style={{ accentColor: "var(--gold)" }}
+                />
+                Enabled
+              </label>
+            </div>
+
+            {isSplit && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                    Split Ratio
+                  </label>
+                  <select
+                    value={mode}
+                    onChange={(e) => onUpdate({ ...exp, splitMode: e.target.value })}
+                    style={{ width: "100%", fontSize: 11, padding: "4px 6px" }}
+                  >
+                    <option value="50:50">50:50 (Equal)</option>
+                    <option value="60:40">60:40 (P1 : P2)</option>
+                    <option value="40:60">40:60 (P1 : P2)</option>
+                    <option value="70:30">70:30 (P1 : P2)</option>
+                    <option value="income_ratio">Income Ratio</option>
+                    <option value="custom">Custom %</option>
+                  </select>
+                </div>
+
+                {mode === "custom" && (
+                  <div>
+                    <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                      {personNames?.p1 || "P1"} Share: {exp.p1SharePct ?? 50}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={exp.p1SharePct ?? 50}
+                      onChange={(e) =>
+                        onUpdate({
+                          ...exp,
+                          p1SharePct: Number(e.target.value),
+                          p2SharePct: 100 - Number(e.target.value),
+                        })
+                      }
+                      style={{ width: "100%", accentColor: "var(--gold)" }}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
+                    Paid By
+                  </label>
+                  <select
+                    value={exp.paidBy || "p1"}
+                    onChange={(e) => onUpdate({ ...exp, paidBy: e.target.value })}
+                    style={{ width: "100%", fontSize: 11, padding: "4px 6px" }}
+                  >
+                    <option value="p1">{personNames?.p1 || "Person 1"}</option>
+                    <option value="p2">{personNames?.p2 || "Person 2"}</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -815,6 +955,8 @@ export default function Budget({
 }) {
   const incomes = data?.incomes || [];
   const expenses = data?.expenses || [];
+  const { isSolo, personNames, p1, p2 } = useData() || {};
+  const [statementModalOpen, setStatementModalOpen] = useState(false);
   const [tab, setTabState] = useState(() => {
     // QuickAdd signal overrides persisted state
     if (sessionStorage.getItem("budget-open-tab")) return "expenses";
@@ -1858,12 +2000,38 @@ export default function Budget({
     <div>
       <div
         style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
           marginBottom: "1.25rem",
         }}
       >
-        <span style={{ color: personColor }}>{personName}'s</span> Budget
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 22,
+          }}
+        >
+          <span style={{ color: personColor }}>{personName}'s</span> Budget
+        </div>
+        <button
+          onClick={() => setStatementModalOpen(true)}
+          className="btn-secondary"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--p1)",
+            borderColor: "rgba(59, 130, 246, 0.3)",
+            background: "rgba(59, 130, 246, 0.08)",
+          }}
+        >
+          📥 Import Bank Statement
+        </button>
       </div>
 
       <div className="dash-tabs" role="tablist" aria-label="Budget sections">
@@ -3479,6 +3647,17 @@ export default function Budget({
                           </>
                         );
                       })()}
+                      <SplitBadgeButton
+                        exp={exp}
+                        onUpdate={(updated) =>
+                          updatePerson(
+                            "expenses",
+                            expenses.map((x) => (x.id === exp.id ? updated : x)),
+                          )
+                        }
+                        isSolo={isSolo}
+                        personNames={personNames}
+                      />
                       <select
                         value={exp.recurrence || "monthly"}
                         onChange={(e) =>
@@ -5073,6 +5252,19 @@ export default function Budget({
                               </>
                             );
                           })()}
+                          <SplitBadgeButton
+                            exp={exp}
+                            onUpdate={(updated) =>
+                              updatePerson(
+                                "expenses",
+                                expenses.map((x) =>
+                                  x.id === exp.id ? updated : x,
+                                ),
+                              )
+                            }
+                            isSolo={isSolo}
+                            personNames={personNames}
+                          />
                         </div>
                         {/* Row 3: Log button */}
                         <div style={{ marginBottom: 4 }}>
@@ -5732,12 +5924,23 @@ export default function Budget({
         merchantMap={shared?.merchantMap || {}}
         onMerchantMapUpdate={(newMap) => updateShared("merchantMap", newMap)}
       />
+      <SmartStatementModal
+        open={statementModalOpen}
+        onClose={() => setStatementModalOpen(false)}
+        p1={p1}
+        p2={p2}
+        personNames={personNames}
+        updatePerson={updatePerson}
+      />
     </div>
   );
 }
 
-export function HouseholdBudget({ p1, p2, shared }) {
-  const { personNames } = useData() || {};
+export function HouseholdBudget({ p1, p2, shared, updateShared }) {
+  const { personNames, updatePerson } = useData() || {};
+  const { isSimple } = useViewMode() || {};
+  const [showGranular, setShowGranular] = useState(false);
+  const [statementModalOpen, setStatementModalOpen] = useState(false);
   // ── Month selector ─────────────────────────────────────────────────────
   const _hhNow = new Date();
   const _hhCurYm = `${_hhNow.getFullYear()}-${String(_hhNow.getMonth() + 1).padStart(2, "0")}`;
@@ -5950,8 +6153,36 @@ export function HouseholdBudget({ p1, p2, shared }) {
           >
             <ChevronRight size={16} />
           </button>
+          <button
+            onClick={() => setStatementModalOpen(true)}
+            className="btn-secondary"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--p1)",
+              borderColor: "rgba(59, 130, 246, 0.3)",
+              background: "rgba(59, 130, 246, 0.08)",
+              marginLeft: 8,
+            }}
+          >
+            📥 Import Bank Statement
+          </button>
         </div>
       </div>
+
+      {/* ── Couple Expense Splitting & Settlement Engine ── */}
+      <SettlementCard
+        p1={p1}
+        p2={p2}
+        shared={shared}
+        month={hhMonth}
+        personNames={personNames}
+        updateShared={updateShared}
+        updatePerson={updatePerson}
+      />
 
       <div className="grid-3 section-gap">
         <div className="metric-card">
@@ -6140,7 +6371,27 @@ export function HouseholdBudget({ p1, p2, shared }) {
       />
 
       <div className="card">
-        <div className="card-title">Expenses by category</div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <div className="card-title" style={{ margin: 0 }}>
+            Expenses by category
+          </div>
+          {isSimple && (
+            <button
+              onClick={() => setShowGranular(!showGranular)}
+              className="btn-ghost"
+              style={{ fontSize: 11, padding: "2px 8px" }}
+            >
+              {showGranular ? "Hide subcategories ▴" : "Show subcategories ▾"}
+            </button>
+          )}
+        </div>
         {allCats.map((cat) => {
           const { total, p1: av, p2: anv, subs } = grouped[cat];
           const subEntries = Object.entries(subs)
@@ -6196,7 +6447,7 @@ export function HouseholdBudget({ p1, p2, shared }) {
                   fontSize: 11,
                   color: "var(--text-muted)",
                   marginTop: 3,
-                  marginBottom: subEntries.length > 0 ? 6 : 0,
+                  marginBottom: (!isSimple || showGranular) && subEntries.length > 0 ? 6 : 0,
                 }}
               >
                 {(av || 0) > 0 && (
@@ -6212,62 +6463,73 @@ export function HouseholdBudget({ p1, p2, shared }) {
                   </span>
                 )}
               </div>
-              {subEntries.map(([sub, sv]) => (
-                <div
-                  key={sub}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingLeft: 14,
-                    marginBottom: 4,
-                  }}
-                >
-                  <span
+              {(!isSimple || showGranular) &&
+                subEntries.map(([sub, sv]) => (
+                  <div
+                    key={sub}
                     style={{
-                      flex: 1,
-                      fontSize: 12,
-                      color: "var(--text-muted)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      paddingLeft: 14,
+                      marginBottom: 4,
                     }}
                   >
-                    ↳ {sub}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--p1)",
-                      minWidth: 60,
-                      textAlign: "right",
-                    }}
-                  >
-                    {(sv.p1 || 0) > 0 ? fmt(sv.p1) : ""}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--p2)",
-                      minWidth: 60,
-                      textAlign: "right",
-                    }}
-                  >
-                    {(sv.p2 || 0) > 0 ? fmt(sv.p2) : ""}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 500,
-                      minWidth: 70,
-                      textAlign: "right",
-                    }}
-                  >
-                    {fmt(sv.total)}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        flex: 1,
+                        fontSize: 12,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      ↳ {sub}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--p1)",
+                        minWidth: 60,
+                        textAlign: "right",
+                      }}
+                    >
+                      {(sv.p1 || 0) > 0 ? fmt(sv.p1) : ""}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--p2)",
+                        minWidth: 60,
+                        textAlign: "right",
+                      }}
+                    >
+                      {(sv.p2 || 0) > 0 ? fmt(sv.p2) : ""}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        minWidth: 70,
+                        textAlign: "right",
+                      }}
+                    >
+                      {fmt(sv.total)}
+                    </span>
+                  </div>
+                ))}
             </div>
           );
         })}
       </div>
+
+      {/* ── Smart Statement Ingestion Modal ── */}
+      <SmartStatementModal
+        open={statementModalOpen}
+        onClose={() => setStatementModalOpen(false)}
+        p1={p1}
+        p2={p2}
+        personNames={personNames}
+        updatePerson={updatePerson}
+      />
     </div>
   );
 }

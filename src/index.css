@@ -31,6 +31,13 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
+  --glass-bg: rgba(19, 19, 26, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --glow-gold: 0 0 20px rgba(201, 168, 76, 0.15);
+  --glow-p1: 0 0 20px rgba(91, 156, 246, 0.15);
+  --glow-p2: 0 0 20px rgba(212, 110, 179, 0.15);
+  --glow-green: 0 0 20px rgba(76, 175, 130, 0.15);
 }
 
 /* ── Light theme ── */
@@ -62,6 +69,13 @@
   --p2-color: #b84a90;
   --p2: var(--p2-color);
   --p2-dim: rgba(184, 74, 144, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.06);
+  --glow-gold: 0 0 20px rgba(160, 132, 48, 0.1);
+  --glow-p1: 0 0 20px rgba(45, 111, 214, 0.1);
+  --glow-p2: 0 0 20px rgba(184, 74, 144, 0.1);
+  --glow-green: 0 0 20px rgba(46, 139, 87, 0.1);
 }
 
 /* System preference auto-switch (only when no explicit data-theme) */
@@ -196,6 +210,29 @@ select:focus-visible {
 .btn-primary:active {
   transform: translateY(0);
   box-shadow: none;
+}
+.btn-secondary {
+  background: var(--bg-card2);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-hover);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+.btn-secondary:active {
+  transform: translateY(0);
 }
 .btn-ghost {
   background: transparent;
@@ -524,6 +561,11 @@ select:focus-visible {
 .dash-tab-content {
   animation: tabFadeIn 0.22s ease-out;
 }
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @keyframes tabFadeIn {
   from {
     opacity: 0;
@@ -588,6 +630,48 @@ select:focus-visible {
 }
 .profile-pill.active .profile-pill-dot {
   opacity: 1;
+}
+
+/* ── ViewMode Switcher ── */
+.viewmode-switcher {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+}
+
+/* ── Mode-Specific View Styling ── */
+.app-layout.mode-simple .pro-only {
+  display: none !important;
+}
+.app-layout.mode-pro .simple-only {
+  display: none !important;
+}
+.app-layout.mode-simple .metric-card {
+  padding: 1.25rem 1.4rem;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+.app-layout.mode-simple .metric-val {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* ── Glass Cards & Micro-interactions ── */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 /* Sidebar: hide mobile-only profile switcher on desktop */

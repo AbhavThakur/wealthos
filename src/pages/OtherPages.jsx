@@ -17,6 +17,7 @@ import {
   removeBiometric,
 } from "../utils/biometric";
 import CSVImport from "../components/CSVImport";
+import TaxHarvestingCard from "../components/TaxHarvestingCard";
 import { localDateISO, compareISODateDesc } from "../utils/date";
 
 export function Debts({ data, personName, personColor, updatePerson }) {
@@ -1245,6 +1246,10 @@ export function TaxPlanner({ data, personName, personColor, updatePerson }) {
       >
         <span style={{ color: personColor }}>{personName}'s</span> Tax Planner
       </div>
+
+      {/* ── LTCG ₹1.25 Lakh Tax Harvesting Advisor ── */}
+      <TaxHarvestingCard investments={invs} personName={personName} />
+
       <div className="grid-2 section-gap">
         {[
           {
@@ -3802,6 +3807,147 @@ function ReleaseNotesAccordion() {
   );
 }
 
+function QuickLogWebhookSettings() {
+  const [webhookKey, setWebhookKey] = useState(() => {
+    try {
+      return localStorage.getItem("wealthos_webhook_key") || "wos_" + Math.random().toString(36).slice(2, 10);
+    } catch {
+      return "wos_key";
+    }
+  });
+  const [copied, setCopied] = useState(false);
+  const [testText, setTestText] = useState("450 Swiggy P1");
+  const [testResult, setTestResult] = useState(null);
+
+  const endpointUrl = typeof window !== "undefined" ? `${window.location.origin}/api/quick-log` : "https://your-domain.com/api/quick-log";
+
+  const handleCopy = (text) => {
+    navigator.clipboard?.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleTest = async () => {
+    try {
+      const res = await fetch("/api/quick-log", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-token": webhookKey,
+        },
+        body: JSON.stringify({ text: testText }),
+      });
+      const json = await res.json();
+      setTestResult(json);
+    } catch (e) {
+      setTestResult({ error: e.message });
+    }
+  };
+
+  return (
+    <div className="card section-gap">
+      <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span>⚡ Quick-Log & Webhook Integration</span>
+        <span style={{ fontSize: 11, background: "var(--gold-dim)", color: "var(--gold)", padding: "2px 8px", borderRadius: 12 }}>
+          iOS Shortcuts / Telegram / Quick Tiles
+        </span>
+      </div>
+      <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+        Log expenses instantly without opening a browser! Send shorthand messages like <code>"450 Swiggy P1"</code> or <code>"Petrol 2000 P2"</code> via Apple Siri Shortcuts, Telegram Bot, or Android Quick Settings.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, marginBottom: 16 }}>
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+            Webhook Endpoint URL
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="text"
+              readOnly
+              value={endpointUrl}
+              style={{ flex: 1, fontSize: 12, padding: "8px 12px", background: "rgba(255,255,255,0.04)" }}
+            />
+            <button className="btn-secondary" onClick={() => handleCopy(endpointUrl)} style={{ fontSize: 12 }}>
+              {copied ? "Copied!" : "Copy URL"}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+            Webhook Secret Token (Header: <code>x-webhook-token</code> or query <code>?token=...</code>)
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="text"
+              value={webhookKey}
+              onChange={(e) => {
+                setWebhookKey(e.target.value);
+                try { localStorage.setItem("wealthos_webhook_key", e.target.value); } catch { /* ignore */ }
+              }}
+              style={{ flex: 1, fontSize: 12, padding: "8px 12px", background: "rgba(255,255,255,0.04)" }}
+            />
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const nextKey = "wos_" + Math.random().toString(36).slice(2, 10);
+                setWebhookKey(nextKey);
+                try { localStorage.setItem("wealthos_webhook_key", nextKey); } catch { /* ignore */ }
+              }}
+              style={{ fontSize: 12 }}
+            >
+              Regenerate
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Interactive Quick Tester */}
+      <div
+        style={{
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: 12,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Test Shorthand Dispatch</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            placeholder="450 Swiggy P1 or Petrol 2000 P2"
+            style={{ flex: 1, fontSize: 12, padding: "6px 10px" }}
+          />
+          <button className="btn-primary" onClick={handleTest} style={{ fontSize: 12, padding: "6px 14px" }}>
+            Test Webhook
+          </button>
+        </div>
+
+        {testResult && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 8,
+              borderRadius: 6,
+              fontSize: 11,
+              background: testResult.success ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+              border: testResult.success ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(239,68,68,0.3)",
+              color: testResult.success ? "var(--green)" : "var(--red)",
+            }}
+          >
+            {testResult.success
+              ? `✓ ${testResult.message} (${testResult.logged?.date})`
+              : `Error: ${testResult.error}`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Settings({
   sharedData,
   updateShared,
@@ -4146,6 +4292,9 @@ export function Settings({
           </button>
         </div>
       )}
+
+      {/* Quick-Log Webhook & Shortcuts Integration */}
+      <QuickLogWebhookSettings />
 
       {/* Google Sheets Integration */}
       <div className="card section-gap">

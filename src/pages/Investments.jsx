@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { Chart, DonutChart } from "../components/Chart";
+import PortfolioTreemap from "../components/PortfolioTreemap";
+import CASImportModal from "../components/CASImportModal";
+import TaxHarvestingCard from "../components/TaxHarvestingCard";
 import {
   fmt,
   fmtCr,
@@ -23,6 +26,7 @@ import {
   Download,
   Pause,
   Play,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { useData } from "../context/DataContext";
@@ -31,6 +35,18 @@ import {
   fetchMFSchemeDetails,
   findMFByISIN,
 } from "../utils/marketData";
+import {
+  inferMFCapCategoryAndReturn,
+  getReturnGuidance,
+  ASSET_BENCHMARK_RETURNS,
+  ASSET_TYPE_THEMES,
+  INVESTMENT_GLOSSARY,
+  getMaturityDays,
+  getMaturityBadge,
+  getRiskBadge,
+} from "../utils/mfCategorizer";
+import InfoTooltip from "../components/InfoTooltip";
+import InvestmentEmptyState from "../components/InvestmentEmptyState";
 import {
   appsForType,
   BANK_LIST,
@@ -373,11 +389,22 @@ export const SIPCard = memo(function SIPCard({
     setEditing(false);
   }, [form, onUpdate]);
 
+  const cardTheme = ASSET_TYPE_THEMES[inv.type] || ASSET_TYPE_THEMES.Other;
+  const riskBadge = getRiskBadge(inv.type);
+  const cardGuidance = getReturnGuidance(inv.returnPct, inv.capCategory, inv.type);
+  const maturityDateStr = isFDInv ? inv.endDate : isPPF ? inv.maturityDate : null;
+  const maturityBadge = maturityDateStr
+    ? getMaturityBadge(maturityDateStr, isFDInv ? "FD Matures" : "PPF Matures")
+    : null;
+
   return (
     <div
       className="card section-gap"
       style={{
-        borderLeft: `3px solid ${personColor}`,
+        borderLeft: `4px solid ${cardTheme.color}`,
+        background: `linear-gradient(135deg, ${cardTheme.bgTint}, rgba(18, 18, 24, 0.98))`,
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
         ...(inv.paused ? { opacity: 0.55 } : {}),
       }}
     >
@@ -993,16 +1020,89 @@ export const SIPCard = memo(function SIPCard({
                 {inv.name}
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <span className="tag tag-blue">{inv.type}</span>
+                <span
+                  className="tag"
+                  style={{
+                    background: cardTheme.badgeBg,
+                    color: cardTheme.badgeColor,
+                    border: `1px solid ${cardTheme.color}44`,
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <span>{cardTheme.icon}</span>
+                  <span>{inv.type}</span>
+                </span>
+                {maturityBadge && (
+                  <span
+                    className="tag"
+                    style={{
+                      background: maturityBadge.bg,
+                      color: maturityBadge.color,
+                      border: maturityBadge.border,
+                      fontWeight: 600,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    {maturityBadge.badgeText}
+                  </span>
+                )}
+                <span
+                  className="tag"
+                  style={{
+                    background: riskBadge.bg,
+                    color: riskBadge.color,
+                    border: riskBadge.border,
+                    fontWeight: 600,
+                    fontSize: 10,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 3,
+                  }}
+                  title={riskBadge.description}
+                >
+                  {riskBadge.label}
+                </span>
+                {inv.capCategory && (
+                  <span
+                    className="tag"
+                    style={{
+                      background: "rgba(255, 255, 255, 0.06)",
+                      color: "var(--text-secondary, #c4c2cc)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    {capCategoryMap[inv.capCategory]?.label || inv.capCategory}
+                  </span>
+                )}
                 <span
                   className="tag"
                   style={{
                     background: "var(--gold-dim)",
                     color: "var(--gold)",
                   }}
+                  title={cardGuidance.hint}
                 >
                   {inv.returnPct}% p.a.
                 </span>
+                {cardGuidance.status !== "unspecified" && (
+                  <span
+                    className="tag"
+                    style={{
+                      background: `${cardGuidance.color}15`,
+                      color: cardGuidance.color,
+                      border: `1px solid ${cardGuidance.color}33`,
+                      fontSize: 11,
+                    }}
+                    title={cardGuidance.hint}
+                  >
+                    {cardGuidance.badgeText}
+                  </span>
+                )}
                 {isFDInv ? (
                   <span
                     className="tag"
@@ -1177,12 +1277,15 @@ export const SIPCard = memo(function SIPCard({
           {/* Key numbers */}
           <div className="grid-4" style={{ marginBottom: "1rem" }}>
             <div className="metric-card">
-              <div className="metric-label">
+              <div className="metric-label" style={{ display: "flex", alignItems: "center" }}>
                 {isFDInv
                   ? "Principal"
                   : isOneTimeInv
                     ? "Purchase price"
                     : "Current Value"}
+                {!isFDInv && !isOneTimeInv && (
+                  <InfoTooltip term="Corpus" glossary={INVESTMENT_GLOSSARY} />
+                )}
               </div>
               <div
                 className="metric-value"
@@ -1246,12 +1349,15 @@ export const SIPCard = memo(function SIPCard({
                 gridColumn: isPPF ? "span 2" : isFDInv ? undefined : "span 1",
               }}
             >
-              <div className="metric-label">
+              <div className="metric-label" style={{ display: "flex", alignItems: "center" }}>
                 {isFDInv
                   ? "Maturity value"
                   : isPPF
                     ? "PPF Milestones"
                     : `${projYears}-year value`}
+                {!isFDInv && !isPPF && (
+                  <InfoTooltip term="CAGR" glossary={INVESTMENT_GLOSSARY} />
+                )}
               </div>
               {isPPF ? (
                 <div style={{ marginTop: 4 }}>
@@ -2143,7 +2249,7 @@ const typeColor = (t) => TYPE_COLORS[t] || "#888888";
 // Each entry: { value (stored), label (shown), buckets (cap weights), isActive }
 // eslint-disable-next-line react-refresh/only-export-components
 export const MF_CAP_CATEGORIES = [
-  { value: "", label: "Not specified", buckets: null, isActive: null },
+  { value: "", label: "✨ Auto-detect from Fund Name", buckets: null, isActive: null },
   {
     value: "large_index",
     label: "Large Cap — Index",
@@ -3452,6 +3558,7 @@ export default function Investments({
   personColor,
   updatePerson,
 }) {
+  const { p1, p2, personNames, updatePerson: updateDataPerson } = useData() || {};
   const investments = useMemo(
     () => data?.investments || [],
     [data?.investments],
@@ -3460,6 +3567,8 @@ export default function Investments({
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
   const [filterType, setFilterType] = useState("All");
+  const [filterMaturity, setFilterMaturity] = useState("All");
+  const [sortBy, setSortBy] = useState("default");
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [strategyDraft, setStrategyDraft] = useState(
     data?.investmentStrategy || "",
@@ -3472,14 +3581,57 @@ export default function Investments({
     () => [...new Set(investments.map((x) => x.bankName).filter(Boolean))],
     [investments],
   );
-  const filteredInvestments = useMemo(
+
+  const hasMaturityItems = useMemo(
     () =>
-      investments
-        .filter((x) => filterApp === "All" || x.appName === filterApp)
-        .filter((x) => filterBank === "All" || x.bankName === filterBank)
-        .filter((x) => filterType === "All" || x.type === filterType),
-    [investments, filterApp, filterBank, filterType],
+      investments.some(
+        (x) => x.endDate || x.maturityDate || x.type === "FD" || x.type === "PPF",
+      ),
+    [investments],
   );
+
+  const filteredInvestments = useMemo(() => {
+    let list = investments
+      .filter((x) => filterApp === "All" || x.appName === filterApp)
+      .filter((x) => filterBank === "All" || x.bankName === filterBank)
+      .filter((x) => filterType === "All" || x.type === filterType);
+
+    if (filterMaturity !== "All") {
+      list = list.filter((x) => {
+        const matDate = x.endDate || x.maturityDate;
+        if (!matDate) return false;
+        const days = getMaturityDays(matDate);
+        if (days === null) return false;
+        if (filterMaturity === "matured") return days < 0;
+        if (filterMaturity === "soon_90") return days >= 0 && days <= 90;
+        if (filterMaturity === "mid_365") return days > 90 && days <= 365;
+        if (filterMaturity === "long") return days > 365;
+        return true;
+      });
+    }
+
+    if (sortBy === "val_desc") {
+      list = [...list].sort(
+        (a, b) =>
+          (b.existingCorpus || b.amount || 0) -
+          (a.existingCorpus || a.amount || 0),
+      );
+    } else if (sortBy === "sip_desc") {
+      list = [...list].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+    } else if (sortBy === "return_desc") {
+      list = [...list].sort((a, b) => (b.returnPct || 0) - (a.returnPct || 0));
+    } else if (sortBy === "maturity_asc") {
+      list = [...list].sort((a, b) => {
+        const dA = a.endDate || a.maturityDate || "9999-99-99";
+        const dB = b.endDate || b.maturityDate || "9999-99-99";
+        return dA.localeCompare(dB);
+      });
+    } else if (sortBy === "name_asc") {
+      list = [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+
+    return list;
+  }, [investments, filterApp, filterBank, filterType, filterMaturity, sortBy]);
   const [newInv, setNewInv] = useState({
     name: "",
     amount: "",
@@ -3505,6 +3657,23 @@ export default function Investments({
     option: "",
     notes: "",
   });
+
+  const addFormInferred = useMemo(() => {
+    return inferMFCapCategoryAndReturn(
+      newInv.name || "",
+      newInv.schemeCategory || "",
+      newInv.type || "Mutual Fund",
+    );
+  }, [newInv.name, newInv.schemeCategory, newInv.type]);
+
+  const addFormGuidance = useMemo(() => {
+    return getReturnGuidance(
+      newInv.returnPct,
+      newInv.capCategory || addFormInferred.capCategory,
+      newInv.type,
+    );
+  }, [newInv.returnPct, newInv.capCategory, newInv.type, addFormInferred]);
+
   const [mfResults, setMfResults] = useState([]);
   const [mfSearching, setMfSearching] = useState(false);
   const [showMfDropdown, setShowMfDropdown] = useState(false);
@@ -3551,6 +3720,12 @@ export default function Investments({
         ? "IDCW"
         : "Growth",
     };
+    const inferred = inferMFCapCategoryAndReturn(
+      verified.schemeName,
+      verified.category || "",
+      "Mutual Fund"
+    );
+
     setNewInv((current) => ({
       ...current,
       name: verified.schemeName,
@@ -3562,6 +3737,13 @@ export default function Investments({
       option: verified.option || "",
       latestNav: verified.nav || 0,
       navDate: verified.navDate || "",
+      capCategory: inferred.capCategory || current.capCategory || "",
+      returnPct:
+        current.returnPct &&
+        current.returnPct !== "12" &&
+        current.returnPct !== 12
+          ? current.returnPct
+          : String(inferred.recommendedReturnPct),
     }));
     if (verified.isin || candidate.isin) {
       setIsinInput(verified.isin || candidate.isin);
@@ -3569,8 +3751,8 @@ export default function Investments({
     setShowMfDropdown(false);
     setIsinMsg(
       details
-        ? `\u2713 Exact scheme verified by ISIN ${details.isin}`
-        : "\u2713 Exact scheme selected by scheme code; ISIN verification is temporarily unavailable",
+        ? `\u2713 Exact scheme verified (${inferred.categoryLabel} \u00b7 ${inferred.recommendedReturnPct}% benchmark CAGR)`
+        : `\u2713 Scheme selected (${inferred.categoryLabel} \u00b7 ${inferred.recommendedReturnPct}% benchmark CAGR)`,
     );
   };
 
@@ -3772,36 +3954,62 @@ export default function Investments({
     [filteredInvestments],
   );
 
+  const [casModalOpen, setCasModalOpen] = useState(false);
+
   return (
     <div>
       <div
         style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          marginBottom: "0.5rem",
-        }}
-      >
-        <span style={{ color: personColor }}>{personName}'s</span> Investments
-      </div>
-      <div
-        style={{
-          color: "var(--text-secondary)",
-          fontSize: 13,
-          marginBottom: "1.25rem",
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: "1.25rem",
         }}
       >
-        <span>
-          Invested auto-updates from SIP start date. Current value auto-syncs
-          from live MF NAVs.
-        </span>
-        {investments.some((x) => x.type === "Mutual Fund" && x.schemeCode) && (
+        <div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 22,
+              marginBottom: "0.25rem",
+            }}
+          >
+            <span style={{ color: personColor }}>{personName}'s</span> Investments
+          </div>
+          <div
+            style={{
+              color: "var(--text-secondary)",
+              fontSize: 13,
+            }}
+          >
+            Invested auto-updates from SIP start date. Current value auto-syncs from live MF NAVs.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button
-            className="btn-ghost"
-            disabled={batchSyncing}
-            onClick={async () => {
+            onClick={() => setCasModalOpen(true)}
+            className="btn-secondary"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--gold)",
+              borderColor: "var(--gold-border)",
+              background: "rgba(234, 179, 8, 0.08)",
+            }}
+          >
+            <FileSpreadsheet size={14} /> 📥 Import CAS / eCAS
+          </button>
+          {investments.some((x) => x.type === "Mutual Fund" && x.schemeCode) && (
+            <button
+              className="btn-ghost"
+              disabled={batchSyncing}
+              onClick={async () => {
               setBatchSyncing(true);
               setBatchSyncResult(null);
               try {
@@ -3851,6 +4059,7 @@ export default function Investments({
             {batchSyncing ? "Syncing…" : "⟳ Sync All MF NAVs"}
           </button>
         )}
+        </div>
       </div>
       {batchSyncResult && (
         <div
@@ -4258,6 +4467,12 @@ export default function Investments({
           </div>
         </div>
       </div>
+
+      {/* ── Asset Allocation Treemap & Rebalancing Advisor ── */}
+      <PortfolioTreemap investments={investments} />
+
+      {/* ── LTCG ₹1.25 Lakh Tax Harvesting Advisor ── */}
+      <TaxHarvestingCard investments={investments} personName={personName} />
 
       <PortfolioCharts rows={invRows} isHousehold={false} />
 
@@ -4889,20 +5104,210 @@ export default function Investments({
 
       {(allApps.length > 0 ||
         allBanks.length > 0 ||
-        investments.length > 1) && (
+        investments.length > 0) && (
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 8,
-            marginBottom: "1rem",
+            gap: 10,
+            marginBottom: "1.25rem",
+            background: "rgba(255, 255, 255, 0.02)",
+            border: "1px solid rgba(255, 255, 255, 0.06)",
+            borderRadius: 12,
+            padding: "12px 14px",
           }}
         >
-          {investments.length > 1 &&
-            (() => {
-              const types = ["All", ...new Set(investments.map((x) => x.type))];
-              if (types.length <= 2) return null;
-              return (
+          {/* Row 1: Type filter & Sort controls */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            {investments.length > 0 &&
+              (() => {
+                const types = ["All", ...new Set(investments.map((x) => x.type))];
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-muted)",
+                        fontWeight: 600,
+                        marginRight: 2,
+                      }}
+                    >
+                      Asset:
+                    </span>
+                    {types.map((t) => {
+                      const count =
+                        t === "All"
+                          ? investments.length
+                          : investments.filter((x) => x.type === t).length;
+                      const theme = ASSET_TYPE_THEMES[t] || ASSET_TYPE_THEMES.Other;
+                      const isSelected = filterType === t;
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => setFilterType(t)}
+                          style={{
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            borderRadius: 99,
+                            border: isSelected
+                              ? `1px solid ${t === "All" ? "var(--gold, #c9a84c)" : theme.color}`
+                              : "1px solid var(--border)",
+                            background: isSelected
+                              ? t === "All"
+                                ? "var(--gold-dim, rgba(201,168,76,0.15))"
+                                : theme.badgeBg
+                              : "transparent",
+                            color: isSelected
+                              ? t === "All"
+                                ? "var(--gold, #c9a84c)"
+                                : theme.badgeColor
+                              : "var(--text-secondary)",
+                            cursor: "pointer",
+                            fontWeight: isSelected ? 600 : 400,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {t !== "All" && <span>{theme.icon}</span>}
+                          <span>{t}</span>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              opacity: 0.75,
+                              background: "rgba(255,255,255,0.08)",
+                              padding: "1px 5px",
+                              borderRadius: 8,
+                            }}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+            {/* Sort Dropdown */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                Sort:
+              </span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 10px",
+                  borderRadius: 8,
+                  background: "var(--surface-2, rgba(255,255,255,0.05))",
+                  border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                  color: "var(--text-primary, #eee)",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="default">Default Order</option>
+                <option value="val_desc">Highest Portfolio Value (₹)</option>
+                <option value="sip_desc">Highest Monthly SIP (₹)</option>
+                <option value="return_desc">Highest Expected Return (%)</option>
+                <option value="maturity_asc">Maturity: Soonest First (⏳)</option>
+                <option value="name_asc">Name (A → Z)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Maturity filters for FDs / PPFs */}
+          {(hasMaturityItems || filterType === "FD" || filterType === "PPF") && (
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                alignItems: "center",
+                paddingTop: 4,
+                borderTop: "1px dashed rgba(255,255,255,0.06)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--gold, #c9a84c)",
+                  fontWeight: 600,
+                  marginRight: 2,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <span>⏳</span>
+                <span>Maturity:</span>
+              </span>
+              {[
+                { id: "All", label: "All Maturities" },
+                { id: "soon_90", label: "⚡ Expiring Soon (< 90d)" },
+                { id: "mid_365", label: "⏳ 3–12 Months" },
+                { id: "long", label: "🗓️ Long Term (> 1yr)" },
+                { id: "matured", label: "⚠️ Matured / Action Needed" },
+              ].map((m) => {
+                const isSelected = filterMaturity === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setFilterMaturity(m.id)}
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 11,
+                      borderRadius: 99,
+                      border: isSelected
+                        ? "1px solid var(--gold, #c9a84c)"
+                        : "1px solid var(--border)",
+                      background: isSelected
+                        ? "var(--gold-dim, rgba(201,168,76,0.18))"
+                        : "transparent",
+                      color: isSelected
+                        ? "var(--gold, #c9a84c)"
+                        : "var(--text-secondary)",
+                      cursor: "pointer",
+                      fontWeight: isSelected ? 600 : 400,
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Row 3: App & Bank filters */}
+          {(allApps.length > 0 || allBanks.length > 0) && (
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+                paddingTop: 4,
+                borderTop: "1px dashed rgba(255,255,255,0.06)",
+              }}
+            >
+              {allApps.length > 0 && (
                 <div
                   style={{
                     display: "flex",
@@ -4918,126 +5323,82 @@ export default function Investments({
                       marginRight: 2,
                     }}
                   >
-                    Type:
+                    App:
                   </span>
-                  {types.map((t) => (
+                  {["All", ...allApps].map((app) => (
                     <button
-                      key={t}
-                      onClick={() => setFilterType(t)}
+                      key={app}
+                      onClick={() => setFilterApp(app)}
                       style={{
-                        padding: "4px 12px",
-                        fontSize: 12,
+                        padding: "3px 10px",
+                        fontSize: 11,
                         borderRadius: 99,
                         border:
-                          filterType === t
+                          filterApp === app
                             ? "1px solid var(--gold)"
                             : "1px solid var(--border)",
                         background:
-                          filterType === t ? "var(--gold-dim)" : "transparent",
+                          filterApp === app ? "var(--gold-dim)" : "transparent",
                         color:
-                          filterType === t
+                          filterApp === app
                             ? "var(--gold)"
                             : "var(--text-secondary)",
                         cursor: "pointer",
-                        fontWeight: filterType === t ? 500 : 400,
+                        fontWeight: filterApp === app ? 500 : 400,
                       }}
                     >
-                      {t}
+                      {app}
                     </button>
                   ))}
                 </div>
-              );
-            })()}
-          {allApps.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  marginRight: 2,
-                }}
-              >
-                App:
-              </span>
-              {["All", ...allApps].map((app) => (
-                <button
-                  key={app}
-                  onClick={() => setFilterApp(app)}
+              )}
+              {allBanks.length > 0 && (
+                <div
                   style={{
-                    padding: "4px 12px",
-                    fontSize: 12,
-                    borderRadius: 99,
-                    border:
-                      filterApp === app
-                        ? "1px solid var(--gold)"
-                        : "1px solid var(--border)",
-                    background:
-                      filterApp === app ? "var(--gold-dim)" : "transparent",
-                    color:
-                      filterApp === app
-                        ? "var(--gold)"
-                        : "var(--text-secondary)",
-                    cursor: "pointer",
-                    fontWeight: filterApp === app ? 500 : 400,
+                    display: "flex",
+                    gap: 6,
+                    flexWrap: "wrap",
+                    alignItems: "center",
                   }}
                 >
-                  {app}
-                </button>
-              ))}
-            </div>
-          )}
-          {allBanks.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  marginRight: 2,
-                }}
-              >
-                Bank:
-              </span>
-              {["All", ...allBanks].map((bank) => (
-                <button
-                  key={bank}
-                  onClick={() => setFilterBank(bank)}
-                  style={{
-                    padding: "4px 12px",
-                    fontSize: 12,
-                    borderRadius: 99,
-                    border:
-                      filterBank === bank
-                        ? "1px solid var(--blue)"
-                        : "1px solid var(--border)",
-                    background:
-                      filterBank === bank
-                        ? "var(--blue-dim, rgba(91,156,246,.12))"
-                        : "transparent",
-                    color:
-                      filterBank === bank
-                        ? "var(--blue)"
-                        : "var(--text-secondary)",
-                    cursor: "pointer",
-                    fontWeight: filterBank === bank ? 500 : 400,
-                  }}
-                >
-                  {bank}
-                </button>
-              ))}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginRight: 2,
+                    }}
+                  >
+                    Bank:
+                  </span>
+                  {["All", ...allBanks].map((bank) => (
+                    <button
+                      key={bank}
+                      onClick={() => setFilterBank(bank)}
+                      style={{
+                        padding: "3px 10px",
+                        fontSize: 11,
+                        borderRadius: 99,
+                        border:
+                          filterBank === bank
+                            ? "1px solid var(--blue)"
+                            : "1px solid var(--border)",
+                        background:
+                          filterBank === bank
+                            ? "var(--blue-dim, rgba(91,156,246,.12))"
+                            : "transparent",
+                        color:
+                          filterBank === bank
+                            ? "var(--blue)"
+                            : "var(--text-secondary)",
+                        cursor: "pointer",
+                        fontWeight: filterBank === bank ? 500 : 400,
+                      }}
+                    >
+                      {bank}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -5077,25 +5438,29 @@ export default function Investments({
         }
       />
 
-      {filteredInvestments.map((inv) => (
-        <SIPCard
-          key={inv.id}
-          inv={inv}
-          personColor={personColor}
-          onUpdate={(updated) =>
-            updatePerson(
-              "investments",
-              investments.map((x) => (x.id === updated.id ? updated : x)),
-            )
-          }
-          onDelete={() =>
-            updatePerson(
-              "investments",
-              investments.filter((x) => x.id !== inv.id),
-            )
-          }
-        />
-      ))}
+      {investments.length === 0 ? (
+        <InvestmentEmptyState onAddClick={() => setShowAdd(true)} />
+      ) : (
+        filteredInvestments.map((inv) => (
+          <SIPCard
+            key={inv.id}
+            inv={inv}
+            personColor={personColor}
+            onUpdate={(updated) =>
+              updatePerson(
+                "investments",
+                investments.map((x) => (x.id === updated.id ? updated : x)),
+              )
+            }
+            onDelete={() =>
+              updatePerson(
+                "investments",
+                investments.filter((x) => x.id !== inv.id),
+              )
+            }
+          />
+        ))
+      )}
 
       {showAdd ? (
         <div className="card section-gap">
@@ -5194,6 +5559,52 @@ export default function Investments({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+              {newInv.name && newInv.name.trim().length >= 2 && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    background: "rgba(201, 168, 76, 0.08)",
+                    border: "1px solid rgba(201, 168, 76, 0.25)",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    fontSize: 11,
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--gold, #c9a84c)" }}>
+                    <span>✨</span>
+                    <span>
+                      <strong>Auto-detected:</strong> {addFormInferred.categoryLabel} · Benchmark: <strong>{addFormInferred.recommendedReturnPct}% CAGR</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewInv((c) => ({
+                        ...c,
+                        capCategory: addFormInferred.capCategory || c.capCategory,
+                        returnPct: String(addFormInferred.recommendedReturnPct),
+                      }));
+                    }}
+                    style={{
+                      background: "var(--gold, #c9a84c)",
+                      color: "#0c0c0f",
+                      border: "none",
+                      borderRadius: 4,
+                      padding: "3px 8px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontSize: 10,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Auto-Fill
+                  </button>
                 </div>
               )}
             </div>
@@ -5445,6 +5856,53 @@ export default function Investments({
                   setNewInv({ ...newInv, returnPct: e.target.value })
                 }
               />
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                {[
+                  { label: "🛡️ Safe 7%", val: "7.0" },
+                  { label: "⚖️ Moderate 12%", val: "12.0" },
+                  { label: "🚀 Growth 15%", val: "15.0" },
+                  {
+                    label: `🎯 Benchmark ${addFormInferred.recommendedReturnPct}%`,
+                    val: String(addFormInferred.recommendedReturnPct),
+                  },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => setNewInv((c) => ({ ...c, returnPct: chip.val }))}
+                    style={{
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 99,
+                      border:
+                        String(newInv.returnPct) === chip.val
+                          ? "1px solid var(--gold, #c9a84c)"
+                          : "1px solid rgba(255,255,255,0.1)",
+                      background:
+                        String(newInv.returnPct) === chip.val
+                          ? "rgba(201,168,76,0.2)"
+                          : "rgba(255,255,255,0.04)",
+                      color:
+                        String(newInv.returnPct) === chip.val
+                          ? "var(--gold, #c9a84c)"
+                          : "var(--text-secondary, #c4c2cc)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: addFormGuidance.color,
+                  marginTop: 4,
+                  lineHeight: 1.3,
+                }}
+              >
+                {addFormGuidance.hint}
+              </div>
             </div>
             <div>
               <label
@@ -5922,6 +6380,16 @@ export default function Investments({
           <Plus size={14} /> Add Investment
         </button>
       )}
+
+      {/* ── CAS eCAS Ingestion Modal ── */}
+      <CASImportModal
+        open={casModalOpen}
+        onClose={() => setCasModalOpen(false)}
+        p1={p1}
+        p2={p2}
+        personNames={personNames}
+        updatePerson={updateDataPerson}
+      />
     </div>
   );
 }

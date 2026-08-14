@@ -34,6 +34,8 @@ vi.mock("echarts/charts", () => ({
   BarChart: Symbol("BarChart"),
   LineChart: Symbol("LineChart"),
   PieChart: Symbol("PieChart"),
+  SankeyChart: Symbol("SankeyChart"),
+  TreemapChart: Symbol("TreemapChart"),
 }));
 
 vi.mock("echarts/components", () => ({

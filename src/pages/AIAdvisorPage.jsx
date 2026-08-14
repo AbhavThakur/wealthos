@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Sparkles, Send, Trash2, Copy, Check, ChevronDown } from "lucide-react";
 import { askSmart } from "../utils/smartAdvisor";
 import { askGroq, buildContext, buildReport } from "../utils/aiAdvisor";
+import LifeDecisionLab from "../components/LifeDecisionLab";
 
 const QUICK_PROMPTS = [
   "Where should I invest right now?",
@@ -407,6 +408,9 @@ export default function AIAdvisorPage({ p1, p2, shared, profile }) {
           </button>
         </div>
       </div>
+
+      {/* ── Life Decision Simulator ("Can We Afford This?") ── */}
+      <LifeDecisionLab p1={p1} p2={p2} />
     </div>
   );
 }

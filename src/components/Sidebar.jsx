@@ -23,6 +23,7 @@ import {
   BarChart2,
   Eye,
   EyeOff,
+  Heart,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ADMIN_EMAILS from "../utils/adminEmails";
@@ -45,6 +46,10 @@ const NAV_GROUPS = [
       { id: "networth", icon: TrendingDown, label: "Net Worth" },
       { id: "goals", icon: Target, label: "Goals" },
     ],
+  },
+  {
+    label: "Together",
+    items: [{ id: "monthlyreview", icon: Heart, label: "Monthly Review" }],
   },
   {
     label: "Commitments",
@@ -79,6 +84,7 @@ const ALL_NAV_ITEMS = {
   debts: { icon: CreditCard, label: "Debts & EMIs" },
   insurance: { icon: Shield, label: "Insurance" },
   subscriptions: { icon: RefreshCw, label: "Subscriptions" },
+  monthlyreview: { icon: Heart, label: "Review" },
   alerts: { icon: Bell, label: "Alerts" },
   tax: { icon: Calculator, label: "Tax Planner" },
   advisor: { icon: MessageSquare, label: "AI" },

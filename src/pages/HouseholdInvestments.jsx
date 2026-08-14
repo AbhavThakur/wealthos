@@ -8,8 +8,17 @@ import {
   lumpCorpus,
   freqToMonthly,
 } from "../utils/finance";
-import { Plus, Trash2, Edit3, Check, X, Download } from "lucide-react";
+import { Plus, Trash2, Edit3, Check, X, Download, FileSpreadsheet } from "lucide-react";
 import { useData } from "../context/DataContext";
+import { useViewMode } from "../context/ViewModeContext";
+import CASImportModal from "../components/CASImportModal";
+import TaxHarvestingCard from "../components/TaxHarvestingCard";
+import {
+  inferMFCapCategoryAndReturn,
+  getReturnGuidance,
+  ASSET_TYPE_THEMES,
+  getMaturityDays,
+} from "../utils/mfCategorizer";
 import {
   SIPCard,
   PortfolioCharts,
@@ -18,6 +27,7 @@ import {
   BulkIsinMatch,
   MF_CAP_CATEGORIES,
 } from "./Investments";
+import PortfolioTreemap from "../components/PortfolioTreemap";
 import {
   computeInvRow,
   getInvested,
@@ -53,10 +63,13 @@ const rangeYears = (startDate, endDate, daysPerYear = 365.25) => {
 
 export function HouseholdInvestments({ p1, p2, updatePerson }) {
   const { personNames } = useData() || {};
+  const { isSimple } = useViewMode() || {};
   const [filterPerson, setFilterPerson] = useState("All");
   const [filterApp, setFilterApp] = useState("All");
   const [filterBank, setFilterBank] = useState("All");
   const [filterType, setFilterType] = useState("All");
+  const [filterMaturity, setFilterMaturity] = useState("All");
+  const [sortBy, setSortBy] = useState("default");
   const [showAdd, setShowAdd] = useState(false);
   const [addFor, setAddFor] = useState("p1");
   const emptyNew = {
@@ -79,6 +92,18 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
   };
   const [newInv, setNewInv] = useState(emptyNew);
 
+  const addFormInferred = inferMFCapCategoryAndReturn(
+    newInv.name || "",
+    newInv.schemeCategory || "",
+    newInv.type || "Mutual Fund",
+  );
+
+  const addFormGuidance = getReturnGuidance(
+    newInv.returnPct,
+    newInv.capCategory || addFormInferred.capCategory,
+    newInv.type,
+  );
+
   const p1Invs = (p1?.investments || []).map((x) => ({
     ...x,
     _owner: "p1",
@@ -95,6 +120,10 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     ...new Set(allInvestments.map((x) => x.bankName).filter(Boolean)),
   ];
 
+  const hasMaturityItems = allInvestments.some(
+    (x) => x.endDate || x.maturityDate || x.type === "FD" || x.type === "PPF",
+  );
+
   let filtered =
     filterPerson === "All"
       ? allInvestments
@@ -107,6 +136,40 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     filtered = filtered.filter((x) => x.bankName === filterBank);
   if (filterType !== "All")
     filtered = filtered.filter((x) => x.type === filterType);
+
+  if (filterMaturity !== "All") {
+    filtered = filtered.filter((x) => {
+      const matDate = x.endDate || x.maturityDate;
+      if (!matDate) return false;
+      const days = getMaturityDays(matDate);
+      if (days === null) return false;
+      if (filterMaturity === "matured") return days < 0;
+      if (filterMaturity === "soon_90") return days >= 0 && days <= 90;
+      if (filterMaturity === "mid_365") return days > 90 && days <= 365;
+      if (filterMaturity === "long") return days > 365;
+      return true;
+    });
+  }
+
+  if (sortBy === "val_desc") {
+    filtered = [...filtered].sort(
+      (a, b) =>
+        (b.existingCorpus || b.amount || 0) -
+        (a.existingCorpus || a.amount || 0),
+    );
+  } else if (sortBy === "sip_desc") {
+    filtered = [...filtered].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  } else if (sortBy === "return_desc") {
+    filtered = [...filtered].sort((a, b) => (b.returnPct || 0) - (a.returnPct || 0));
+  } else if (sortBy === "maturity_asc") {
+    filtered = [...filtered].sort((a, b) => {
+      const dA = a.endDate || a.maturityDate || "9999-99-99";
+      const dB = b.endDate || b.maturityDate || "9999-99-99";
+      return dA.localeCompare(dB);
+    });
+  } else if (sortBy === "name_asc") {
+    filtered = [...filtered].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }
 
   const calcM = (list) => {
     const monthly = list.reduce(
@@ -229,25 +292,65 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
     owner: x._owner,
   }));
 
+  const [casModalOpen, setCasModalOpen] = useState(false);
+
   return (
     <div>
       <div
         style={{
-          fontFamily: "var(--font-display)",
-          fontSize: 22,
-          marginBottom: "0.5rem",
-        }}
-      >
-        <span style={{ color: "var(--gold)" }}>Household</span> Investments
-      </div>
-      <div
-        style={{
-          color: "var(--text-secondary)",
-          fontSize: 13,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 12,
           marginBottom: "1.25rem",
         }}
       >
-        Combined view across both profiles.
+        <div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 22,
+              marginBottom: "0.25rem",
+            }}
+          >
+            <span style={{ color: "var(--gold)" }}>Household</span> Investments
+          </div>
+          <div
+            style={{
+              color: "var(--text-secondary)",
+              fontSize: 13,
+            }}
+          >
+            Combined view across both profiles with automated portfolio ingestion.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={() => setCasModalOpen(true)}
+            className="btn-secondary"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--gold)",
+              borderColor: "var(--gold-border)",
+              background: "rgba(234, 179, 8, 0.08)",
+            }}
+          >
+            <FileSpreadsheet size={14} /> 📥 Import CAS / eCAS
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="btn-primary"
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
+          >
+            <Plus size={14} /> Add Investment
+          </button>
+        </div>
       </div>
 
       {/* Summary metrics */}
@@ -720,158 +823,325 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
         </div>
       </div>
 
-      <PortfolioCharts rows={hhInvRows} isHousehold={true} />
+      {/* ── Asset Allocation Treemap & Rebalancing Advisor ── */}
+      <PortfolioTreemap
+        investments={[...(p1?.investments || []), ...(p2?.investments || [])]}
+      />
+
+      {/* ── LTCG ₹1.25 Lakh Tax Harvesting Advisor ── */}
+      <TaxHarvestingCard
+        investments={[...(p1?.investments || []), ...(p2?.investments || [])]}
+        personName="Household"
+      />
+
+      {!isSimple && <PortfolioCharts rows={hhInvRows} isHousehold={true} />}
 
       {/* Filter row */}
       <div
         style={{
           display: "flex",
-          gap: 16,
-          flexWrap: "wrap",
-          alignItems: "center",
-          marginBottom: "1rem",
+          flexDirection: "column",
+          gap: 10,
+          marginBottom: "1.25rem",
+          background: "rgba(255, 255, 255, 0.02)",
+          border: "1px solid rgba(255, 255, 255, 0.06)",
+          borderRadius: 12,
+          padding: "12px 14px",
         }}
       >
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Person:
-          </span>
-          {[
-            { id: "All", label: "All", color: "var(--gold)" },
-            {
-              id: "p1",
-              label: personNames?.p1 || "Person 1",
-              color: "var(--p1)",
-            },
-            {
-              id: "p2",
-              label: personNames?.p2 || "Person 2",
-              color: "var(--p2)",
-            },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setFilterPerson(p.id)}
+        {/* Row 1: Person tabs & Sort */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+              Owner:
+            </span>
+            {[
+              { id: "All", label: "All Portfolio", color: "var(--gold)" },
+              {
+                id: "p1",
+                label: personNames?.p1 || "Person 1",
+                color: "var(--p1)",
+              },
+              {
+                id: "p2",
+                label: personNames?.p2 || "Person 2",
+                color: "var(--p2)",
+              },
+            ].map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setFilterPerson(p.id)}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  borderRadius: 99,
+                  cursor: "pointer",
+                  border:
+                    filterPerson === p.id
+                      ? `1px solid ${p.color}`
+                      : "1px solid var(--border)",
+                  background:
+                    filterPerson === p.id ? `${p.color}22` : "transparent",
+                  color:
+                    filterPerson === p.id ? p.color : "var(--text-secondary)",
+                  fontWeight: filterPerson === p.id ? 600 : 400,
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+              Sort:
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
               style={{
-                padding: "4px 12px",
                 fontSize: 12,
-                borderRadius: 99,
+                padding: "4px 10px",
+                borderRadius: 8,
+                background: "var(--surface-2, rgba(255,255,255,0.05))",
+                border: "1px solid var(--border, rgba(255,255,255,0.1))",
+                color: "var(--text-primary, #eee)",
                 cursor: "pointer",
-                border:
-                  filterPerson === p.id
-                    ? `1px solid ${p.color}`
-                    : "1px solid var(--border)",
-                background:
-                  filterPerson === p.id ? `${p.color}22` : "transparent",
-                color:
-                  filterPerson === p.id ? p.color : "var(--text-secondary)",
-                fontWeight: filterPerson === p.id ? 500 : 400,
               }}
             >
-              {p.label}
-            </button>
-          ))}
+              <option value="default">Default Order</option>
+              <option value="val_desc">Highest Portfolio Value (₹)</option>
+              <option value="sip_desc">Highest Monthly SIP (₹)</option>
+              <option value="return_desc">Highest Expected Return (%)</option>
+              <option value="maturity_asc">Maturity: Soonest First (⏳)</option>
+              <option value="name_asc">Name (A → Z)</option>
+            </select>
+          </div>
         </div>
-        {allApps.length > 0 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              App:
-            </span>
-            {["All", ...allApps].map((app) => (
-              <button
-                key={app}
-                onClick={() => setFilterApp(app)}
-                style={{
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  borderRadius: 99,
-                  cursor: "pointer",
-                  border:
-                    filterApp === app
-                      ? "1px solid var(--gold)"
-                      : "1px solid var(--border)",
-                  background:
-                    filterApp === app ? "var(--gold-dim)" : "transparent",
-                  color:
-                    filterApp === app ? "var(--gold)" : "var(--text-secondary)",
-                  fontWeight: filterApp === app ? 500 : 400,
-                }}
-              >
-                {app}
-              </button>
-            ))}
-          </div>
-        )}
-        {allBanks.length > 0 && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Bank:
-            </span>
-            {["All", ...allBanks].map((bank) => (
-              <button
-                key={bank}
-                onClick={() => setFilterBank(bank)}
-                style={{
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  borderRadius: 99,
-                  cursor: "pointer",
-                  border:
-                    filterBank === bank
-                      ? "1px solid var(--blue)"
-                      : "1px solid var(--border)",
-                  background:
-                    filterBank === bank
-                      ? "var(--blue-dim, rgba(91,156,246,.12))"
-                      : "transparent",
-                  color:
-                    filterBank === bank
-                      ? "var(--blue)"
-                      : "var(--text-secondary)",
-                  fontWeight: filterBank === bank ? 500 : 400,
-                }}
-              >
-                {bank}
-              </button>
-            ))}
-          </div>
-        )}
+
+        {/* Row 2: Asset Type filter pills */}
         {(() => {
           const types = ["All", ...new Set(allInvestments.map((x) => x.type))];
-          if (types.length <= 2) return null;
           return (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Type:
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                alignItems: "center",
+                paddingTop: 4,
+                borderTop: "1px dashed rgba(255,255,255,0.06)",
+              }}
+            >
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+                Asset:
               </span>
-              {types.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFilterType(t)}
-                  style={{
-                    padding: "4px 12px",
-                    fontSize: 12,
-                    borderRadius: 99,
-                    cursor: "pointer",
-                    border:
-                      filterType === t
-                        ? "1px solid var(--gold)"
+              {types.map((t) => {
+                const count =
+                  t === "All"
+                    ? allInvestments.length
+                    : allInvestments.filter((x) => x.type === t).length;
+                const theme = ASSET_TYPE_THEMES[t] || ASSET_TYPE_THEMES.Other;
+                const isSelected = filterType === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setFilterType(t)}
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: 12,
+                      borderRadius: 99,
+                      cursor: "pointer",
+                      border: isSelected
+                        ? `1px solid ${t === "All" ? "var(--gold, #c9a84c)" : theme.color}`
                         : "1px solid var(--border)",
-                    background:
-                      filterType === t ? "var(--gold-dim)" : "transparent",
-                    color:
-                      filterType === t
-                        ? "var(--gold)"
+                      background: isSelected
+                        ? t === "All"
+                          ? "var(--gold-dim, rgba(201,168,76,0.15))"
+                          : theme.badgeBg
+                        : "transparent",
+                      color: isSelected
+                        ? t === "All"
+                          ? "var(--gold, #c9a84c)"
+                          : theme.badgeColor
                         : "var(--text-secondary)",
-                    fontWeight: filterType === t ? 500 : 400,
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
+                      fontWeight: isSelected ? 600 : 400,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {t !== "All" && <span>{theme.icon}</span>}
+                    <span>{t}</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        opacity: 0.75,
+                        background: "rgba(255,255,255,0.08)",
+                        padding: "1px 5px",
+                        borderRadius: 8,
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           );
         })()}
+
+        {/* Row 3: Maturity filters for FDs / PPFs */}
+        {(hasMaturityItems || filterType === "FD" || filterType === "PPF") && (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+              paddingTop: 4,
+              borderTop: "1px dashed rgba(255,255,255,0.06)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--gold, #c9a84c)",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <span>⏳</span>
+              <span>Maturity:</span>
+            </span>
+            {[
+              { id: "All", label: "All Maturities" },
+              { id: "soon_90", label: "⚡ Expiring Soon (< 90d)" },
+              { id: "mid_365", label: "⏳ 3–12 Months" },
+              { id: "long", label: "🗓️ Long Term (> 1yr)" },
+              { id: "matured", label: "⚠️ Matured / Action Needed" },
+            ].map((m) => {
+              const isSelected = filterMaturity === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setFilterMaturity(m.id)}
+                  style={{
+                    padding: "3px 10px",
+                    fontSize: 11,
+                    borderRadius: 99,
+                    border: isSelected
+                      ? "1px solid var(--gold, #c9a84c)"
+                      : "1px solid var(--border)",
+                    background: isSelected
+                      ? "var(--gold-dim, rgba(201,168,76,0.18))"
+                      : "transparent",
+                    color: isSelected
+                      ? "var(--gold, #c9a84c)"
+                      : "var(--text-secondary)",
+                    cursor: "pointer",
+                    fontWeight: isSelected ? 600 : 400,
+                  }}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Row 4: App & Bank filters */}
+        {(allApps.length > 0 || allBanks.length > 0) && (
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+              paddingTop: 4,
+              borderTop: "1px dashed rgba(255,255,255,0.06)",
+            }}
+          >
+            {allApps.length > 0 && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  App:
+                </span>
+                {["All", ...allApps].map((app) => (
+                  <button
+                    key={app}
+                    onClick={() => setFilterApp(app)}
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 11,
+                      borderRadius: 99,
+                      cursor: "pointer",
+                      border:
+                        filterApp === app
+                          ? "1px solid var(--gold)"
+                          : "1px solid var(--border)",
+                      background:
+                        filterApp === app ? "var(--gold-dim)" : "transparent",
+                      color:
+                        filterApp === app
+                          ? "var(--gold)"
+                          : "var(--text-secondary)",
+                      fontWeight: filterApp === app ? 500 : 400,
+                    }}
+                  >
+                    {app}
+                  </button>
+                ))}
+              </div>
+            )}
+            {allBanks.length > 0 && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Bank:
+                </span>
+                {["All", ...allBanks].map((bank) => (
+                  <button
+                    key={bank}
+                    onClick={() => setFilterBank(bank)}
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 11,
+                      borderRadius: 99,
+                      cursor: "pointer",
+                      border:
+                        filterBank === bank
+                          ? "1px solid var(--blue)"
+                          : "1px solid var(--border)",
+                      background:
+                        filterBank === bank
+                          ? "var(--blue-dim, rgba(91,156,246,.12))"
+                          : "transparent",
+                      color:
+                        filterBank === bank
+                          ? "var(--blue)"
+                          : "var(--text-secondary)",
+                      fontWeight: filterBank === bank ? 500 : 400,
+                    }}
+                  >
+                    {bank}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {filtered.length > 0 && (
@@ -1079,6 +1349,103 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
                   }
                   {...(f.key === "bankName" ? { list: "bank-list-hh" } : {})}
                 />
+                {f.key === "name" && newInv.name && newInv.name.trim().length >= 2 && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      background: "rgba(201, 168, 76, 0.08)",
+                      border: "1px solid rgba(201, 168, 76, 0.25)",
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--gold, #c9a84c)" }}>
+                      <span>✨</span>
+                      <span>
+                        <strong>Auto-detected:</strong> {addFormInferred.categoryLabel} · Benchmark: <strong>{addFormInferred.recommendedReturnPct}% CAGR</strong>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewInv((c) => ({
+                          ...c,
+                          capCategory: addFormInferred.capCategory || c.capCategory,
+                          returnPct: String(addFormInferred.recommendedReturnPct),
+                        }));
+                      }}
+                      style={{
+                        background: "var(--gold, #c9a84c)",
+                        color: "#0c0c0f",
+                        border: "none",
+                        borderRadius: 4,
+                        padding: "3px 8px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontSize: 10,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Auto-Fill
+                    </button>
+                  </div>
+                )}
+                {f.key === "returnPct" && (
+                  <>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                      {[
+                        { label: "🛡️ Safe 7%", val: "7.0" },
+                        { label: "⚖️ Moderate 12%", val: "12.0" },
+                        { label: "🚀 Growth 15%", val: "15.0" },
+                        {
+                          label: `🎯 Benchmark ${addFormInferred.recommendedReturnPct}%`,
+                          val: String(addFormInferred.recommendedReturnPct),
+                        },
+                      ].map((chip) => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => setNewInv((c) => ({ ...c, returnPct: chip.val }))}
+                          style={{
+                            fontSize: 10,
+                            padding: "2px 8px",
+                            borderRadius: 99,
+                            border:
+                              String(newInv.returnPct) === chip.val
+                                ? "1px solid var(--gold, #c9a84c)"
+                                : "1px solid rgba(255,255,255,0.1)",
+                            background:
+                              String(newInv.returnPct) === chip.val
+                                ? "rgba(201,168,76,0.2)"
+                                : "rgba(255,255,255,0.04)",
+                            color:
+                              String(newInv.returnPct) === chip.val
+                                ? "var(--gold, #c9a84c)"
+                                : "var(--text-secondary, #c4c2cc)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: addFormGuidance.color,
+                        marginTop: 4,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {addFormGuidance.hint}
+                    </div>
+                  </>
+                )}
                 {f.key === "bankName" && (
                   <datalist id="bank-list-hh">
                     {BANK_LIST.map((b) => (
@@ -1520,6 +1887,16 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
           <Plus size={14} /> Add Investment
         </button>
       )}
+
+      {/* ── CAS eCAS Ingestion Modal ── */}
+      <CASImportModal
+        open={casModalOpen}
+        onClose={() => setCasModalOpen(false)}
+        p1={p1}
+        p2={p2}
+        personNames={personNames}
+        updatePerson={updatePerson}
+      />
     </div>
   );
 }

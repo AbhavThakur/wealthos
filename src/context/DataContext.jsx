@@ -55,6 +55,7 @@ const EMPTY_PERSON = {
 const EMPTY_SHARED = {
   goals: [],
   trips: [],
+  monthlyReviews: [],
   profile: {
     householdName: "",
     city: "",

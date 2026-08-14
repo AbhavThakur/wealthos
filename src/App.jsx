@@ -9,6 +9,7 @@ import {
 } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData, DemoDataProvider } from "./context/DataContext";
+import { ViewModeProvider, useViewMode } from "./context/ViewModeContext";
 import { toast } from "sonner";
 import Sidebar from "./components/Sidebar";
 import { exportAllData } from "./utils/exportData";
@@ -104,6 +105,7 @@ const HouseholdInvestments = lazy(() =>
 );
 const Goals = lazy(() => import("./pages/Goals"));
 const NetWorth = lazy(() => import("./pages/NetWorth"));
+const MonthlyReview = lazy(() => import("./pages/MonthlyReview"));
 const AIAdvisorPage = lazy(() => import("./pages/AIAdvisorPage"));
 const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const BudgetAlerts = lazy(() =>
@@ -158,6 +160,7 @@ const PAGE_TITLES = {
   cashflow: "Cash Flow",
   insurance: "Insurance",
   subscriptions: "Subscriptions",
+  monthlyreview: "Monthly Review",
   alerts: "Budget Alerts",
   tax: "Tax Planner",
   settings: "Settings",
@@ -401,6 +404,7 @@ function AppInner() {
 
   // In solo mode, person2 doesn't exist — force profile to person1
   const effectiveProfile = isSolo && profile !== "p1" ? "p1" : profile;
+  const { setViewMode, isSimple } = useViewMode();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(getPrivacyMode);
   const togglePrivacyMode = useCallback(() => {
@@ -559,11 +563,17 @@ function AppInner() {
             p2={p2}
             shared={shared}
             personNames={personNames}
+            updateShared={updateShared}
           />
         );
       case "budget":
         return isHousehold ? (
-          <HouseholdBudget p1={p1} p2={p2} shared={shared} />
+          <HouseholdBudget
+            p1={p1}
+            p2={p2}
+            shared={shared}
+            updateShared={updateShared}
+          />
         ) : (
           both(Budget, { shared, updateShared })
         );
@@ -626,6 +636,16 @@ function AppInner() {
           <HouseholdSubscriptions p1={p1} p2={p2} updatePerson={updatePerson} />
         ) : (
           both(Subscriptions)
+        );
+      case "monthlyreview":
+        return (
+          <MonthlyReview
+            p1={p1}
+            p2={p2}
+            shared={shared}
+            updateShared={updateShared}
+            personNames={personNames}
+          />
         );
       case "settings":
         return (
@@ -760,10 +780,62 @@ function AppInner() {
         privacyMode={privacyMode}
         onTogglePrivacy={togglePrivacyMode}
       />
-      <div className="app-layout">
+      <div
+        className={`app-layout mode-${isSimple ? "simple" : "pro"}`}
+        data-view-mode={isSimple ? "simple" : "pro"}
+      >
         <OfflineBanner />
+        {isSimple && (
+          <div
+            style={{
+              padding: "6px 14px",
+              margin: "0 0 10px",
+              background:
+                "linear-gradient(90deg, rgba(234,179,8,0.12), rgba(234,179,8,0.02))",
+              border: "1px solid var(--gold-border)",
+              borderRadius: "var(--radius, 10px)",
+              fontSize: 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              color: "var(--gold)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>✨</span>
+              <span>
+                <strong>Simple Mode</strong>: Focused high-level overview & core
+                health metrics.
+              </span>
+            </div>
+            <button
+              onClick={() => setViewMode("pro")}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--gold)",
+                textDecoration: "underline",
+                fontSize: 11,
+                cursor: "pointer",
+                fontWeight: 600,
+                padding: "2px 6px",
+              }}
+            >
+              Switch to Pro ⚡
+            </button>
+          </div>
+        )}
         {/* ── Profile switcher (always visible) ── */}
-        <div className="profile-bar">
+        <div
+          className="profile-bar"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
           <div
             className="profile-switcher"
             role="radiogroup"
@@ -814,6 +886,38 @@ function AppInner() {
                 {p.label}
               </button>
             ))}
+          </div>
+          <div
+            className="viewmode-switcher"
+            role="radiogroup"
+            aria-label="View mode selection"
+          >
+            <button
+              className={`profile-pill${isSimple ? " active" : ""}`}
+              style={{
+                "--pill-color": "var(--gold)",
+                "--pill-dim": "var(--gold-dim)",
+              }}
+              onClick={() => setViewMode("simple")}
+              role="radio"
+              aria-checked={isSimple}
+              title="Simple View: Clean high-level metrics and focus cards"
+            >
+              ✨ Simple
+            </button>
+            <button
+              className={`profile-pill${!isSimple ? " active" : ""}`}
+              style={{
+                "--pill-color": "var(--gold)",
+                "--pill-dim": "var(--gold-dim)",
+              }}
+              onClick={() => setViewMode("pro")}
+              role="radio"
+              aria-checked={!isSimple}
+              title="Pro View: Deep analytics, full tables, and detailed breakdowns"
+            >
+              ⚡ Pro
+            </button>
           </div>
         </div>
         <main
@@ -873,25 +977,27 @@ function AppInner() {
 export default function Root() {
   return (
     <AuthProvider>
-      <Suspense fallback={null}>
-        <Toaster
-          position="bottom-center"
-          toastOptions={{
-            style: {
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              color: "var(--text-primary)",
-              fontSize: 13,
-            },
-          }}
-          richColors
-          closeButton
-        />
-      </Suspense>
-      <Suspense fallback={null}>
-        <UpdateBanner />
-      </Suspense>
-      <App />
+      <ViewModeProvider>
+        <Suspense fallback={null}>
+          <Toaster
+            position="bottom-center"
+            toastOptions={{
+              style: {
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+              },
+            }}
+            richColors
+            closeButton
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <UpdateBanner />
+        </Suspense>
+        <App />
+      </ViewModeProvider>
     </AuthProvider>
   );
 }

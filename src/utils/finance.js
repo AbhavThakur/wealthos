@@ -42,8 +42,33 @@ export const nextId = (arr) => Math.max(0, ...arr.map((x) => x.id ?? 0)) + 1;
 
 /** For one-time expenses the effective amount is the sum of log entries only. */
 export const onetimeEffective = (exp) => {
+  if (!exp) return 0;
   if (exp.expenseType !== "onetime") return exp.amount || 0;
   return sumMoney((exp.entries || []).map((entry) => entry.amount || 0));
+};
+
+export const onetimeMatchesMonth = (exp, ym) => {
+  if (!exp) return false;
+  const primaryYm = (exp.date || "").slice(0, 7);
+  if (primaryYm === ym) return true;
+  const entries = exp.entries || [];
+  return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
+};
+
+export const expAmount = (e, ym) => {
+  if (!e) return 0;
+  if (e.expenseType === "onetime") {
+    if (!ym) return onetimeEffective(e);
+    const entrySum = (e.entries || []).reduce(
+      (s, entry) =>
+        (entry.date || "").slice(0, 7) === ym ? s + (Number(entry.amount) || 0) : s,
+      0,
+    );
+    if (entrySum > 0) return entrySum;
+    if ((e.date || "").slice(0, 7) === ym) return Number(e.amount) || 0;
+    return 0;
+  }
+  return Number(e.amount) || 0;
 };
 
 // mfapi.in doesn't expose real expense ratios, so estimate from the fund

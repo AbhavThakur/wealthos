@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState } from "react";
 import { EmergencyFundCard } from "./MorePages";
 import { Chart, DonutChart } from "../components/Chart";
@@ -30,12 +31,17 @@ import {
   PiggyBank,
   Activity,
   RefreshCw,
+  Heart,
 } from "lucide-react";
 import { InfoModal } from "../components/InfoModal";
+import { calcHealthScore, upsertMonthlyReview } from "../utils/monthlyReview";
 import { useMarketData } from "../hooks/useMarketData";
 import { calculateNetWorth } from "../utils/netWorth";
 import MonthlySummary from "../components/MonthlySummary";
+import SankeyDiagram from "../components/SankeyDiagram";
+import MoneyDateModal from "../components/MoneyDateModal";
 import { localYearMonth, parseLocalDate } from "../utils/date";
+import { useViewMode } from "../context/ViewModeContext";
 
 function Sparkline({ data, color, width = 64, height = 24 }) {
   if (!data || data.length < 2) return null;
@@ -70,7 +76,7 @@ function Sparkline({ data, color, width = 64, height = 24 }) {
 
 // ── Month-aware stats from transactions ────────────────────────────────────
 
-function statsFromTxns(txns, exps, incomes, ym, subs) {
+export function statsFromTxns(txns, exps, incomes, ym, subs) {
   let income = 0,
     expenses = 0,
     investments = 0,
@@ -289,86 +295,6 @@ function HealthRing({ score }) {
       </div>
     </div>
   );
-}
-
-// ── Financial Health Score: 5-pillar model ────────────────────────────────
-function calcHealthScore({
-  savingsRate,
-  dti,
-  emergencyMonths,
-  hasInvestments,
-  insAdequate,
-}) {
-  const pillars = [
-    {
-      key: "savings",
-      label: "Savings Rate",
-      emoji: "💰",
-      maxPts: 25,
-      pts:
-        savingsRate >= 25
-          ? 25
-          : savingsRate >= 20
-            ? 22
-            : Math.round((savingsRate / 20) * 20),
-      detail:
-        savingsRate >= 20
-          ? `${savingsRate}% — on target`
-          : `${savingsRate}% — target 20%+`,
-    },
-    {
-      key: "debt",
-      label: "Debt Load",
-      emoji: "📉",
-      maxPts: 25,
-      pts: dti < 0.2 ? 25 : dti < 0.3 ? 20 : dti < 0.4 ? 12 : dti < 0.5 ? 5 : 0,
-      detail: `${Math.round(dti * 100)}% of income on EMIs — ${dti < 0.3 ? "healthy" : dti < 0.4 ? "manageable" : "high"}`,
-    },
-    {
-      key: "emergency",
-      label: "Emergency Fund",
-      emoji: "🛡️",
-      maxPts: 20,
-      pts:
-        emergencyMonths >= 6
-          ? 20
-          : Math.round((Math.min(emergencyMonths, 6) / 6) * 20),
-      detail: `${emergencyMonths.toFixed(1)} months coverage — ${emergencyMonths >= 6 ? "excellent" : emergencyMonths >= 3 ? "adequate" : "build this up"}`,
-    },
-    {
-      key: "investing",
-      label: "Investing Regularly",
-      emoji: "📈",
-      maxPts: 20,
-      pts: hasInvestments ? 20 : 0,
-      detail: hasInvestments
-        ? "Monthly SIPs/investments active"
-        : "No investments set up yet",
-    },
-    {
-      key: "protection",
-      label: "Life Insurance",
-      emoji: "🔒",
-      maxPts: 10,
-      pts: insAdequate ? 10 : 0,
-      detail: insAdequate
-        ? "Life cover is adequate"
-        : "cover gap — consider a term plan",
-    },
-  ];
-  const score = Math.min(
-    100,
-    pillars.reduce((s, p) => s + p.pts, 0),
-  );
-  const label =
-    score >= 80
-      ? "Excellent"
-      : score >= 65
-        ? "Good"
-        : score >= 45
-          ? "Needs Work"
-          : "At Risk";
-  return { score, label, pillars };
 }
 
 // ── Monthly Cash Flow aggregation ──
@@ -1289,7 +1215,15 @@ function RaiseNudge({ p1, p2, personNames }) {
   );
 }
 
-export default function Dashboard({ p1, p2, shared, personNames }) {
+export default function Dashboard({
+  p1,
+  p2,
+  shared,
+  personNames,
+  updateShared,
+}) {
+  const { isSimple } = useViewMode();
+  const [moneyDateOpen, setMoneyDateOpen] = useState(false);
   // ── Month picker ────────────────────────────────────────────────────────
   const todayYm = (() => {
     const d = new Date();
@@ -3170,12 +3104,22 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
     ),
 
     cashflow: (
-      <MonthlyCashFlow
-        p1={p1}
-        p2={p2}
-        shared={shared}
-        selectedMonth={selectedMonth}
-      />
+      <>
+        <SankeyDiagram
+          p1={p1}
+          p2={p2}
+          month={selectedMonth}
+          personNames={personNames}
+        />
+        {!isSimple && (
+          <MonthlyCashFlow
+            p1={p1}
+            p2={p2}
+            shared={shared}
+            selectedMonth={selectedMonth}
+          />
+        )}
+      </>
     ),
 
     persons: (
@@ -4557,6 +4501,27 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
                 today
               </button>
             )}
+            <button
+              onClick={() => setMoneyDateOpen(true)}
+              title="5-minute couple monthly review & celebration"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 11,
+                background: "var(--gold-dim)",
+                border: "1px solid var(--gold-border)",
+                color: "var(--gold)",
+                borderRadius: 16,
+                padding: "3px 10px",
+                fontWeight: 600,
+                cursor: "pointer",
+                marginLeft: 8,
+              }}
+            >
+              <Heart size={12} fill="var(--gold)" />
+              Money Date
+            </button>
           </div>
         </div>
 
@@ -4635,17 +4600,37 @@ export default function Dashboard({ p1, p2, shared, personNames }) {
           <>
             {sections.healthcard}
             {sections.moneyplan}
-            {retirementScenarioSection}
-            {savingsRateTrendSection}
-            {feeDrainSection}
-            {sections.wealthinsights}
-            {sections.marketpulse}
-            {sections.projection}
             {sections.emergency}
-            {sections.cashforecast}
+            {sections.projection}
+            {!isSimple && (
+              <>
+                {retirementScenarioSection}
+                {savingsRateTrendSection}
+                {feeDrainSection}
+                {sections.wealthinsights}
+                {sections.marketpulse}
+                {sections.cashforecast}
+              </>
+            )}
           </>
         )}
       </div>
+
+      <MoneyDateModal
+        open={moneyDateOpen}
+        onClose={() => setMoneyDateOpen(false)}
+        onSaveReview={(review) =>
+          updateShared(
+            "monthlyReviews",
+            upsertMonthlyReview(shared?.monthlyReviews, review),
+          )
+        }
+        p1={p1}
+        p2={p2}
+        shared={shared}
+        month={selectedMonth}
+        personNames={personNames}
+      />
     </div>
   );
 }
