@@ -271,6 +271,16 @@ export function personStats(data, ym) {
   };
 }
 
+// Household standing (SIP-plan) investment total for a given month.
+// Used by the Month-over-Month card so it can never silently regress to
+// reading raw, possibly-incomplete transaction logs instead of the standing
+// SIP plan (auto-debited SIPs are often never manually logged as
+// transactions). See Dashboard.test.jsx for the regression this guards
+// against.
+export function standingInvestments(p1, p2, ym) {
+  return personStats(p1, ym).investments + personStats(p2, ym).investments;
+}
+
 function HealthRing({ score }) {
   const color =
     score >= 75 ? "var(--green)" : score >= 50 ? "var(--gold)" : "var(--red)";
@@ -331,7 +341,7 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-function buildCashFlow(
+export function buildCashFlow(
   p1Txns,
   p2Txns,
   p1Exps,
@@ -1342,11 +1352,6 @@ export default function Dashboard({
 
   const aStanding = personStats(p1, selectedMonth); // standing config (for corpus20)
   const bStanding = personStats(p2, selectedMonth);
-  // Previous month standing config — investments must use standing (SIP plan),
-  // not raw transaction logs, since many SIPs are auto-debited and never
-  // manually logged (same reasoning as aStanding/bStanding above).
-  const aPrevStanding = personStats(p1, prevYm);
-  const bPrevStanding = personStats(p2, prevYm);
 
   // Always use standing expenses (matches Budget page totals) so per-person
   // cards are consistent with the Budget page. Income uses actual entries
@@ -3608,12 +3613,11 @@ export default function Dashboard({
           const curExp = aTxStats.expenses + bTxStats.expenses;
           // Standing SIP plan (not raw transaction logs) — matches the
           // Investing/month hero card and People-tab cards exactly.
-          const curInvest = a.investments + b.investments;
+          const curInvest = standingInvestments(p1, p2, selectedMonth);
           const curSavings = curIncome - curExp - curInvest;
           const prvIncome = aPrevTx.income + bPrevTx.income;
           const prvExp = aPrevTx.expenses + bPrevTx.expenses;
-          const prvInvest =
-            aPrevStanding.investments + bPrevStanding.investments;
+          const prvInvest = standingInvestments(p1, p2, prevYm);
           const prvSavings = prvIncome - prvExp - prvInvest;
           const [pY, pM] = prevYm.split("-");
           const prevLabel = `${MONTH_NAMES[parseInt(pM, 10) - 1]} ${pY}`;
