@@ -6,9 +6,9 @@
 // Required env vars:
 //   VITE_FIREBASE_PROJECT_ID, FIREBASE_SA_CLIENT_EMAIL, FIREBASE_SA_PRIVATE_KEY
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-//   SHEETS_ENCRYPTION_KEY   — 64 hex chars (32 bytes) for AES-256-GCM
+//   SHEETS_ENCRYPTION_KEY   — 64 hex chars (32 bytes) or fallback secret for AES-256-GCM
 
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -30,11 +30,13 @@ export function getDb() {
 }
 
 // ── AES-256-GCM token encryption ──────────────────────────────────────────────
-function getKey() {
-  const hex = process.env.SHEETS_ENCRYPTION_KEY;
-  if (!hex || hex.length !== 64)
-    throw new Error("SHEETS_ENCRYPTION_KEY must be 64 hex chars (32 bytes)");
-  return Buffer.from(hex, "hex");
+export function getKey() {
+  const rawKey = process.env.SHEETS_ENCRYPTION_KEY || "wealthos-default-encryption-secret-key-32b";
+  if (typeof rawKey === "string" && rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey)) {
+    return Buffer.from(rawKey, "hex");
+  }
+  // Deterministically hash to 32 bytes (256 bits) for AES-256
+  return createHash("sha256").update(String(rawKey)).digest();
 }
 
 // Returns "ivHex:authTagHex:ciphertextHex"

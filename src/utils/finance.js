@@ -1,4 +1,6 @@
-import { parseLocalDate } from "./date";
+import { parseLocalDate } from "./date.js";
+
+export const isFD = (t) => t === "FD" || t === "Fixed Deposit";
 
 const PRIVACY_KEY = "wealthos-privacy-mode";
 let privacyMode =
@@ -36,6 +38,24 @@ export const fmtCr = (n = 0) => {
   if (a >= 10000000) return "₹" + (a / 10000000).toFixed(2) + " Cr";
   if (a >= 100000) return "₹" + (a / 100000).toFixed(1) + " L";
   return fmt(n);
+};
+
+export const formatIndianWords = (n = 0) => {
+  const num = Math.abs(Number(n) || 0);
+  if (num === 0) return "";
+  if (num >= 10000000) {
+    const cr = num / 10000000;
+    return `${Number.isInteger(cr) ? cr : cr.toFixed(2).replace(/\.?0+$/, "")} Crore${cr > 1 ? "s" : ""}`;
+  }
+  if (num >= 100000) {
+    const l = num / 100000;
+    return `${Number.isInteger(l) ? l : l.toFixed(2).replace(/\.?0+$/, "")} Lakh${l > 1 ? "s" : ""}`;
+  }
+  if (num >= 1000) {
+    const k = num / 1000;
+    return `${Number.isInteger(k) ? k : k.toFixed(1).replace(/\.?0+$/, "")} Thousand`;
+  }
+  return String(num);
 };
 
 export const nextId = (arr) => Math.max(0, ...arr.map((x) => x.id ?? 0)) + 1;
@@ -206,6 +226,12 @@ export const autoCorpus = (
   return (
     lumpCorpus(base, rateAnnual, mo / 12) + sipCorpus(eff, rateAnnual, mo / 12)
   );
+};
+
+export const elapsedYears = (startDate, daysPerYear = 365.25, nowMs) => {
+  const startMs = parseLocalDate(startDate)?.getTime();
+  if (startMs == null) return 0;
+  return Math.max(0, ((nowMs ?? Date.now()) - startMs) / (daysPerYear * 24 * 3600 * 1000));
 };
 
 export const projectionData = (

@@ -40,6 +40,8 @@ import { calcHealthScore, upsertMonthlyReview } from "../utils/monthlyReview";
 import { useMarketData } from "../hooks/useMarketData";
 import { calculateNetWorth } from "../utils/netWorth";
 import MonthlySummary from "../components/MonthlySummary";
+import ExecutivePulseCard from "../components/ExecutivePulseCard";
+import ThreeTierAssetCard from "../components/ThreeTierAssetCard";
 import SankeyDiagram from "../components/SankeyDiagram";
 import MoneyDateModal from "../components/MoneyDateModal";
 import { localYearMonth, parseLocalDate } from "../utils/date";
@@ -4672,6 +4674,17 @@ export default function Dashboard({
           </div>
         )}
       </div>
+
+      {/* ── 10-Second Financial Health Pulse ── */}
+      <ExecutivePulseCard
+        p1={p1}
+        p2={p2}
+        shared={shared}
+        currentMonthYm={selectedMonth}
+      />
+
+      {/* ── Where is My Money (3-Tier Asset Structure) ── */}
+      <ThreeTierAssetCard p1={p1} p2={p2} shared={shared} />
 
       {/* ── Hero Metrics (always visible) ── */}
       {sections.metrics}

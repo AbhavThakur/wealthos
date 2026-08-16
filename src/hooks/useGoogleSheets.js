@@ -11,7 +11,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, IS_DEV } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 
 // ── Row transformers — convert WealthOS objects → flat Sheet rows ─────────────
@@ -77,19 +77,22 @@ export function useGoogleSheets() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
 
-  // Live-watch the Firestore integration doc
+  const docName = IS_DEV ? "google_dev" : "google";
+  const envParam = IS_DEV ? "dev" : "prod";
+
+  // Live-watch the environment-isolated Firestore integration doc
   useEffect(() => {
     if (!user || user.isDemo) {
       setIntegration(null);
       return;
     }
-    const ref = doc(db, "households", user.uid, "integrations", "google");
+    const ref = doc(db, "households", user.uid, "integrations", docName);
     return onSnapshot(
       ref,
       (snap) => setIntegration(snap.exists() ? snap.data() : null),
       () => setIntegration(null),
     );
-  }, [user]);
+  }, [user, docName]);
 
   // Listen for postMessage from OAuth popup so we can show a toast in parent
   useEffect(() => {
@@ -97,11 +100,34 @@ export function useGoogleSheets() {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== "SHEETS_OAUTH") return;
       // Firestore onSnapshot will update integration state automatically.
-      // The parent App handles the toast via URL param inspection.
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
+
+  async function safeJson(res) {
+    const text = await res.text().catch(() => "");
+    if (!text) {
+      if (res.status === 404) {
+        return {
+          ok: false,
+          error: "Google Sheets sync API endpoint is not reachable (HTTP 404). Please verify backend deployment and environment variables.",
+        };
+      }
+      return {
+        ok: false,
+        error: `Empty response from server (HTTP ${res.status || "Unknown"})`,
+      };
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        ok: false,
+        error: `Server response error (HTTP ${res.status}): ${text.slice(0, 120)}`,
+      };
+    }
+  }
 
   // Opens Google OAuth in a popup (falls back to redirect if popup blocked)
   const connect = useCallback(async () => {
@@ -109,9 +135,9 @@ export function useGoogleSheets() {
     setError(null);
     try {
       const res = await fetch(
-        `/api/google-auth?action=url&uid=${encodeURIComponent(user.uid)}`,
+        `/api/google-auth?action=url&uid=${encodeURIComponent(user.uid)}&env=${envParam}`,
       );
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.ok) throw new Error(data.error || "Failed to get OAuth URL");
 
       // Open popup — don't use noopener so window.opener works for postMessage
@@ -127,9 +153,9 @@ export function useGoogleSheets() {
     } catch (err) {
       setError(err.message);
     }
-  }, [user]);
+  }, [user, envParam]);
 
-  // Revokes Google token and removes the Firestore doc
+  // Revokes Google token and removes the environment-specific Firestore doc
   const disconnect = useCallback(async () => {
     if (!user) return;
     setSyncing(true);
@@ -138,16 +164,16 @@ export function useGoogleSheets() {
       const res = await fetch("/api/google-auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "disconnect", uid: user.uid }),
+        body: JSON.stringify({ action: "disconnect", uid: user.uid, env: envParam }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.ok) throw new Error(data.error || "Disconnect failed");
     } catch (err) {
       setError(err.message);
     } finally {
       setSyncing(false);
     }
-  }, [user]);
+  }, [user, envParam]);
 
   // Push an array of row objects to a specific sheet tab
   const push = useCallback(
@@ -156,13 +182,13 @@ export function useGoogleSheets() {
       const res = await fetch("/api/sheets-push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: user.uid, sheetName, rows }),
+        body: JSON.stringify({ uid: user.uid, sheetName, rows, env: envParam }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.ok) throw new Error(data.error || "Push failed");
       return data.updatedRows ?? 0;
     },
-    [user, integration],
+    [user, integration, envParam],
   );
 
   // Pull rows from a specific sheet tab
@@ -172,13 +198,13 @@ export function useGoogleSheets() {
       const res = await fetch("/api/sheets-pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: user.uid, sheetName }),
+        body: JSON.stringify({ uid: user.uid, sheetName, env: envParam }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.ok) throw new Error(data.error || "Pull failed");
       return data.rows || [];
     },
-    [user, integration],
+    [user, integration, envParam],
   );
 
   // Push all 8 tabs from the current WealthOS data snapshot
@@ -217,6 +243,7 @@ export function useGoogleSheets() {
     loading: integration === undefined,
     syncing,
     error,
+    isDev: IS_DEV,
     connect,
     disconnect,
     push,

@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "prepare": "husky",
+    "audit": "node scripts/auditData.js",
     "release": "node scripts/release.js",
     "send-test-email": "node scripts/test-email.js"
   },

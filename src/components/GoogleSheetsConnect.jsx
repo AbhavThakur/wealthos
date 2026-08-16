@@ -84,15 +84,30 @@ export default function GoogleSheetsConnect() {
           custom analysis, or add transactions directly in the sheet.
         </p>
         {error && (
-          <p
+          <div
             style={{
               fontSize: 12,
               color: "var(--red)",
-              marginBottom: 10,
+              background: "rgba(239, 68, 68, 0.08)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 14,
             }}
           >
-            ⚠ {error}
-          </p>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ {error}</div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              To connect Google Sheets, add your Google Cloud OAuth credentials to <code>.env.local</code>:
+              <pre style={{ background: "rgba(0,0,0,0.3)", padding: "6px 8px", borderRadius: 4, marginTop: 6, userSelect: "all" }}>
+{`GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret`}
+              </pre>
+              Authorized Redirect URI in Google Cloud Console:
+              <pre style={{ background: "rgba(0,0,0,0.3)", padding: "4px 8px", borderRadius: 4, marginTop: 4, userSelect: "all" }}>
+{window.location.origin}/api/google-auth
+              </pre>
+            </div>
+          </div>
         )}
         <button className="btn-primary" onClick={connect}>
           Connect Google Sheets
@@ -144,6 +159,11 @@ export default function GoogleSheetsConnect() {
         <CheckCircle2 size={18} style={{ color: "#22c55e" }} />
         <span style={{ fontWeight: 600, fontSize: 14 }}>Google Sheets</span>
         <span style={badge("#22c55e")}>Connected</span>
+        {integration.sheetTitle?.includes("[DEV]") ? (
+          <span style={badge("#3b82f6")}>DEV SHEET</span>
+        ) : (
+          <span style={badge("#a855f7")}>PROD SHEET</span>
+        )}
       </div>
 
       {/* Sheet link */}
@@ -162,7 +182,7 @@ export default function GoogleSheetsConnect() {
         }}
       >
         <ExternalLink size={12} />
-        Open WealthOS Finance sheet
+        Open {integration.sheetTitle || "WealthOS Finance"} sheet
       </a>
 
       {/* Status message */}

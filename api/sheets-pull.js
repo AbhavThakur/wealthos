@@ -54,7 +54,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ ok: false, error: "Method not allowed" });
 
-  const { uid, sheetName } = req.body || {};
+  const { uid, sheetName, env } = req.body || {};
+  const isDev = env === "dev" || process.env.VITE_ENV === "dev";
+  const docName = isDev ? "google_dev" : "google";
 
   if (
     !uid ||
@@ -77,12 +79,12 @@ export default async function handler(req, res) {
       .collection("households")
       .doc(uid)
       .collection("integrations")
-      .doc("google")
+      .doc(docName)
       .get();
     if (!snap.exists) {
       return res
         .status(404)
-        .json({ ok: false, error: "Google Sheets not connected" });
+        .json({ ok: false, error: `Google Sheets not connected in ${isDev ? "Dev" : "Production"} environment` });
     }
 
     const { encryptedRefreshToken, spreadsheetId } = snap.data();
@@ -94,6 +96,6 @@ export default async function handler(req, res) {
     console.error("[sheets-pull] Error:", err);
     return res
       .status(500)
-      .json({ ok: false, error: "Failed to read from Google Sheets" });
+      .json({ ok: false, error: err.message || "Failed to read from Google Sheets" });
   }
 }

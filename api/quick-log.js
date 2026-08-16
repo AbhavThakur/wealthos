@@ -3,20 +3,27 @@ import { getFirestore } from "firebase-admin/firestore";
 import { parseQuickLogText } from "../src/utils/quickLog.js";
 
 function getAdminFirestore() {
-  if (!getApps().length) {
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_SA_CLIENT_EMAIL;
-    const privateKey = (process.env.FIREBASE_SA_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  try {
+    if (!getApps().length) {
+      const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+      const clientEmail = process.env.FIREBASE_SA_CLIENT_EMAIL;
+      const privateKey = (process.env.FIREBASE_SA_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 
-    if (projectId && clientEmail && privateKey) {
-      initializeApp({
-        credential: cert({ projectId, clientEmail, privateKey }),
-      });
-    } else {
-      initializeApp({ projectId: projectId || "wealthos-demo" });
+      if (projectId && clientEmail && privateKey) {
+        initializeApp({
+          credential: cert({ projectId, clientEmail, privateKey }),
+        });
+      } else if (projectId) {
+        initializeApp({ projectId });
+      } else {
+        return null;
+      }
     }
+    return getFirestore();
+  } catch (err) {
+    console.warn("[quick-log] getAdminFirestore init failed:", err.message);
+    return null;
   }
-  return getFirestore();
 }
 
 export default async function handler(req, res) {
@@ -95,18 +102,28 @@ export default async function handler(req, res) {
     if (targetUid) {
       try {
         const db = getAdminFirestore();
-        const userDocRef = db.collection("users").doc(targetUid);
-        const personKey = transaction.person === "p2" ? "person2" : "person1";
-        
-        // Append to transactions array or subcollection
-        await userDocRef.update({
-          [`${personKey}.transactions`]: (await userDocRef.get()).data()?.[personKey]?.transactions
-            ? [...(await userDocRef.get()).data()[personKey].transactions, transaction]
-            : [transaction],
-          updatedAt: new Date().toISOString(),
-        });
+        if (db) {
+          const userDocRef = db.collection("users").doc(targetUid);
+          const snap = await userDocRef.get();
+          if (snap.exists) {
+            const data = snap.data() || {};
+            const pKey = transaction.person === "p2" ? "p2" : "p1";
+            const currentPerson = data[pKey] || data[pKey === "p1" ? "person1" : "person2"] || {};
+            const existingTxns = Array.isArray(currentPerson.transactions) ? currentPerson.transactions : [];
+            await userDocRef.set(
+              {
+                [pKey]: {
+                  ...currentPerson,
+                  transactions: [...existingTxns, transaction],
+                },
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true },
+            );
+          }
+        }
       } catch (err) {
-        console.warn("Firestore update skipped/failed:", err.message);
+        console.warn("[quick-log] Firestore write skipped:", err.message);
       }
     }
 

@@ -588,6 +588,8 @@ function AppInner() {
           <Goals
             data={isHousehold ? null : data}
             sharedData={shared}
+            p1={p1}
+            p2={p2}
             personName={personName}
             personColor={personColor}
             updatePerson={upd}

@@ -1,14 +1,14 @@
 // Vercel Serverless Function — Google OAuth 2.0 for Sheets integration
 //
-// GET  /api/google-auth?action=url&uid=UID  → { ok: true, url: string }
-// GET  /api/google-auth?code=XXX&state=XXX  → OAuth callback → 302 redirect
-// POST /api/google-auth  body: { action: "disconnect", uid: UID } → { ok: true }
+// GET  /api/google-auth?action=url&uid=UID&env=dev|prod  → { ok: true, url: string }
+// GET  /api/google-auth?code=XXX&state=XXX              → OAuth callback → 302 redirect
+// POST /api/google-auth  body: { action: "disconnect", uid: UID, env: "dev"|"prod" } → { ok: true }
 //
 // Required env vars (Vercel Dashboard → Settings → Environment Variables):
 //   GOOGLE_CLIENT_ID        — OAuth 2.0 Client ID (Google Cloud Console)
 //   GOOGLE_CLIENT_SECRET    — OAuth 2.0 Client Secret
-//   GOOGLE_REDIRECT_URI     — Exact match: https://your-app.vercel.app/api/google-auth
-//   SHEETS_ENCRYPTION_KEY   — 64 hex chars for AES-256-GCM token encryption
+//   GOOGLE_REDIRECT_URI     — Optional override (auto-detected from request host if not set)
+//   SHEETS_ENCRYPTION_KEY   — 64 hex chars or passphrase for AES-256-GCM token encryption
 //   SHEETS_HMAC_SECRET      — Random string for CSRF-protection state signing
 //   APP_URL                 — Your app base URL (e.g. https://wealthos.vercel.app)
 //   VITE_FIREBASE_PROJECT_ID, FIREBASE_SA_CLIENT_EMAIL, FIREBASE_SA_PRIVATE_KEY
@@ -17,9 +17,9 @@ import { createHmac, randomBytes } from "crypto";
 import { getDb, encrypt, decrypt } from "./_sheetsLib.js";
 
 // ── HMAC-signed state — prevents CSRF on OAuth callback ──────────────────────
-function signState(uid) {
+function signState(uid, env = "prod") {
   const nonce = randomBytes(8).toString("hex");
-  const payload = Buffer.from(JSON.stringify({ uid, nonce })).toString(
+  const payload = Buffer.from(JSON.stringify({ uid, env, nonce })).toString(
     "base64url",
   );
   const sig = createHmac(
@@ -58,27 +58,32 @@ function verifyState(state) {
 }
 
 // ── Google OAuth helpers ──────────────────────────────────────────────────────
-// drive.file = only files the app creates (not sensitive, no Google verification needed)
-// spreadsheets = read/write cell data in those files
 const SHEETS_SCOPE = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/spreadsheets",
 ].join(" ");
 
-function buildOAuthUrl(uid) {
+function getRedirectUri(req) {
+  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+  const host = req?.headers?.host || "localhost:5173";
+  const protocol = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+  return `${protocol}://${host}/api/google-auth`;
+}
+
+function buildOAuthUrl(uid, redirectUri, env = "prod") {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
-    redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: SHEETS_SCOPE,
     access_type: "offline",
     prompt: "consent", // Always request refresh_token
-    state: signState(uid),
+    state: signState(uid, env),
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-async function exchangeCode(code) {
+async function exchangeCode(code, redirectUri) {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -86,7 +91,7 @@ async function exchangeCode(code) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
     signal: AbortSignal.timeout(10_000),
@@ -96,7 +101,7 @@ async function exchangeCode(code) {
 }
 
 // Creates the WealthOS spreadsheet with 8 tabs
-async function createSpreadsheet(accessToken) {
+async function createSpreadsheet(accessToken, title = "WealthOS Finance") {
   const TABS = [
     "Transactions_P1",
     "Transactions_P2",
@@ -114,8 +119,8 @@ async function createSpreadsheet(accessToken) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      properties: { title: "WealthOS Finance" },
-      sheets: TABS.map((title) => ({ properties: { title } })),
+      properties: { title },
+      sheets: TABS.map((tabTitle) => ({ properties: { title: tabTitle } })),
     }),
     signal: AbortSignal.timeout(10_000),
   });
@@ -133,7 +138,6 @@ async function revokeToken(token) {
       { method: "POST", signal: AbortSignal.timeout(5_000) },
     );
   } catch {
-    // Revocation failure is non-critical — token will eventually expire
     console.warn("[google-auth] Token revocation failed (non-critical)");
   }
 }
@@ -149,7 +153,7 @@ export default async function handler(req, res) {
 
   // ── GET ?action=url&uid=UID — generate OAuth URL ────────────────────────
   if (req.method === "GET" && req.query.action === "url") {
-    const { uid } = req.query;
+    const { uid, env } = req.query;
     if (
       !uid ||
       typeof uid !== "string" ||
@@ -158,12 +162,17 @@ export default async function handler(req, res) {
     ) {
       return res.status(400).json({ ok: false, error: "Invalid uid" });
     }
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_REDIRECT_URI) {
+    const redirectUri = getRedirectUri(req);
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
       return res
         .status(500)
-        .json({ ok: false, error: "Google OAuth env vars not configured" });
+        .json({
+          ok: false,
+          error: "Google OAuth credentials not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your .env.local file.",
+        });
     }
-    return res.json({ ok: true, url: buildOAuthUrl(uid) });
+    const targetEnv = env === "dev" || process.env.VITE_ENV === "dev" ? "dev" : "prod";
+    return res.json({ ok: true, url: buildOAuthUrl(uid, redirectUri, targetEnv) });
   }
 
   // ── GET ?code=XXX&state=XXX — OAuth callback from Google ───────────────
@@ -182,31 +191,66 @@ export default async function handler(req, res) {
     if (!decoded?.uid) return redirect("error", "invalid_state");
 
     try {
-      const tokens = await exchangeCode(code);
+      const redirectUri = getRedirectUri(req);
+      const tokens = await exchangeCode(code, redirectUri);
       if (!tokens.refresh_token) {
-        // prompt=consent should always yield a refresh_token; if not, revoke and retry
         return redirect("error", "no_refresh_token");
       }
 
-      const spreadsheetId = await createSpreadsheet(tokens.access_token);
+      const isDev = decoded.env === "dev";
+      const docName = isDev ? "google_dev" : "google";
+      const sheetTitle = isDev ? "WealthOS Finance [DEV]" : "WealthOS Finance";
 
       const db = getDb();
+      let spreadsheetId = null;
+
+      // Check if user already has an existing spreadsheet in Firestore to avoid duplicate sheet creation
+      try {
+        const existingDoc = await db
+          .collection("households")
+          .doc(decoded.uid)
+          .collection("integrations")
+          .doc(docName)
+          .get();
+
+        if (existingDoc.exists && existingDoc.data()?.spreadsheetId) {
+          const candidateId = existingDoc.data().spreadsheetId;
+          const testRes = await fetch(
+            `https://sheets.googleapis.com/v4/spreadsheets/${candidateId}?fields=spreadsheetId`,
+            {
+              headers: { Authorization: `Bearer ${tokens.access_token}` },
+              signal: AbortSignal.timeout(5_000),
+            },
+          );
+          if (testRes.ok) {
+            spreadsheetId = candidateId;
+          }
+        }
+      } catch (checkErr) {
+        console.warn("[google-auth] Check existing spreadsheet:", checkErr.message);
+      }
+
+      if (!spreadsheetId) {
+        spreadsheetId = await createSpreadsheet(tokens.access_token, sheetTitle);
+      }
+
       await db
         .collection("households")
         .doc(decoded.uid)
         .collection("integrations")
-        .doc("google")
+        .doc(docName)
         .set({
           encryptedRefreshToken: encrypt(tokens.refresh_token),
           spreadsheetId,
           spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
           connectedAt: new Date().toISOString(),
+          env: isDev ? "dev" : "prod",
+          sheetTitle,
         });
 
       return redirect("connected");
     } catch (err) {
       console.error("[google-auth] OAuth callback error:", err);
-      // Encode a short sanitised reason — strip any tokens/secrets from the message
       const reason = encodeURIComponent(
         String(err.message || "server_error")
           .replace(/Bearer [^ ]+/gi, "REDACTED")
@@ -218,7 +262,7 @@ export default async function handler(req, res) {
 
   // ── POST — disconnect ────────────────────────────────────────────────────
   if (req.method === "POST") {
-    const { action, uid } = req.body || {};
+    const { action, uid, env } = req.body || {};
     if (
       action !== "disconnect" ||
       !uid ||
@@ -228,13 +272,16 @@ export default async function handler(req, res) {
     ) {
       return res.status(400).json({ ok: false, error: "Invalid request body" });
     }
+    const isDev = env === "dev" || process.env.VITE_ENV === "dev";
+    const docName = isDev ? "google_dev" : "google";
+
     try {
       const db = getDb();
       const ref = db
         .collection("households")
         .doc(uid)
         .collection("integrations")
-        .doc("google");
+        .doc(docName);
       const snap = await ref.get();
       if (snap.exists) {
         const { encryptedRefreshToken } = snap.data();
@@ -250,7 +297,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     } catch (err) {
       console.error("[google-auth] Disconnect error:", err);
-      return res.status(500).json({ ok: false, error: "Server error" });
+      return res.status(500).json({ ok: false, error: "Disconnect failed" });
     }
   }
 

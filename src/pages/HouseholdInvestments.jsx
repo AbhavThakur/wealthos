@@ -22,6 +22,7 @@ import { useData } from "../context/DataContext";
 import { useViewMode } from "../context/ViewModeContext";
 import CASImportModal from "../components/CASImportModal";
 import TaxHarvestingCard from "../components/TaxHarvestingCard";
+import PortfolioAuditCard from "../components/PortfolioAuditCard";
 import {
   inferMFCapCategoryAndReturn,
   getReturnGuidance,
@@ -856,6 +857,14 @@ export function HouseholdInvestments({ p1, p2, updatePerson }) {
       />
 
       {!isSimple && <PortfolioCharts rows={hhInvRows} isHousehold={true} />}
+
+      {/* Portfolio Health & Audit Diagnostic Card */}
+      {allInvestments.length > 0 && (
+        <PortfolioAuditCard
+          investments={allInvestments}
+          onFilterByType={setFilterType}
+        />
+      )}
 
       {/* Filter row */}
       <div

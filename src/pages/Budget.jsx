@@ -43,6 +43,8 @@ import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
 import SettlementCard from "../components/SettlementCard";
+import ExecutivePulseCard from "../components/ExecutivePulseCard";
+import AmountInput from "../components/AmountInput";
 import SmartStatementModal from "../components/SmartStatementModal";
 import CategoryTrendModal from "../components/CategoryTrendModal";
 import { useData } from "../context/DataContext";
@@ -71,7 +73,7 @@ function useMobileCheck() {
 }
 
 function MobileEditModal({ label, value, onChange, type = "text", onClose }) {
-  const [local, setLocal] = useState(String(value ?? ""));
+  const [local, setLocal] = useState(value ?? "");
   return createPortal(
     <div
       style={{
@@ -107,24 +109,34 @@ function MobileEditModal({ label, value, onChange, type = "text", onClose }) {
         >
           {label}
         </div>
-        <input
-          autoFocus
-          type={type}
-          value={local}
-          onChange={(e) => setLocal(e.target.value)}
-          style={{
-            width: "100%",
-            fontSize: 16,
-            padding: "12px 14px",
-            marginBottom: 14,
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              onChange(type === "number" ? Number(local) : local);
-              onClose();
-            }
-          }}
-        />
+        {type === "number" ? (
+          <div style={{ marginBottom: 14 }}>
+            <AmountInput
+              autoFocus
+              value={local}
+              onChange={(val) => setLocal(val)}
+            />
+          </div>
+        ) : (
+          <input
+            autoFocus
+            type={type}
+            value={local}
+            onChange={(e) => setLocal(e.target.value)}
+            style={{
+              width: "100%",
+              fontSize: 16,
+              padding: "12px 14px",
+              marginBottom: 14,
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onChange(type === "number" ? Number(local) : local);
+                onClose();
+              }
+            }}
+          />
+        )}
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
             Cancel
@@ -133,7 +145,7 @@ function MobileEditModal({ label, value, onChange, type = "text", onClose }) {
             className="btn-primary"
             style={{ flex: 1 }}
             onClick={() => {
-              onChange(type === "number" ? Number(local) : local);
+              onChange(type === "number" ? Number(local || 0) : local);
               onClose();
             }}
           >
@@ -159,6 +171,11 @@ function MobileInput({
   const [editing, setEditing] = useState(false);
 
   if (isMobile) {
+    const formattedDisplay =
+      type === "number" && value !== "" && value !== undefined && !isNaN(Number(value))
+        ? Number(value).toLocaleString("en-IN")
+        : value;
+
     return (
       <>
         <div
@@ -181,7 +198,7 @@ function MobileInput({
           }}
           aria-label={label}
         >
-          {value || rest.placeholder || label}
+          {formattedDisplay || rest.placeholder || label}
         </div>
         {editing && (
           <MobileEditModal
@@ -196,13 +213,22 @@ function MobileInput({
     );
   }
 
+  if (type === "number") {
+    return (
+      <AmountInput
+        value={value}
+        onChange={onChange}
+        style={style}
+        {...rest}
+      />
+    );
+  }
+
   return (
     <input
       type={type}
       value={value}
-      onChange={(e) =>
-        onChange(type === "number" ? Number(e.target.value) : e.target.value)
-      }
+      onChange={(e) => onChange(e.target.value)}
       style={style}
       {...rest}
     />
@@ -6502,6 +6528,14 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
           </button>
         </div>
       </div>
+
+      {/* ── 10-Second Financial Health Pulse ── */}
+      <ExecutivePulseCard
+        p1={p1}
+        p2={p2}
+        shared={shared}
+        currentMonthYm={hhMonth}
+      />
 
       {/* ── Couple Expense Splitting & Settlement Engine ── */}
       <SettlementCard

@@ -3,6 +3,7 @@ import { Chart, DonutChart } from "../components/Chart";
 import PortfolioTreemap from "../components/PortfolioTreemap";
 import CASImportModal from "../components/CASImportModal";
 import TaxHarvestingCard from "../components/TaxHarvestingCard";
+import AmountInput from "../components/AmountInput";
 import {
   fmt,
   fmtCr,
@@ -47,6 +48,7 @@ import {
 } from "../utils/mfCategorizer";
 import InfoTooltip from "../components/InfoTooltip";
 import InvestmentEmptyState from "../components/InvestmentEmptyState";
+import PortfolioAuditCard from "../components/PortfolioAuditCard";
 import {
   appsForType,
   BANK_LIST,
@@ -528,16 +530,28 @@ export const SIPCard = memo(function SIPCard({
                 >
                   {f.label}
                 </label>
-                <input
-                  type={f.type}
-                  step={f.step}
-                  value={form[f.key] ?? ""}
-                  placeholder={f.placeholder || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [f.key]: e.target.value })
-                  }
-                  {...(f.key === "bankName" ? { list: "bank-list-edit" } : {})}
-                />
+                {["amount", "existingCorpus", "totalInvested", "lumpSumInvested"].includes(
+                  f.key,
+                ) ? (
+                  <AmountInput
+                    value={form[f.key]}
+                    onChange={(val) =>
+                      setForm({ ...form, [f.key]: val })
+                    }
+                    placeholder={f.placeholder || "0"}
+                  />
+                ) : (
+                  <input
+                    type={f.type}
+                    step={f.step}
+                    value={form[f.key] ?? ""}
+                    placeholder={f.placeholder || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, [f.key]: e.target.value })
+                    }
+                    {...(f.key === "bankName" ? { list: "bank-list-edit" } : {})}
+                  />
+                )}
                 {f.key === "bankName" && (
                   <datalist id="bank-list-edit">
                     {BANK_LIST.map((b) => (
@@ -545,20 +559,6 @@ export const SIPCard = memo(function SIPCard({
                     ))}
                   </datalist>
                 )}
-                {["amount", "existingCorpus", "totalInvested"].includes(
-                  f.key,
-                ) &&
-                  Number(form[f.key]) > 0 && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        marginTop: 3,
-                      }}
-                    >
-                      = {fmt(Number(form[f.key]))}
-                    </div>
-                  )}
               </div>
             ))}
             {savingsAccounts.length > 0 && (
@@ -5213,6 +5213,14 @@ export default function Investments({
         );
       })()}
 
+      {/* Portfolio Health & Audit Diagnostic Card */}
+      {investments.length > 0 && (
+        <PortfolioAuditCard
+          investments={investments}
+          onFilterByType={setFilterType}
+        />
+      )}
+
       {(allApps.length > 0 ||
         allBanks.length > 0 ||
         investments.length > 0) && (
@@ -5909,27 +5917,13 @@ export default function Investments({
                         ? "Yearly SIP amount (\u20b9)"
                         : "Monthly SIP amount (\u20b9)"}
               </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder={isFD(newInv.type) ? "e.g. 100000" : "e.g. 5000"}
+              <AmountInput
+                placeholder={isFD(newInv.type) ? "e.g. 1,00,000" : "e.g. 5,000"}
                 value={newInv.amount}
-                onChange={(e) =>
-                  setNewInv({ ...newInv, amount: e.target.value })
+                onChange={(val) =>
+                  setNewInv({ ...newInv, amount: val })
                 }
               />
-              {Number(newInv.amount) > 0 && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    marginTop: 3,
-                  }}
-                >
-                  = {fmt(Number(newInv.amount))}
-                </div>
-              )}
             </div>
             {!isFD(newInv.type) && (
               <div>
@@ -5942,34 +5936,20 @@ export default function Investments({
                   }}
                 >
                   {newInv.frequency === "onetime"
-                    ? "Current market value (\u20b9)"
-                    : "Current corpus already invested (\u20b9)"}
+                    ? "Current market value (₹)"
+                    : "Current corpus already invested (₹)"}
                 </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                <AmountInput
                   placeholder={
                     newInv.frequency === "onetime"
                       ? "From your app (optional)"
-                      : "e.g. 20000"
+                      : "e.g. 20,000"
                   }
                   value={newInv.existingCorpus}
-                  onChange={(e) =>
-                    setNewInv({ ...newInv, existingCorpus: e.target.value })
+                  onChange={(val) =>
+                    setNewInv({ ...newInv, existingCorpus: val })
                   }
                 />
-                {Number(newInv.existingCorpus) > 0 && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--text-muted)",
-                      marginTop: 3,
-                    }}
-                  >
-                    = {fmt(Number(newInv.existingCorpus))}
-                  </div>
-                )}
               </div>
             )}
             <div>

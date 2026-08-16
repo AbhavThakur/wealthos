@@ -10,7 +10,7 @@
  * - "4.5k Flight Tickets"
  */
 
-import { localDateISO } from "./date";
+import { localDateISO } from "./date.js";
 
 const CATEGORY_KEYWORDS = {
   "Food & Dining": [

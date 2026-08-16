@@ -15,6 +15,7 @@ import { parsePayslipText } from "../utils/payslipParser";
 import { useConfirm } from "../hooks/useConfirm";
 import { useUndoToast } from "../hooks/useUndoToast";
 import { useData } from "../context/DataContext";
+import { useAuth } from "../context/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
 import RELEASE_NOTES from "../data/releaseNotes";
 import { APP_VERSION } from "../components/UpdateBanner";
@@ -3923,6 +3924,7 @@ function ReleaseNotesAccordion() {
 }
 
 function QuickLogWebhookSettings() {
+  const { user } = useAuth();
   const [webhookKey, setWebhookKey] = useState(() => {
     try {
       return (
@@ -3956,7 +3958,10 @@ function QuickLogWebhookSettings() {
           "Content-Type": "application/json",
           "x-webhook-token": webhookKey,
         },
-        body: JSON.stringify({ text: testText }),
+        body: JSON.stringify({
+          text: testText,
+          uid: user?.uid || undefined,
+        }),
       });
       const json = await res.json();
       setTestResult(json);
@@ -4427,68 +4432,6 @@ export function Settings({
           </div>
         </div>
       </div>
-
-      {/* Apply Payslip Data */}
-      {updatePerson && (
-        <div className="card section-gap">
-          <div className="card-title">📋 Apply Salary Data — FY 2025-26</div>
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              lineHeight: 1.6,
-              marginBottom: 12,
-            }}
-          >
-            One-click apply Person 1's full FY 2025-26 salary data (BBY
-            Services). Sets income to ₹1,84,601/mo take-home and fills Tax
-            Planner with all components including incentives.
-          </p>
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              marginBottom: 12,
-              lineHeight: 1.7,
-            }}
-          >
-            <div>Basic: ₹96,545 · HRA: ₹38,618 · Special: ₹84,572</div>
-            <div>LTA: ₹8,042 · Communication: ₹2,000</div>
-            <div>Incentives: ₹2,40,582 (Sep ₹71,542 + Mar ₹1,69,040)</div>
-            <div>
-              Annual Gross:{" "}
-              <strong style={{ color: "var(--gold)" }}>₹29,97,906</strong>
-              {" · "}Monthly Net:{" "}
-              <strong style={{ color: "var(--green)" }}>₹1,84,601</strong>
-            </div>
-          </div>
-          <button
-            className="btn-primary"
-            onClick={() => {
-              updatePerson("p1", "incomes", [
-                {
-                  id: 1,
-                  name: "BBY Services Salary",
-                  amount: 184601,
-                  type: "salary",
-                },
-              ]);
-              updatePerson("p1", "taxInfo", {
-                basicSalary: 96545,
-                hra: 38618,
-                lta: 8042,
-                specialAllowance: 84572,
-                communicationAllowance: 2000,
-                annualIncentives: 240582,
-              });
-              setBackupMsg("✓ Person 1's FY 2025-26 salary & tax data applied");
-              setTimeout(() => setBackupMsg(""), 4000);
-            }}
-          >
-            Apply to Person 1's Profile
-          </button>
-        </div>
-      )}
 
       {/* Quick-Log Webhook & Shortcuts Integration */}
       <QuickLogWebhookSettings />

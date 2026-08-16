@@ -29,8 +29,44 @@ const SHEET_COLUMNS = {
 const ALLOWED_SHEETS = Object.keys(SHEET_COLUMNS);
 const MAX_ROWS = 10_000;
 
-// ── Sheets API helpers ────────────────────────────────────────────────────────
+async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      const existingTitles = (meta.sheets || []).map(
+        (s) => s.properties?.title,
+      );
+      if (!existingTitles.includes(sheetName)) {
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              requests: [{ addSheet: { properties: { title: sheetName } } }],
+            }),
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(`[sheets-push] ensureSheetTabExists(${sheetName}):`, err.message);
+  }
+}
+
 async function clearSheet(accessToken, spreadsheetId, sheetName) {
+  await ensureSheetTabExists(accessToken, spreadsheetId, sheetName);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}:clear`;
   const res = await fetch(url, {
     method: "POST",
@@ -84,7 +120,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ ok: false, error: "Method not allowed" });
 
-  const { uid, sheetName, rows } = req.body || {};
+  const { uid, sheetName, rows, env } = req.body || {};
+  const isDev = env === "dev" || process.env.VITE_ENV === "dev";
+  const docName = isDev ? "google_dev" : "google";
 
   // Input validation
   if (
@@ -116,14 +154,14 @@ export default async function handler(req, res) {
       .collection("households")
       .doc(uid)
       .collection("integrations")
-      .doc("google")
+      .doc(docName)
       .get();
     if (!snap.exists) {
       return res
         .status(404)
         .json({
           ok: false,
-          error: "Google Sheets not connected for this user",
+          error: `Google Sheets not connected in ${isDev ? "Dev" : "Production"} environment`,
         });
     }
 
@@ -145,6 +183,6 @@ export default async function handler(req, res) {
     console.error("[sheets-push] Error:", err);
     return res
       .status(500)
-      .json({ ok: false, error: "Failed to push to Google Sheets" });
+      .json({ ok: false, error: err.message || "Failed to push to Google Sheets" });
   }
 }
