@@ -5,6 +5,7 @@ import { fmt, fmtCr } from "../utils/finance";
 import { upsertMonthlyReview } from "../utils/monthlyReview";
 import EmptyState from "../components/EmptyState";
 import MoneyDateModal from "../components/MoneyDateModal";
+import { useGoogleSheets } from "../hooks/useGoogleSheets";
 
 function monthLabel(ym) {
   if (!ym) return "";
@@ -25,6 +26,7 @@ export default function MonthlyReview({
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const { connected: sheetsConnected, syncAll } = useGoogleSheets();
 
   const todayYm = (() => {
     const d = new Date();
@@ -47,10 +49,11 @@ export default function MonthlyReview({
   const hasCurrentReview = reviews.some((r) => r.month === todayYm);
 
   const saveReview = (review) => {
-    updateShared(
-      "monthlyReviews",
-      upsertMonthlyReview(shared?.monthlyReviews, review),
-    );
+    const updated = upsertMonthlyReview(shared?.monthlyReviews, review);
+    updateShared("monthlyReviews", updated);
+    if (sheetsConnected) {
+      syncAll(p1, p2, { ...shared, monthlyReviews: updated }, personNames).catch(() => {});
+    }
   };
 
   return (

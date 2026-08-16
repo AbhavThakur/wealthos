@@ -590,6 +590,8 @@ export default async function handler(req, res) {
       values,
     );
 
+    await snap.ref.update({ lastSyncedAt: new Date().toISOString() }).catch(() => {});
+
     return res.json({ ok: true, updatedRows });
   } catch (err) {
     console.error("[sheets-push] Error:", err);

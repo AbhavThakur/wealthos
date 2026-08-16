@@ -703,7 +703,14 @@ export function toAIPromptsRows() {
   return [
     {
       category: "Sheets Canvas Mini-App",
-      useCase: "Household Financial Command Center",
+      useCase: "All-in-One Household Financial Command Center",
+      promptOrFormula: 'Ask Gemini in Sheets: "Turn this entire spreadsheet into an executive visual dashboard on Sheets Canvas with 5 sections: 1) Top KPI scorecards for Total Net Worth, Monthly Savings Rate %, Monthly Surplus, and Active SIPs. 2) A multi-month bar chart from Monthly_Summary showing Incomes vs Expenses vs 50/30/20 breakdown. 3) An interactive Budget Matrix from Budget_vs_Actual with category utilization gauges and Over Budget alerts in red. 4) An Asset Allocation donut chart and MoM Net Worth growth timeline from Investments_&_Assets and Net_Worth_History. 5) Interactive goal funding progress cards from Goals_Tracker with partner splits (P1 vs P2) and deadline countdowns."',
+      targetRange: "All 7 Sheets Tabs",
+      expectedOutput: "Complete multi-section visual executive command center mini-app on Canvas.",
+    },
+    {
+      category: "Sheets Canvas Mini-App",
+      useCase: "Net Worth & Monthly Health Dashboard",
       promptOrFormula: 'Ask Gemini in Sheets: "Create an interactive Sheets Canvas dashboard from Monthly_Summary and Net_Worth_History with KPI cards for Net Worth, Savings Rate, Active SIPs, and a monthly trend chart."',
       targetRange: "Monthly_Summary & Net_Worth_History",
       expectedOutput: "Interactive visual mini-app with real-time KPI cards and trend charts.",

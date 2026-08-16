@@ -55,12 +55,20 @@ const AI_TABS = [
 
 const SAMPLE_PROMPTS = [
   {
-    title: "🎨 Sheets Canvas: Financial Command Center",
+    title: "🌟 Master Canvas: All-in-One Household Financial Command Center",
+    prompt: 'Turn this entire spreadsheet into an executive visual dashboard on Sheets Canvas with 5 sections: 1) Top KPI scorecards for Total Net Worth, Monthly Savings Rate %, Monthly Surplus, and Active SIPs. 2) A multi-month bar chart from Monthly_Summary showing Incomes vs Expenses vs 50/30/20 breakdown. 3) An interactive Budget Matrix from Budget_vs_Actual with category utilization gauges and Over Budget alerts in red. 4) An Asset Allocation donut chart and MoM Net Worth growth timeline from Investments_&_Assets and Net_Worth_History. 5) Interactive goal funding progress cards from Goals_Tracker with partner splits (P1 vs P2) and deadline countdowns.',
+  },
+  {
+    title: "🎨 Sheets Canvas: Net Worth & Monthly Health Dashboard",
     prompt: 'Create an interactive Sheets Canvas dashboard from Monthly_Summary and Net_Worth_History with KPI cards for Net Worth, Savings Rate, Active SIPs, and a monthly trend chart.',
   },
   {
-    title: "🎨 Sheets Canvas: Goal Funding Progress",
+    title: "🎨 Sheets Canvas: Goal Funding & Partner Split Tracker",
     prompt: 'Create a Sheets Canvas dashboard from Goals_Tracker displaying visual progress bars, partner contribution splits (P1 vs P2), and target countdowns.',
+  },
+  {
+    title: "🎨 Sheets Canvas: Budget & 50/30/20 Spending Matrix",
+    prompt: 'Create a Sheets Canvas mini-app from Budget_vs_Actual that visualizes our 50/30/20 breakdown with interactive category cards highlighting Over Budget areas in red.',
   },
   {
     title: "Executive Month Review",
@@ -224,24 +232,30 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
         )}
       </div>
 
-      {/* Sheet link */}
-      <a
-        href={integration.spreadsheetUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 5,
-          fontSize: 12,
-          color: "var(--gold)",
-          textDecoration: "none",
-          marginBottom: 14,
-        }}
-      >
-        <ExternalLink size={12} />
-        Open {integration.sheetTitle || "WealthOS Finance"} sheet
-      </a>
+      {/* Sheet link & Last Synced info */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <a
+          href={integration.spreadsheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 12,
+            color: "var(--gold)",
+            textDecoration: "none",
+          }}
+        >
+          <ExternalLink size={12} />
+          Open {integration.sheetTitle || "WealthOS Finance"} sheet
+        </a>
+        {integration.lastSyncedAt && (
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            🕒 Last synced: {new Date(integration.lastSyncedAt).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+          </span>
+        )}
+      </div>
 
       {/* Status message */}
       {syncMsg && (
