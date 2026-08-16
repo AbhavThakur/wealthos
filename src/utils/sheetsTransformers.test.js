@@ -35,8 +35,11 @@ describe("Google Sheets AI Transformers", () => {
       },
     ],
     investments: [
-      { id: 1, name: "Parag Parikh Flexi Cap", type: "Mutual Fund", sipMonthly: 25000, corpus: 500000 },
-      { id: 2, name: "PPF", type: "PPF", sipMonthly: 12500, corpus: 300000 },
+      { id: 1, name: "Parag Parikh Flexi Cap", type: "Mutual Fund", amount: 25000, frequency: "monthly", existingCorpus: 500000, app: "Groww" },
+      { id: 2, name: "PPF", type: "PPF", amount: 12500, frequency: "monthly", existingCorpus: 300000, app: "SBI" },
+    ],
+    savingsAccounts: [
+      { id: 1, bankName: "HDFC Bank", balance: 150000 },
     ],
     transactions: [
       { id: 1, date: "2026-08-01", desc: "Supermarket", amount: 2500, category: "Food" },
@@ -51,7 +54,10 @@ describe("Google Sheets AI Transformers", () => {
       { id: 102, name: "Dining & Swiggy", category: "Food", amount: 8000, recurrence: "monthly" },
     ],
     investments: [
-      { id: 101, name: "UTI Nifty 50 Index", type: "Mutual Fund", sipMonthly: 20000, corpus: 400000 },
+      { id: 101, name: "UTI Nifty 50 Index", type: "Mutual Fund", amount: 20000, frequency: "monthly", existingCorpus: 400000, app: "Zerodha / Kite" },
+    ],
+    savingsAccounts: [
+      { id: 101, bankName: "ICICI Bank", balance: 100000 },
     ],
     transactions: [
       { id: 101, date: "2026-08-03", desc: "Zomato", amount: 850, category: "Food" },
@@ -92,6 +98,7 @@ describe("Google Sheets AI Transformers", () => {
     expect(getCategoryRuleBucket("Entertainment")).toBe("Wants");
     expect(getCategoryRuleBucket("Shopping")).toBe("Wants");
     expect(getCategoryRuleBucket("Investments")).toBe("Savings");
+    expect(getCategoryRuleBucket("Mutual Fund")).toBe("Savings");
   });
 
   it("generates Monthly_Summary rows with full executive rollups", () => {
@@ -114,7 +121,6 @@ describe("Google Sheets AI Transformers", () => {
     const rows = toUnifiedTransactionRows(mockP1, mockP2, mockShared, mockPersonNames);
     expect(rows.length).toBeGreaterThan(0);
 
-    // Verify properties
     const sample = rows[0];
     expect(sample).toHaveProperty("date");
     expect(sample).toHaveProperty("month");
@@ -124,13 +130,12 @@ describe("Google Sheets AI Transformers", () => {
     expect(sample).toHaveProperty("amount");
     expect(sample).toHaveProperty("budgetBucket");
 
-    // Check shared trip items included
     const tripItem = rows.find((r) => r.subcategory === "Goa Weekend");
     expect(tripItem).toBeDefined();
     expect(tripItem.person).toBe("Household");
   });
 
-  it("generates Budget_vs_Actual matrix with variances", () => {
+  it("generates Budget_vs_Actual matrix with variances and unbudgeted alerts", () => {
     const rows = toBudgetVsActualRows(mockP1, mockP2, mockShared, mockPersonNames);
     expect(rows.length).toBeGreaterThan(0);
 
@@ -141,19 +146,27 @@ describe("Google Sheets AI Transformers", () => {
     expect(foodRow).toHaveProperty("status");
   });
 
-  it("generates Investments_&_Assets with asset classes and allocation %", () => {
+  it("generates Investments_&_Assets with asset classes, platforms, and allocation %", () => {
     const rows = toInvestmentAssetRows(mockP1, mockP2, mockShared, mockPersonNames);
-    expect(rows.length).toBe(3);
+    // 3 investments + 2 savings accounts = 5 rows
+    expect(rows.length).toBe(5);
 
     const flexiCap = rows.find((r) => r.assetName === "Parag Parikh Flexi Cap");
     expect(flexiCap).toBeDefined();
     expect(flexiCap.owner).toBe("Abhav");
     expect(flexiCap.assetClass).toBe("Equity");
     expect(flexiCap.monthlySip).toBe(25000);
+    expect(flexiCap.currentCorpus).toBe(500000);
+    expect(flexiCap.platform).toBe("Groww");
 
     const ppf = rows.find((r) => r.assetName === "PPF");
     expect(ppf).toBeDefined();
     expect(ppf.assetClass).toBe("Debt / Fixed Income");
+
+    const hdfc = rows.find((r) => r.assetName === "HDFC Bank Savings Account");
+    expect(hdfc).toBeDefined();
+    expect(hdfc.assetClass).toBe("Liquid Cash");
+    expect(hdfc.currentCorpus).toBe(150000);
   });
 
   it("generates Goals_Tracker with completion progress and required monthly contributions", () => {
@@ -171,13 +184,15 @@ describe("Google Sheets AI Transformers", () => {
 
   it("generates Net_Worth_History with MoM growth calculations", () => {
     const rows = toNetWorthTimelineRows(mockP1, mockP2, mockShared);
-    expect(rows.length).toBe(3);
+    expect(rows.length).toBeGreaterThanOrEqual(3);
 
-    expect(rows[0].month).toBe("2026-08");
-    expect(rows[0].netWorth).toBe(2100000);
-    expect(rows[1].month).toBe("2026-07");
-    expect(rows[1].netWorth).toBe(1980000);
-    expect(rows[0].momGrowthPct).toBeCloseTo(6.1, 1);
+    const aug = rows.find((r) => r.month === "2026-08");
+    const jul = rows.find((r) => r.month === "2026-07");
+    expect(aug).toBeDefined();
+    expect(jul).toBeDefined();
+    expect(aug.netWorth).toBe(2100000);
+    expect(jul.netWorth).toBe(1980000);
+    expect(aug.momGrowthPct).toBeCloseTo(6.1, 1);
   });
 
   it("provides AI_Prompts_&_Formulas cheat sheet rows", () => {

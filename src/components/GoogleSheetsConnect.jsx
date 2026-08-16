@@ -55,6 +55,14 @@ const AI_TABS = [
 
 const SAMPLE_PROMPTS = [
   {
+    title: "🎨 Sheets Canvas: Financial Command Center",
+    prompt: 'Create an interactive Sheets Canvas dashboard from Monthly_Summary and Net_Worth_History with KPI cards for Net Worth, Savings Rate, Active SIPs, and a monthly trend chart.',
+  },
+  {
+    title: "🎨 Sheets Canvas: Goal Funding Progress",
+    prompt: 'Create a Sheets Canvas dashboard from Goals_Tracker displaying visual progress bars, partner contribution splits (P1 vs P2), and target countdowns.',
+  },
+  {
     title: "Executive Month Review",
     prompt: 'Summarize our financial performance from the Monthly_Summary tab over the last 3 months. Highlight our top savings wins and biggest spending anomalies in 3 bullet points.',
   },

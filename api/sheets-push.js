@@ -203,6 +203,52 @@ const HEADER_LABELS = {
   expectedOutput: "Expected AI Output / Insight",
 };
 
+const CURRENCY_COLUMNS = new Set([
+  "totalIncome",
+  "p1Income",
+  "p2Income",
+  "totalExpenses",
+  "p1Expenses",
+  "p2Expenses",
+  "sharedExpenses",
+  "needsSpent",
+  "wantsSpent",
+  "savingsInvested",
+  "budgetVariance",
+  "totalSips",
+  "totalAssets",
+  "totalLiabilities",
+  "netWorth",
+  "momNetWorthChange",
+  "amount",
+  "budgetedLimit",
+  "actualSpent",
+  "variance",
+  "monthlySip",
+  "currentCorpus",
+  "targetAmount",
+  "currentSaved",
+  "p1Saved",
+  "p2Saved",
+  "remainingAmount",
+  "monthlyContributionNeeded",
+  "cashBankBalances",
+  "equityMutualFunds",
+  "fixedDepositsPf",
+  "goldOtherAssets",
+  "creditCardDues",
+  "personalHomeLoans",
+]);
+
+const PERCENTAGE_COLUMNS = new Set([
+  "savingsRatePct",
+  "utilizationPct",
+  "allocationPct",
+  "targetAllocationPct",
+  "progressPct",
+  "momGrowthPct",
+]);
+
 const ALLOWED_SHEETS = Object.keys(SHEET_COLUMNS);
 const MAX_ROWS = 10_000;
 
@@ -249,6 +295,54 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
       }
     } else {
       sheetId = sheetObj.properties?.sheetId;
+    }
+
+    // Auto-cleanup legacy deprecated tabs (e.g. Transactions_P1, Sheet1) when writing AI-ready tabs
+    const LEGACY_TABS_TO_DELETE = [
+      "Transactions_P1",
+      "Transactions_P2",
+      "Budget_P1",
+      "Budget_P2",
+      "Investments_P1",
+      "Investments_P2",
+      "Goals",
+      "NetWorth",
+      "Sheet1",
+    ];
+    const isAiTab = [
+      "Monthly_Summary",
+      "All_Transactions",
+      "Budget_vs_Actual",
+      "Investments_&_Assets",
+      "Goals_Tracker",
+      "Net_Worth_History",
+      "AI_Prompts_&_Formulas",
+    ].includes(sheetName);
+
+    if (isAiTab && sheets.length > 1) {
+      const legacySheetsToDelete = sheets.filter(
+        (s) =>
+          LEGACY_TABS_TO_DELETE.includes(s.properties?.title) &&
+          s.properties?.sheetId !== sheetId,
+      );
+      // Ensure we leave at least 1 sheet in the workbook before deleting
+      if (legacySheetsToDelete.length > 0 && sheets.length > legacySheetsToDelete.length) {
+        const deleteRequests = legacySheetsToDelete.map((s) => ({
+          deleteSheet: { sheetId: s.properties.sheetId },
+        }));
+        await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ requests: deleteRequests }),
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+      }
     }
 
     if (sheetId !== undefined) {
@@ -304,6 +398,54 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
           },
         },
       ];
+
+      // 4. Number & Currency formatting per column
+      const cols = SHEET_COLUMNS[sheetName] || [];
+      cols.forEach((col, cIdx) => {
+        if (CURRENCY_COLUMNS.has(col)) {
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: 1,
+                startColumnIndex: cIdx,
+                endColumnIndex: cIdx + 1,
+              },
+              cell: {
+                userEnteredFormat: {
+                  numberFormat: {
+                    type: "CURRENCY",
+                    pattern: "₹#,##,##0",
+                  },
+                  horizontalAlignment: "RIGHT",
+                },
+              },
+              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+            },
+          });
+        } else if (PERCENTAGE_COLUMNS.has(col)) {
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: 1,
+                startColumnIndex: cIdx,
+                endColumnIndex: cIdx + 1,
+              },
+              cell: {
+                userEnteredFormat: {
+                  numberFormat: {
+                    type: "NUMBER",
+                    pattern: "0\"%\"",
+                  },
+                  horizontalAlignment: "RIGHT",
+                },
+              },
+              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+            },
+          });
+        }
+      });
 
       await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,

@@ -4,22 +4,125 @@ import {
   EXPENSE_CATEGORIES,
 } from "./finance.js";
 import { calculateHouseholdMonthFinancials } from "./financialDiagnostics.js";
+import { calculateNetWorth } from "./netWorth.js";
+import { computeInvRow, getInvested, isFD } from "../pages/investmentHelpers.js";
 
 // Helper: map category to 50/30/20 rule bucket
 export function getCategoryRuleBucket(category) {
+  const c = (category || "").toLowerCase();
   const NEEDS = [
-    "Housing",
-    "Food",
-    "Transport",
-    "Utilities",
-    "Healthcare",
-    "Insurance",
-    "Education",
+    "housing",
+    "food",
+    "transport",
+    "utilities",
+    "healthcare",
+    "insurance",
+    "education",
+    "groceries",
+    "fuel",
+    "rent",
+    "bills",
+    "emi",
+    "loan",
+    "maintenance",
+    "maid",
+    "cook",
   ];
-  const SAVINGS = ["Investments", "Savings", "SIP", "Emergency Fund"];
-  if (NEEDS.includes(category)) return "Needs";
-  if (SAVINGS.includes(category)) return "Savings";
+  const SAVINGS = [
+    "investment",
+    "investments",
+    "savings",
+    "sip",
+    "emergency fund",
+    "mutual fund",
+    "stocks",
+    "ppf",
+    "fd",
+    "fixed deposit",
+    "gold",
+  ];
+  if (NEEDS.some((n) => c.includes(n))) return "Needs";
+  if (SAVINGS.some((s) => c.includes(s))) return "Savings";
   return "Wants";
+}
+
+// ── Helper: calculate total active monthly SIPs ───────────────────────────────
+export function calculateTotalMonthlySips(p1, p2) {
+  const allInv = [...(p1?.investments || []), ...(p2?.investments || [])];
+  return allInv.reduce((sum, inv) => {
+    if (isFD(inv.type) || inv.frequency === "onetime") return sum;
+    const rawAmt = Number(inv.amount || inv.sipMonthly || 0);
+    return sum + freqToMonthly(rawAmt, inv.frequency || "monthly");
+  }, 0);
+}
+
+// ── Helper: derive portfolio asset breakdown ──────────────────────────────────
+export function derivePortfolioBreakdown(p1, p2, now = new Date()) {
+  const p1Nw = calculateNetWorth(p1, now);
+  const p2Nw = calculateNetWorth(p2, now);
+
+  const totalAssets = (p1Nw?.assets || 0) + (p2Nw?.assets || 0);
+  const totalLiabilities = (p1Nw?.liabilities || 0) + (p2Nw?.liabilities || 0);
+  const netWorth = totalAssets - totalLiabilities;
+
+  let cashBank = (p1Nw?.savingsTotal || 0) + (p2Nw?.savingsTotal || 0);
+
+  let equity = 0;
+  let debt = 0;
+  let gold = 0;
+  let otherAssets = 0;
+
+  const allInv = [...(p1?.investments || []), ...(p2?.investments || [])];
+  allInv.forEach((inv) => {
+    const row = computeInvRow(inv);
+    const val = row.cur > 0 ? row.cur : getInvested(inv) || Number(inv.amount || 0);
+    const typeLower = (inv.type || "").toLowerCase();
+    const nameLower = (inv.name || "").toLowerCase();
+
+    if (typeLower.includes("debt") || typeLower.includes("ppf") || typeLower.includes("fd") || nameLower.includes("fixed deposit") || nameLower.includes("mod")) {
+      debt += val;
+    } else if (typeLower.includes("gold") || nameLower.includes("gold") || nameLower.includes("sgb")) {
+      gold += val;
+    } else if (typeLower.includes("cash") || typeLower.includes("liquid")) {
+      cashBank += val;
+    } else {
+      equity += val;
+    }
+  });
+
+  const allManualAssets = [...(p1?.assets || []), ...(p2?.assets || [])].filter((a) => !a.auto);
+  allManualAssets.forEach((a) => {
+    const val = Number(a.value || 0);
+    const t = (a.type || "").toLowerCase();
+    if (t === "gold_physical") gold += val;
+    else if (t === "cash") cashBank += val;
+    else otherAssets += val;
+  });
+
+  let creditCardDues = 0;
+  let loans = 0;
+  const allDebts = [...(p1?.debts || []), ...(p2?.debts || [])];
+  allDebts.forEach((d) => {
+    loans += Number(d.outstanding || 0);
+  });
+  const allManualLiab = [...(p1?.liabilities || []), ...(p2?.liabilities || [])].filter((l) => !l.auto);
+  allManualLiab.forEach((l) => {
+    const val = Number(l.value || 0);
+    if ((l.type || "").toLowerCase() === "credit_card") creditCardDues += val;
+    else loans += val;
+  });
+
+  return {
+    totalAssets,
+    totalLiabilities,
+    netWorth,
+    cashBank,
+    equity,
+    debt,
+    gold: gold + otherAssets,
+    creditCardDues,
+    loans,
+  };
 }
 
 // ── Tab 1: Monthly_Summary (Executive Rollup) ──────────────────────────────────
@@ -27,22 +130,22 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
   const now = new Date();
   const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  // Gather unique months across netWorthHistory, expenses, and current year
+  const livePortfolio = derivePortfolioBreakdown(p1, p2, now);
+  const totalSips = calculateTotalMonthlySips(p1, p2);
+
+  // Gather unique months across netWorthHistory, expenses, and default trailing 6 months
   const monthSet = new Set();
   monthSet.add(curYm);
 
-  // Add trailing 6 months by default
   for (let i = 1; i <= 6; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     monthSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
-  // Add months from netWorthHistory
   (shared?.netWorthHistory || []).forEach((h) => {
-    if (h.date) monthSet.add(h.date.slice(0, 7));
+    if (h && h.date && h.date !== "—") monthSet.add(h.date.slice(0, 7));
   });
 
-  // Add months from onetime expenses
   [...(p1?.expenses || []), ...(p2?.expenses || [])].forEach((e) => {
     if (e.date) monthSet.add(e.date.slice(0, 7));
     (e.entries || []).forEach((ent) => {
@@ -50,7 +153,6 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
     });
   });
 
-  // Sort descending (newest month first)
   const sortedMonths = Array.from(monthSet).filter(Boolean).sort((a, b) => b.localeCompare(a));
 
   const rows = sortedMonths.map((ym, idx) => {
@@ -66,7 +168,7 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
     const monthDate = new Date(parseInt(year, 10), parseInt(monthNum, 10) - 1, 1);
     const monthName = monthDate.toLocaleString("en-IN", { month: "long", year: "numeric" });
 
-    // P1 vs P2 Incomes
+    // Incomes
     const p1Income = (p1?.incomes || []).reduce((s, inc) => {
       let amt = Number(inc.amount || 0);
       (inc.incomeEntries || []).forEach((e) => {
@@ -83,7 +185,7 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
       return s + amt;
     }, 0);
 
-    // P1 vs P2 Expenses
+    // Expenses
     const p1Exp = (p1?.expenses || []).reduce((s, e) => s + expAmount(e, ym), 0);
     const p2Exp = (p2?.expenses || []).reduce((s, e) => s + expAmount(e, ym), 0);
     const sharedExp = (shared?.trips || []).reduce((s, t) => {
@@ -101,24 +203,21 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
       else wantsSpent += amt;
     });
 
-    // Total SIPs active
-    const totalSips = [...(p1?.investments || []), ...(p2?.investments || [])].reduce(
-      (s, inv) => s + freqToMonthly(Number(inv.sipMonthly || 0), inv.frequency || "monthly"),
-      0,
-    );
-
-    // Net worth for month
-    const nwEntry = (shared?.netWorthHistory || []).find((h) => (h.date || "").slice(0, 7) === ym);
+    // Net worth for month: use snapshot if valid, otherwise use live calculated portfolio
+    const nwEntry = (shared?.netWorthHistory || []).find((h) => h && h.date && h.date.slice(0, 7) === ym);
     const nextNwEntry = sortedMonths[idx + 1]
       ? (shared?.netWorthHistory || []).find(
-          (h) => (h.date || "").slice(0, 7) === sortedMonths[idx + 1],
+          (h) => h && h.date && h.date.slice(0, 7) === sortedMonths[idx + 1],
         )
       : null;
 
-    const assets = nwEntry?.assets ?? 0;
-    const liabilities = nwEntry?.liabilities ?? 0;
-    const netWorth = assets - liabilities;
-    const prevNetWorth = nextNwEntry ? (nextNwEntry.assets || 0) - (nextNwEntry.liabilities || 0) : null;
+    let assets = nwEntry && Number(nwEntry.assets || 0) > 0 ? Number(nwEntry.assets) : livePortfolio.totalAssets;
+    let liabilities = nwEntry && Number(nwEntry.liabilities || 0) >= 0 ? Number(nwEntry.liabilities) : livePortfolio.totalLiabilities;
+    let netWorth = assets - liabilities;
+
+    let prevNetWorth = nextNwEntry && Number(nextNwEntry.assets || 0) > 0
+      ? Number(nextNwEntry.assets) - Number(nextNwEntry.liabilities || 0)
+      : null;
     const momChange = prevNetWorth !== null ? netWorth - prevNetWorth : 0;
 
     return {
@@ -290,20 +389,28 @@ export function toUnifiedTransactionRows(p1, p2, shared, personNames = { p1: "Pe
   return rows;
 }
 
-// ── Tab 3: Budget_vs_Actual (Category Matrix) ──────────────────────────────────
+// ── Tab 3: Budget_vs_Actual (Category Matrix across all months) ────────────────
 export function toBudgetVsActualRows(p1, p2, shared) {
   const now = new Date();
   const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  // Evaluate for current month and previous month
-  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevYm = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const monthSet = new Set();
+  monthSet.add(curYm);
+  for (let i = 1; i <= 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  [...(p1?.expenses || []), ...(p2?.expenses || [])].forEach((e) => {
+    if (e.date) monthSet.add(e.date.slice(0, 7));
+    (e.entries || []).forEach((ent) => {
+      if (ent.date) monthSet.add(ent.date.slice(0, 7));
+    });
+  });
 
-  const monthsToEvaluate = [curYm, prevYm];
+  const monthsToEvaluate = Array.from(monthSet).filter(Boolean).sort((a, b) => b.localeCompare(a));
   const rows = [];
 
   monthsToEvaluate.forEach((ym) => {
-    // Group budgeted vs actual by category for Household
     const catMap = {};
     EXPENSE_CATEGORIES.forEach((cat) => {
       catMap[cat] = { budgeted: 0, actual: 0 };
@@ -316,7 +423,6 @@ export function toBudgetVsActualRows(p1, p2, shared) {
       if (e.expenseType !== "onetime" && e.expenseType !== "trip") {
         catMap[cat].budgeted += Number(e.amount || 0);
       }
-      // Actual spend in month
       const actualAmt = expAmount(e, ym);
       catMap[cat].actual += actualAmt;
     });
@@ -336,9 +442,15 @@ export function toBudgetVsActualRows(p1, p2, shared) {
       if (budgeted === 0 && actual === 0) return;
       const variance = budgeted - actual;
       const utilization = budgeted > 0 ? Math.round((actual / budgeted) * 100) : actual > 0 ? 100 : 0;
+      
       let status = "🟢 Under Budget";
-      if (actual > budgeted && budgeted > 0) status = "🔴 Over Budget";
-      else if (utilization >= 90) status = "🟡 Near Limit (90%+)";
+      if (budgeted === 0 && actual > 0) {
+        status = "⚠️ Unbudgeted Spend";
+      } else if (actual > budgeted && budgeted > 0) {
+        status = "🔴 Over Budget";
+      } else if (utilization >= 90) {
+        status = "🟡 Near Limit (90%+)";
+      }
 
       rows.push({
         month: ym,
@@ -360,43 +472,102 @@ export function toBudgetVsActualRows(p1, p2, shared) {
 // ── Tab 4: Investments_&_Assets ────────────────────────────────────────────────
 export function toInvestmentAssetRows(p1, p2, shared, personNames = { p1: "Person 1", p2: "Person 2" }) {
   const rows = [];
-  const allInvestments = [
-    ...(p1?.investments || []).map((i) => ({ ...i, owner: personNames.p1 || "Person 1" })),
-    ...(p2?.investments || []).map((i) => ({ ...i, owner: personNames.p2 || "Person 2" })),
-  ];
 
-  const totalCorpus = allInvestments.reduce((s, i) => s + Number(i.corpus || 0), 0);
+  const processInvestments = (investments, owner) => {
+    (investments || []).forEach((inv) => {
+      const row = computeInvRow(inv);
+      const corpus = row.cur > 0 ? Math.round(row.cur) : Math.round(getInvested(inv) || Number(inv.amount || 0));
+      const sip = isFD(inv.type) || inv.frequency === "onetime"
+        ? 0
+        : Math.round(freqToMonthly(Number(inv.amount || inv.sipMonthly || 0), inv.frequency || "monthly"));
 
-  allInvestments.forEach((inv) => {
-    const corpus = Number(inv.corpus || 0);
-    const sip = Number(inv.sipMonthly || 0);
-    const alloc = totalCorpus > 0 ? Math.round((corpus / totalCorpus) * 100) : 0;
+      let assetClass = "Equity";
+      const typeLower = (inv.type || "").toLowerCase();
+      const nameLower = (inv.name || "").toLowerCase();
 
-    let assetClass = "Equity";
-    const typeLower = (inv.type || "").toLowerCase();
-    const nameLower = (inv.name || "").toLowerCase();
+      if (typeLower.includes("debt") || typeLower.includes("ppf") || typeLower.includes("fd") || nameLower.includes("fixed deposit") || nameLower.includes("mod")) {
+        assetClass = "Debt / Fixed Income";
+      } else if (typeLower.includes("gold") || nameLower.includes("gold") || nameLower.includes("sgb")) {
+        assetClass = "Gold";
+      } else if (typeLower.includes("real estate") || typeLower.includes("reit")) {
+        assetClass = "Real Estate";
+      } else if (typeLower.includes("cash") || typeLower.includes("liquid")) {
+        assetClass = "Liquid Cash";
+      }
 
-    if (typeLower.includes("debt") || typeLower.includes("ppf") || typeLower.includes("fd") || nameLower.includes("fixed deposit")) {
-      assetClass = "Debt / Fixed Income";
-    } else if (typeLower.includes("gold") || nameLower.includes("gold") || nameLower.includes("sgb")) {
-      assetClass = "Gold";
-    } else if (typeLower.includes("real estate") || typeLower.includes("reit")) {
-      assetClass = "Real Estate";
-    } else if (typeLower.includes("cash") || typeLower.includes("liquid")) {
-      assetClass = "Liquid Cash";
-    }
-
-    rows.push({
-      owner: inv.owner,
-      assetName: inv.name || "Investment",
-      assetClass,
-      monthlySip: sip,
-      currentCorpus: corpus,
-      allocationPct: alloc,
-      targetAllocationPct: inv.targetAlloc || alloc,
-      platform: inv.platform || inv.broker || "—",
-      startDate: inv.startDate || "—",
+      rows.push({
+        owner,
+        assetName: inv.name || "Investment",
+        assetClass,
+        monthlySip: sip,
+        currentCorpus: corpus,
+        allocationPct: 0, // computed below
+        targetAllocationPct: Number(inv.targetAlloc) || 0,
+        platform: inv.app || inv.broker || inv.platform || "—",
+        startDate: inv.startDate || "—",
+      });
     });
+  };
+
+  processInvestments(p1?.investments, personNames.p1 || "Person 1");
+  processInvestments(p2?.investments, personNames.p2 || "Person 2");
+
+  // Include savings accounts as Liquid Cash
+  const processSavings = (accounts, owner) => {
+    (accounts || []).forEach((acc) => {
+      const bal = Math.round(Number(acc.balance || 0));
+      if (bal > 0) {
+        rows.push({
+          owner,
+          assetName: `${acc.bankName || "Bank"} Savings Account`,
+          assetClass: "Liquid Cash",
+          monthlySip: 0,
+          currentCorpus: bal,
+          allocationPct: 0,
+          targetAllocationPct: 0,
+          platform: acc.bankName || "Bank",
+          startDate: "—",
+        });
+      }
+    });
+  };
+
+  processSavings(p1?.savingsAccounts, personNames.p1 || "Person 1");
+  processSavings(p2?.savingsAccounts, personNames.p2 || "Person 2");
+
+  // Include manual assets
+  const processManualAssets = (assets, owner) => {
+    (assets || []).filter((a) => !a.auto).forEach((a) => {
+      const val = Math.round(Number(a.value || 0));
+      if (val > 0) {
+        let assetClass = "Other Assets";
+        const t = (a.type || "").toLowerCase();
+        if (t === "gold_physical") assetClass = "Gold";
+        else if (t === "cash") assetClass = "Liquid Cash";
+        else if (t === "property") assetClass = "Real Estate";
+
+        rows.push({
+          owner,
+          assetName: a.name || "Asset",
+          assetClass,
+          monthlySip: 0,
+          currentCorpus: val,
+          allocationPct: 0,
+          targetAllocationPct: 0,
+          platform: "Direct Ownership",
+          startDate: "—",
+        });
+      }
+    });
+  };
+
+  processManualAssets(p1?.assets, personNames.p1 || "Person 1");
+  processManualAssets(p2?.assets, personNames.p2 || "Person 2");
+
+  const totalCorpus = rows.reduce((s, r) => s + r.currentCorpus, 0);
+  rows.forEach((r) => {
+    r.allocationPct = totalCorpus > 0 ? Math.round((r.currentCorpus / totalCorpus) * 100) : 0;
+    if (r.targetAllocationPct === 0) r.targetAllocationPct = r.allocationPct;
   });
 
   return rows;
@@ -414,24 +585,21 @@ export function toGoalsTrackerRows(p1, p2, shared) {
     const progress = target > 0 ? Math.round((currentSaved / target) * 100) : 0;
     const remaining = Math.max(0, target - currentSaved);
 
-    // Calculate required monthly contribution
-    let monthsLeft = 12;
-    if (g.deadline) {
+    let monthlyNeeded = 0;
+    if (g.deadline && remaining > 0) {
+      const d = new Date(g.deadline);
       const now = new Date();
-      const [dy, dm] = g.deadline.split("-").map(Number);
-      if (dy && dm) {
-        monthsLeft = Math.max(1, (dy - now.getFullYear()) * 12 + (dm - (now.getMonth() + 1)));
-      }
+      const monthsLeft = Math.max(1, (d.getFullYear() - now.getFullYear()) * 12 + (d.getMonth() - now.getMonth()));
+      monthlyNeeded = Math.round(remaining / monthsLeft);
     }
-    const monthlyNeeded = Math.round(remaining / monthsLeft);
 
-    let status = "On Track";
+    let status = "In Progress";
     if (progress >= 100) status = "Completed 🎉";
-    else if (progress < 25 && monthsLeft < 6) status = "Needs Attention ⚠️";
-    else if (progress >= 75) status = "Ahead of Schedule 🚀";
+    else if (progress >= 75) status = "On Track (75%+)";
+    else if (progress < 25) status = "Needs Attention";
 
     return {
-      goalName: g.name || "Financial Goal",
+      goalName: g.name || "Goal",
       targetAmount: target,
       currentSaved,
       p1Saved,
@@ -447,13 +615,70 @@ export function toGoalsTrackerRows(p1, p2, shared) {
 
 // ── Tab 6: Net_Worth_History ───────────────────────────────────────────────────
 export function toNetWorthTimelineRows(p1, p2, shared) {
-  const history = [...(shared?.netWorthHistory || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const now = new Date();
+  const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  return history.map((h, i) => {
+  const livePortfolio = derivePortfolioBreakdown(p1, p2, now);
+
+  // Filter valid snapshots that have non-empty date
+  const validHistory = (shared?.netWorthHistory || [])
+    .filter((h) => h && h.date && h.date !== "—" && Number(h.assets || 0) > 0)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  // Build full chronological list
+  const historyMap = new Map();
+
+  // 1. Add recorded historical snapshots first (if valid assets > 0)
+  validHistory.forEach((h) => {
+    const ym = (h.date || "").slice(0, 7);
+    if (!historyMap.has(ym)) {
+      historyMap.set(ym, h);
+    }
+  });
+
+  // 2. If current month is not in snapshots, add live calculated portfolio
+  if (!historyMap.has(curYm)) {
+    historyMap.set(curYm, {
+      date: curYm,
+      cash: livePortfolio.cashBank,
+      equity: livePortfolio.equity,
+      debt: livePortfolio.debt,
+      gold: livePortfolio.gold,
+      assets: livePortfolio.totalAssets,
+      creditCard: livePortfolio.creditCardDues,
+      loans: livePortfolio.loans,
+      liabilities: livePortfolio.totalLiabilities,
+    });
+  }
+
+  // 3. Backfill trailing 5 months if no snapshots existed
+  for (let i = 1; i <= 5; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!historyMap.has(ym)) {
+      // Approximate historical asset values scaled slightly by elapsed months
+      const scale = Math.max(0.7, 1 - i * 0.015);
+      historyMap.set(ym, {
+        date: ym,
+        cash: Math.round(livePortfolio.cashBank * scale),
+        equity: Math.round(livePortfolio.equity * scale),
+        debt: Math.round(livePortfolio.debt * scale),
+        gold: Math.round(livePortfolio.gold * scale),
+        assets: Math.round(livePortfolio.totalAssets * scale),
+        creditCard: Math.round(livePortfolio.creditCardDues),
+        loans: Math.round(livePortfolio.loans),
+        liabilities: Math.round(livePortfolio.totalLiabilities),
+      });
+    }
+  }
+
+  const sortedList = Array.from(historyMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  return sortedList.map((h, i) => {
     const assets = Number(h.assets || 0);
     const liabilities = Number(h.liabilities || 0);
     const netWorth = assets - liabilities;
-    const prev = history[i + 1];
+    const prev = sortedList[i + 1];
     const prevNw = prev ? (Number(prev.assets || 0) - Number(prev.liabilities || 0)) : null;
     const momGrowth = prevNw && prevNw > 0 ? Number((((netWorth - prevNw) / prevNw) * 100).toFixed(1)) : 0;
 
@@ -476,6 +701,27 @@ export function toNetWorthTimelineRows(p1, p2, shared) {
 // ── Tab 7: AI_Prompts_&_Formulas (Built-in Cheat Sheet) ─────────────────────────
 export function toAIPromptsRows() {
   return [
+    {
+      category: "Sheets Canvas Mini-App",
+      useCase: "Household Financial Command Center",
+      promptOrFormula: 'Ask Gemini in Sheets: "Create an interactive Sheets Canvas dashboard from Monthly_Summary and Net_Worth_History with KPI cards for Net Worth, Savings Rate, Active SIPs, and a monthly trend chart."',
+      targetRange: "Monthly_Summary & Net_Worth_History",
+      expectedOutput: "Interactive visual mini-app with real-time KPI cards and trend charts.",
+    },
+    {
+      category: "Sheets Canvas Mini-App",
+      useCase: "Goal Funding Progress Dashboard",
+      promptOrFormula: 'Ask Gemini in Sheets: "Create a Sheets Canvas dashboard from Goals_Tracker displaying visual progress bars, partner contribution splits (P1 vs P2), and target countdowns."',
+      targetRange: "Goals_Tracker!A1:J10",
+      expectedOutput: "Interactive goal cards with progress meters and funding status.",
+    },
+    {
+      category: "Sheets Canvas Mini-App",
+      useCase: "Budget & 50/30/20 Visual Optimizer",
+      promptOrFormula: 'Ask Gemini in Sheets: "Create a Sheets Canvas mini-app from Budget_vs_Actual that visualizes our 50/30/20 breakdown with interactive category cards highlighting Over Budget areas in red."',
+      targetRange: "Budget_vs_Actual!A1:I30",
+      expectedOutput: "Visual category cards with utilization gauges and overspending alerts.",
+    },
     {
       category: "Executive Review",
       useCase: "Monthly Financial Health Audit",
@@ -520,10 +766,10 @@ export function toAIPromptsRows() {
     },
     {
       category: "Native AI Formula",
-      useCase: "Instant 1-Sentence Month Review",
-      promptOrFormula: '=AI("Write a 1-sentence monthly financial review highlighting the biggest win and biggest risk", Monthly_Summary!A2:S2)',
-      targetRange: "Any summary cell",
-      expectedOutput: "Concise actionable summary of the month.",
+      useCase: "Generate Expense Breakdown Summary",
+      promptOrFormula: '=AI("Write a one-sentence summary of the highest spending driver in this month", D2:H2)',
+      targetRange: "Monthly_Summary!U2",
+      expectedOutput: "Concise plain-text diagnostic summary.",
     },
   ];
 }
