@@ -1,6 +1,6 @@
 // Google Sheets integration card — shown in Settings page
-// Handles connect/disconnect and full sync (all 8 tabs).
-// Pull (import from Sheet) shows a row-count preview before importing.
+// Handles connect/disconnect and AI-ready full sync (7 structured tabs).
+// Includes Gemini in Sheets AI prompt suggestions and tab breakdown.
 
 import { useState } from "react";
 import {
@@ -10,6 +10,11 @@ import {
   CheckCircle2,
   Loader2,
   Sheet,
+  Sparkles,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useGoogleSheets } from "../hooks/useGoogleSheets";
 import { useData } from "../context/DataContext";
@@ -38,6 +43,35 @@ const badge = (color) => ({
   textTransform: "uppercase",
 });
 
+const AI_TABS = [
+  { name: "Monthly_Summary", color: "#10B981", desc: "Executive monthly rollups, savings rate & surplus" },
+  { name: "All_Transactions", color: "#3B82F6", desc: "Unified ledger with person & month dimensions" },
+  { name: "Budget_vs_Actual", color: "#F59E0B", desc: "Category-level variance & 50/30/20 utilization" },
+  { name: "Investments_&_Assets", color: "#6366F1", desc: "Portfolio allocation, SIPs & current corpus" },
+  { name: "Goals_Tracker", color: "#8B5CF6", desc: "Target progress, deadlines & monthly SIP needed" },
+  { name: "Net_Worth_History", color: "#14B8A6", desc: "Assets, liabilities & MoM growth timeline" },
+  { name: "AI_Prompts_&_Formulas", color: "#F43F5E", desc: "Built-in Gemini prompts & =AI() formula templates" },
+];
+
+const SAMPLE_PROMPTS = [
+  {
+    title: "Executive Month Review",
+    prompt: 'Summarize our financial performance from the Monthly_Summary tab over the last 3 months. Highlight our top savings wins and biggest spending anomalies in 3 bullet points.',
+  },
+  {
+    title: "Find Spending Leaks",
+    prompt: 'Analyze All_Transactions for the latest month. What are our top 5 discretionary expense categories and which single merchant took the most money?',
+  },
+  {
+    title: "Budget Cutback Recommendations",
+    prompt: 'Look at Budget_vs_Actual. For every category where status is Over Budget, recommend practical cutbacks to increase our savings rate to 35%.',
+  },
+  {
+    title: "Net Worth Compound Growth",
+    prompt: 'Based on our average monthly savings and SIP contributions in Investments_&_Assets and Monthly_Summary, estimate our Net Worth in 3 years at 12% CAGR.',
+  },
+];
+
 export default function GoogleSheetsConnect() {
   const {
     integration,
@@ -50,10 +84,12 @@ export default function GoogleSheetsConnect() {
     syncAll,
     pull,
   } = useGoogleSheets();
-  const { p1, p2, shared } = useData();
+  const { p1, p2, shared, personNames } = useData();
   const [syncMsg, setSyncMsg] = useState(null);
   const [pullPreview, setPullPreview] = useState(null); // { sheetName, rows }
   const [pulling, setPulling] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState(null);
 
   if (loading) return null;
 
@@ -71,6 +107,7 @@ export default function GoogleSheetsConnect() {
         >
           <Sheet size={18} style={{ color: "var(--text-secondary)" }} />
           <span style={{ fontWeight: 600, fontSize: 14 }}>Google Sheets</span>
+          <span style={badge("#a855f7")}>AI-Optimized</span>
         </div>
         <p
           style={{
@@ -80,9 +117,11 @@ export default function GoogleSheetsConnect() {
             marginBottom: 14,
           }}
         >
-          Sync your WealthOS data to a Google Sheet — share with your CA, do
-          custom analysis, or add transactions directly in the sheet.
+          Sync WealthOS data directly to Google Sheets in an <strong>AI-ready structured format</strong>.
+          Use <strong>Gemini in Google Sheets</strong> to analyze your savings rate, find spending leaks,
+          forecast net worth, and generate custom pivot tables.
         </p>
+
         {error && (
           <div
             style={{
@@ -120,8 +159,8 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
   const handleSyncAll = async () => {
     setSyncMsg(null);
     try {
-      const total = await syncAll(p1, p2, shared);
-      setSyncMsg({ ok: true, text: `✓ Synced ${total} rows across 8 tabs` });
+      const total = await syncAll(p1, p2, shared, personNames);
+      setSyncMsg({ ok: true, text: `✓ Successfully synced ${total} rows across 7 AI-ready tabs` });
     } catch {
       setSyncMsg({
         ok: false,
@@ -145,6 +184,12 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
     }
   };
 
+  const handleCopyPrompt = (text, idx) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2500);
+  };
+
   return (
     <div style={card}>
       {/* Header */}
@@ -154,11 +199,16 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
           alignItems: "center",
           gap: 8,
           marginBottom: 12,
+          flexWrap: "wrap",
         }}
       >
         <CheckCircle2 size={18} style={{ color: "#22c55e" }} />
         <span style={{ fontWeight: 600, fontSize: 14 }}>Google Sheets</span>
         <span style={badge("#22c55e")}>Connected</span>
+        <span style={badge("#8b5cf6")}>
+          <Sparkles size={10} style={{ display: "inline", marginRight: 3 }} />
+          Gemini AI Ready
+        </span>
         {integration.sheetTitle?.includes("[DEV]") ? (
           <span style={badge("#3b82f6")}>DEV SHEET</span>
         ) : (
@@ -203,9 +253,9 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
         </p>
       )}
 
-      {/* Sync All button */}
+      {/* Action Buttons */}
       <div
-        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}
+        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}
       >
         <button
           className="btn-primary"
@@ -221,7 +271,23 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
           ) : (
             <RefreshCw size={14} />
           )}
-          {syncing ? "Syncing..." : "Sync All to Sheet"}
+          {syncing ? "Syncing 7 Tabs..." : "Sync All (7 AI Tabs)"}
+        </button>
+
+        <button
+          className="btn-ghost"
+          onClick={() => setShowPrompts(!showPrompts)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "var(--text-primary)",
+          }}
+        >
+          <Sparkles size={13} style={{ color: "var(--gold)" }} />
+          Gemini AI Prompts
+          {showPrompts ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </button>
 
         <button
@@ -240,7 +306,8 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
             display: "flex",
             alignItems: "center",
             gap: 6,
-            fontSize: 13,
+            fontSize: 12,
+            marginLeft: "auto",
           }}
         >
           <LogOut size={13} />
@@ -248,17 +315,121 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
         </button>
       </div>
 
-      {/* Pull (import) section */}
+      {/* Expandable AI Prompts helper */}
+      {showPrompts && (
+        <div
+          style={{
+            background: "var(--bg-card2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "12px",
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--gold)",
+              marginBottom: 8,
+            }}
+          >
+            <Sparkles size={14} />
+            Copy & Ask Gemini in your Google Sheet:
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {SAMPLE_PROMPTS.map((p, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+                    {p.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                    "{p.prompt}"
+                  </div>
+                </div>
+                <button
+                  className="btn-ghost"
+                  onClick={() => handleCopyPrompt(p.prompt, idx)}
+                  style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}
+                  title="Copy prompt"
+                >
+                  {copiedIdx === idx ? <Check size={12} color="#22c55e" /> : <Copy size={12} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs Breakdown */}
+      <div style={{ marginBottom: 12 }}>
+        <span style={label}>AI-Structured Tabs Included in Sync:</span>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+            gap: 6,
+            marginTop: 6,
+          }}
+        >
+          {AI_TABS.map((t) => (
+            <div
+              key={t.name}
+              style={{
+                fontSize: 11,
+                padding: "6px 8px",
+                borderRadius: 6,
+                background: "var(--bg-card2)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: t.color,
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <strong style={{ color: "var(--text-primary)" }}>{t.name}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pull (import from sheet) */}
       <div
         style={{
           borderTop: "1px solid var(--border)",
           paddingTop: 12,
-          marginTop: 4,
+          marginTop: 8,
         }}
       >
         <span style={label}>Import from Sheet (preview before applying)</span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["Transactions_P1", "Transactions_P2", "Goals"].map((tab) => (
+          {["All_Transactions", "Goals_Tracker", "Budget_vs_Actual"].map((tab) => (
             <button
               key={tab}
               className="btn-ghost"
@@ -384,7 +555,7 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
         style={{
           fontSize: 11,
           color: "var(--text-muted)",
-          marginTop: 10,
+          marginTop: 12,
         }}
       >
         Connected {new Date(integration.connectedAt).toLocaleDateString()} ·

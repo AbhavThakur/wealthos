@@ -1,22 +1,120 @@
 // Vercel Serverless Function — push WealthOS data → Google Sheets tab
 //
 // POST /api/sheets-push
-// Body: { uid: string, sheetName: string, rows: object[] }
+// Body: { uid: string, sheetName: string, rows: object[], env?: string }
 // Response: { ok: true, updatedRows: number }
 //
-// Supported sheetName values and their column headers:
-//   Transactions_P1/P2  — _id, date, desc, amount, type, category
-//   Budget_P1/P2        — _id, name, category, allocated, type, recurrence
-//   Investments_P1/P2   — _id, name, type, sipMonthly, corpus, startDate
-//   Goals               — _id, name, target, deadline, p1Saved, p2Saved
-//   NetWorth            — date, totalAssets, totalLiabilities, netWorth
-//
-// Each row also gets a _synced_at column appended automatically.
+// AI-Ready 7-Tab Schema & Legacy Fallback Support
 
 import { getDb, getAccessToken } from "./_sheetsLib.js";
 
-// ── Column schemas per tab ────────────────────────────────────────────────────
+// ── Tab color definitions ─────────────────────────────────────────────────────
+const TAB_COLORS = {
+  Monthly_Summary: { red: 0.06, green: 0.73, blue: 0.51 }, // Emerald Green
+  All_Transactions: { red: 0.23, green: 0.51, blue: 0.96 }, // Royal Blue
+  Budget_vs_Actual: { red: 0.96, green: 0.62, blue: 0.04 }, // Amber Gold
+  "Investments_&_Assets": { red: 0.39, green: 0.40, blue: 0.95 }, // Indigo
+  Goals_Tracker: { red: 0.55, green: 0.36, blue: 0.96 }, // Purple
+  Net_Worth_History: { red: 0.08, green: 0.72, blue: 0.65 }, // Teal
+  "AI_Prompts_&_Formulas": { red: 0.96, green: 0.25, blue: 0.37 }, // Rose
+};
+
+// ── Column keys per tab ───────────────────────────────────────────────────────
 const SHEET_COLUMNS = {
+  Monthly_Summary: [
+    "month",
+    "year",
+    "monthName",
+    "totalIncome",
+    "p1Income",
+    "p2Income",
+    "totalExpenses",
+    "p1Expenses",
+    "p2Expenses",
+    "sharedExpenses",
+    "needsSpent",
+    "wantsSpent",
+    "savingsInvested",
+    "savingsRatePct",
+    "budgetVariance",
+    "totalSips",
+    "totalAssets",
+    "totalLiabilities",
+    "netWorth",
+    "momNetWorthChange",
+    "statusNotes",
+  ],
+  All_Transactions: [
+    "date",
+    "month",
+    "person",
+    "type",
+    "category",
+    "subcategory",
+    "description",
+    "amount",
+    "budgetBucket",
+    "isSplit",
+    "paidBy",
+    "accountLinked",
+    "notes",
+  ],
+  Budget_vs_Actual: [
+    "month",
+    "person",
+    "category",
+    "ruleBucket",
+    "budgetedLimit",
+    "actualSpent",
+    "variance",
+    "utilizationPct",
+    "status",
+  ],
+  "Investments_&_Assets": [
+    "owner",
+    "assetName",
+    "assetClass",
+    "monthlySip",
+    "currentCorpus",
+    "allocationPct",
+    "targetAllocationPct",
+    "platform",
+    "startDate",
+  ],
+  Goals_Tracker: [
+    "goalName",
+    "targetAmount",
+    "currentSaved",
+    "p1Saved",
+    "p2Saved",
+    "targetDeadline",
+    "progressPct",
+    "remainingAmount",
+    "monthlyContributionNeeded",
+    "status",
+  ],
+  Net_Worth_History: [
+    "month",
+    "cashBankBalances",
+    "equityMutualFunds",
+    "fixedDepositsPf",
+    "goldOtherAssets",
+    "totalAssets",
+    "creditCardDues",
+    "personalHomeLoans",
+    "totalLiabilities",
+    "netWorth",
+    "momGrowthPct",
+  ],
+  "AI_Prompts_&_Formulas": [
+    "category",
+    "useCase",
+    "promptOrFormula",
+    "targetRange",
+    "expectedOutput",
+  ],
+
+  // Legacy fallback schemas
   Transactions_P1: ["_id", "date", "desc", "amount", "type", "category"],
   Transactions_P2: ["_id", "date", "desc", "amount", "type", "category"],
   Budget_P1: ["_id", "name", "category", "allocated", "type", "recurrence"],
@@ -26,47 +124,206 @@ const SHEET_COLUMNS = {
   Goals: ["_id", "name", "target", "deadline", "p1Saved", "p2Saved"],
   NetWorth: ["date", "totalAssets", "totalLiabilities", "netWorth"],
 };
+
+// ── Human-readable column header labels ───────────────────────────────────────
+const HEADER_LABELS = {
+  month: "Month (YYYY-MM)",
+  year: "Year",
+  monthName: "Month",
+  totalIncome: "Total Income (₹)",
+  p1Income: "P1 Income (₹)",
+  p2Income: "P2 Income (₹)",
+  totalExpenses: "Total Expenses (₹)",
+  p1Expenses: "P1 Expenses (₹)",
+  p2Expenses: "P2 Expenses (₹)",
+  sharedExpenses: "Shared Expenses (₹)",
+  needsSpent: "Needs (50% Target) (₹)",
+  wantsSpent: "Wants (30% Target) (₹)",
+  savingsInvested: "Savings / Surplus (₹)",
+  savingsRatePct: "Savings Rate (%)",
+  budgetVariance: "Budget Surplus / Deficit (₹)",
+  totalSips: "Active Monthly SIPs (₹)",
+  totalAssets: "Total Assets (₹)",
+  totalLiabilities: "Total Liabilities (₹)",
+  netWorth: "Net Worth (₹)",
+  momNetWorthChange: "MoM Net Worth Change (₹)",
+  statusNotes: "Financial Health Status",
+
+  date: "Date (YYYY-MM-DD)",
+  person: "Person",
+  type: "Type",
+  category: "Category",
+  subcategory: "Subcategory",
+  description: "Description / Merchant",
+  amount: "Amount (₹)",
+  budgetBucket: "50/30/20 Bucket",
+  isSplit: "Split with Partner",
+  paidBy: "Paid By",
+  accountLinked: "Linked Account",
+  notes: "Notes",
+
+  ruleBucket: "50/30/20 Rule Bucket",
+  budgetedLimit: "Budget Limit (₹)",
+  actualSpent: "Actual Spend (₹)",
+  variance: "Variance (Surplus/Deficit) (₹)",
+  utilizationPct: "Utilization (%)",
+  status: "Status",
+
+  owner: "Owner",
+  assetName: "Asset / Fund Name",
+  assetClass: "Asset Class",
+  monthlySip: "Monthly SIP (₹)",
+  currentCorpus: "Current Value (₹)",
+  allocationPct: "Allocation (%)",
+  targetAllocationPct: "Target Allocation (%)",
+  platform: "Platform / Broker",
+  startDate: "Start Date",
+
+  goalName: "Goal Name",
+  targetAmount: "Target (₹)",
+  currentSaved: "Current Saved (₹)",
+  p1Saved: "P1 Saved (₹)",
+  p2Saved: "P2 Saved (₹)",
+  targetDeadline: "Target Deadline (YYYY-MM)",
+  progressPct: "Progress (%)",
+  remainingAmount: "Remaining (₹)",
+  monthlyContributionNeeded: "Monthly Needed (₹)",
+
+  cashBankBalances: "Cash & Bank (₹)",
+  equityMutualFunds: "Equities & MFs (₹)",
+  fixedDepositsPf: "Fixed Deposits & PF (₹)",
+  goldOtherAssets: "Gold & Other (₹)",
+  creditCardDues: "Credit Cards (₹)",
+  personalHomeLoans: "Loans & EMIs (₹)",
+  momGrowthPct: "MoM Growth (%)",
+
+  useCase: "Use Case",
+  promptOrFormula: "Gemini AI Prompt / AI Formula",
+  targetRange: "Target Sheet Range",
+  expectedOutput: "Expected AI Output / Insight",
+};
+
 const ALLOWED_SHEETS = Object.keys(SHEET_COLUMNS);
 const MAX_ROWS = 10_000;
 
-async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
+async function getSpreadsheetMeta(accessToken, spreadsheetId) {
+  const metaRes = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!metaRes.ok) return null;
+  return metaRes.json();
+}
+
+async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetName, totalCols) {
   try {
-    const metaRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-    if (metaRes.ok) {
-      const meta = await metaRes.json();
-      const existingTitles = (meta.sheets || []).map(
-        (s) => s.properties?.title,
-      );
-      if (!existingTitles.includes(sheetName)) {
-        await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              requests: [{ addSheet: { properties: { title: sheetName } } }],
-            }),
-            signal: AbortSignal.timeout(10_000),
+    const meta = await getSpreadsheetMeta(accessToken, spreadsheetId);
+    if (!meta) return;
+
+    const sheets = meta.sheets || [];
+    let sheetObj = sheets.find((s) => s.properties?.title === sheetName);
+    let sheetId;
+
+    if (!sheetObj) {
+      // Add sheet
+      const addRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            requests: [{ addSheet: { properties: { title: sheetName } } }],
+          }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (addRes.ok) {
+        const addData = await addRes.json();
+        sheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
       }
+    } else {
+      sheetId = sheetObj.properties?.sheetId;
+    }
+
+    if (sheetId !== undefined) {
+      // Format sheet: Tab Color, Freeze Row 1, Header Styling, Auto Resize
+      const tabColor = TAB_COLORS[sheetName] || { red: 0.2, green: 0.4, blue: 0.8 };
+      const requests = [
+        // 1. Set Tab Color & Freeze Row 1
+        {
+          updateSheetProperties: {
+            properties: {
+              sheetId,
+              tabColorStyle: { rgbColor: tabColor },
+              gridProperties: { frozenRowCount: 1 },
+            },
+            fields: "tabColorStyle,gridProperties.frozenRowCount",
+          },
+        },
+        // 2. Format Header Row (Dark Slate Background, Bold White Text, Centered)
+        {
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+              startColumnIndex: 0,
+              endColumnIndex: totalCols,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.118, green: 0.161, blue: 0.231 }, // #1E293B
+                textFormat: {
+                  foregroundColor: { red: 1.0, green: 1.0, blue: 1.0 },
+                  bold: true,
+                  fontSize: 10,
+                },
+                horizontalAlignment: "CENTER",
+                verticalAlignment: "MIDDLE",
+                wrapStrategy: "CLIP",
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
+          },
+        },
+        // 3. Auto-resize all columns to fit contents
+        {
+          autoResizeDimensions: {
+            dimensions: {
+              sheetId,
+              dimension: "COLUMNS",
+              startIndex: 0,
+              endIndex: totalCols,
+            },
+          },
+        },
+      ];
+
+      await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requests }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
     }
   } catch (err) {
-    console.warn(`[sheets-push] ensureSheetTabExists(${sheetName}):`, err.message);
+    console.warn(`[sheets-push] ensureSheetTabExistsAndFormat(${sheetName}):`, err.message);
   }
 }
 
 async function clearSheet(accessToken, spreadsheetId, sheetName) {
-  await ensureSheetTabExists(accessToken, spreadsheetId, sheetName);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}:clear`;
   const res = await fetch(url, {
     method: "POST",
@@ -96,17 +353,24 @@ async function writeSheet(accessToken, spreadsheetId, sheetName, values) {
   return data.updatedRows || values.length;
 }
 
-// ── Convert row objects → 2D array with headers ───────────────────────────────
-function buildValues(columns, rows) {
+// ── Convert row objects → 2D array with clean human-readable headers ──────────
+function buildValues(sheetName, columns, rows) {
+  const isLegacy = sheetName.startsWith("Transactions_") || sheetName.startsWith("Budget_") || sheetName.startsWith("Investments_");
+  
+  const headers = isLegacy
+    ? [...columns, "_synced_at"]
+    : columns.map((col) => HEADER_LABELS[col] || col);
+
   const syncedAt = new Date().toISOString();
-  const headers = [...columns, "_synced_at"];
+
   const dataRows = rows.map((row) => [
     ...columns.map((col) => {
       const v = row[col];
       return v === undefined || v === null ? "" : v;
     }),
-    syncedAt,
+    ...(isLegacy ? [syncedAt] : []),
   ]);
+
   return [headers, ...dataRows];
 }
 
@@ -168,8 +432,14 @@ export default async function handler(req, res) {
     const { encryptedRefreshToken, spreadsheetId } = snap.data();
     const accessToken = await getAccessToken(encryptedRefreshToken);
     const columns = SHEET_COLUMNS[sheetName];
-    const values = buildValues(columns, rows);
+    const values = buildValues(sheetName, columns, rows);
 
+    await ensureSheetTabExistsAndFormat(
+      accessToken,
+      spreadsheetId,
+      sheetName,
+      columns.length + (sheetName.startsWith("Transactions_") ? 1 : 0),
+    );
     await clearSheet(accessToken, spreadsheetId, sheetName);
     const updatedRows = await writeSheet(
       accessToken,

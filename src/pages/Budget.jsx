@@ -214,11 +214,20 @@ function MobileInput({
   }
 
   if (type === "number") {
+    // Extract flex/sizing styles to apply on AmountInput's outer wrapper div.
+    // Filter out undefined so they don't override AmountInput's own defaults.
+    const { flex, minWidth, maxWidth, width, flexShrink, flexGrow, ...inputStyle } = style;
+    const wrapperStyle = Object.fromEntries(
+      Object.entries({ flex, minWidth, maxWidth, width, flexShrink, flexGrow }).filter(
+        ([, v]) => v !== undefined,
+      ),
+    );
     return (
       <AmountInput
         value={value}
         onChange={onChange}
-        style={style}
+        style={inputStyle}
+        wrapperStyle={wrapperStyle}
         {...rest}
       />
     );
@@ -2762,6 +2771,8 @@ export default function Budget({
                     borderBottom: isIncOpen
                       ? "none"
                       : "1px solid var(--border)",
+                    flexWrap: "nowrap",
+                    overflow: "hidden",
                   }}
                 >
                   <MobileInput
@@ -2787,7 +2798,7 @@ export default function Budget({
                         ),
                       )
                     }
-                    style={{ flex: 1.5 }}
+                    style={{ flex: 1.5, minWidth: 0 }}
                   >
                     {INCOME_TYPES.map((t) => (
                       <option key={t}>{t}</option>
@@ -2806,6 +2817,7 @@ export default function Budget({
                       )
                     }
                     style={{ flex: 1, minWidth: 0 }}
+                    showBadge={false}
                     min="0"
                   />
                   {(data?.savingsAccounts || []).length > 0 && (

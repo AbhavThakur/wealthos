@@ -7,67 +7,32 @@
 // disconnect() — revokes token + deletes Firestore doc
 // push(sheetName, rows) — write rows to a specific tab
 // pull(sheetName) — read rows from a specific tab
-// syncAll(p1, p2, shared) — push all 8 tabs at once
+// syncAll(p1, p2, shared, personNames) — push all 7 AI-ready tabs
 
 import { useEffect, useState, useCallback } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db, IS_DEV } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import {
+  toMonthlySummaryRows,
+  toUnifiedTransactionRows,
+  toBudgetVsActualRows,
+  toInvestmentAssetRows,
+  toGoalsTrackerRows,
+  toNetWorthTimelineRows,
+  toAIPromptsRows,
+} from "../utils/sheetsTransformers";
 
-// ── Row transformers — convert WealthOS objects → flat Sheet rows ─────────────
-export function toTransactionRows(transactions) {
-  return (transactions || []).map((t) => ({
-    _id: t.id ?? "",
-    date: t.date ?? "",
-    desc: t.desc ?? "",
-    amount: t.amount ?? 0,
-    type: t.type ?? "",
-    category: t.category ?? "",
-  }));
-}
-
-export function toBudgetRows(expenses) {
-  return (expenses || []).map((e) => ({
-    _id: e.id ?? "",
-    name: e.name ?? "",
-    category: e.category ?? "",
-    allocated: e.allocated ?? 0,
-    type: e.type ?? "",
-    recurrence: e.recurrence ?? "monthly",
-  }));
-}
-
-export function toInvestmentRows(investments) {
-  return (investments || []).map((inv) => ({
-    _id: inv.id ?? "",
-    name: inv.name ?? "",
-    type: inv.type ?? "",
-    sipMonthly: inv.sipMonthly ?? 0,
-    corpus: inv.corpus ?? 0,
-    startDate: inv.startDate ?? "",
-  }));
-}
-
-export function toGoalRows(goals) {
-  return (goals || []).map((g) => ({
-    _id: g.id ?? "",
-    name: g.name ?? "",
-    target: g.target ?? 0,
-    deadline: g.deadline ?? "",
-    // Support both old field names (abhavSaved/aanyaSaved) and new (p1Saved/p2Saved)
-    p1Saved: g.p1Saved ?? g.abhavSaved ?? 0,
-    p2Saved: g.p2Saved ?? g.aanyaSaved ?? 0,
-  }));
-}
-
-export function toNetWorthRows(history) {
-  return (history || []).map((h) => ({
-    date: h.date ?? "",
-    totalAssets: h.assets ?? 0,
-    totalLiabilities: h.liabilities ?? 0,
-    netWorth: (h.assets ?? 0) - (h.liabilities ?? 0),
-  }));
-}
+// Re-export transformers for convenience & testability
+export {
+  toMonthlySummaryRows,
+  toUnifiedTransactionRows,
+  toBudgetVsActualRows,
+  toInvestmentAssetRows,
+  toGoalsTrackerRows,
+  toNetWorthTimelineRows,
+  toAIPromptsRows,
+};
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useGoogleSheets() {
@@ -207,22 +172,29 @@ export function useGoogleSheets() {
     [user, integration, envParam],
   );
 
-  // Push all 8 tabs from the current WealthOS data snapshot
+  // Push all 7 AI-ready tabs from current WealthOS state
   const syncAll = useCallback(
-    async (p1, p2, shared) => {
+    async (p1, p2, shared, personNames = { p1: "Person 1", p2: "Person 2" }) => {
       if (!user || !integration) return 0;
       setSyncing(true);
       setError(null);
       try {
+        const monthlySummary = toMonthlySummaryRows(p1, p2, shared, personNames);
+        const transactions = toUnifiedTransactionRows(p1, p2, shared, personNames);
+        const budgetVsActual = toBudgetVsActualRows(p1, p2, shared, personNames);
+        const investments = toInvestmentAssetRows(p1, p2, shared, personNames);
+        const goals = toGoalsTrackerRows(p1, p2, shared, personNames);
+        const netWorth = toNetWorthTimelineRows(p1, p2, shared);
+        const aiPrompts = toAIPromptsRows();
+
         const results = await Promise.all([
-          push("Transactions_P1", toTransactionRows(p1?.transactions)),
-          push("Transactions_P2", toTransactionRows(p2?.transactions)),
-          push("Budget_P1", toBudgetRows(p1?.expenses)),
-          push("Budget_P2", toBudgetRows(p2?.expenses)),
-          push("Investments_P1", toInvestmentRows(p1?.investments)),
-          push("Investments_P2", toInvestmentRows(p2?.investments)),
-          push("Goals", toGoalRows(shared?.goals)),
-          push("NetWorth", toNetWorthRows(shared?.netWorthHistory)),
+          push("Monthly_Summary", monthlySummary),
+          push("All_Transactions", transactions),
+          push("Budget_vs_Actual", budgetVsActual),
+          push("Investments_&_Assets", investments),
+          push("Goals_Tracker", goals),
+          push("Net_Worth_History", netWorth),
+          push("AI_Prompts_&_Formulas", aiPrompts),
         ]);
         return results.reduce((sum, n) => sum + n, 0);
       } catch (err) {

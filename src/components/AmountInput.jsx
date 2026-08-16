@@ -5,12 +5,16 @@ import { formatIndianWords } from "../utils/finance";
  *
  * Automatically displays Indian locale commas (e.g., 10,00,000)
  * and renders a live verbal preview badge (e.g., "₹10 Lakhs").
+ *
+ * Pass `wrapperStyle` to control the outer flex-container sizing
+ * (e.g., `{ flex: 1, minWidth: 0 }`) when used as a flex child in a row.
  */
 export default function AmountInput({
   value,
   onChange,
   placeholder = "0",
   style = {},
+  wrapperStyle = {},
   className = "",
   showBadge = true,
   disabled = false,
@@ -38,7 +42,8 @@ export default function AmountInput({
     // Allow digits and at most one decimal point
     const cleaned = rawInput.replace(/[^0-9.]/g, "");
     const parts = cleaned.split(".");
-    const sanitized = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : parts[0];
+    const sanitized =
+      parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : parts[0];
 
     const numVal = sanitized === "" ? 0 : Number(sanitized);
 
@@ -54,7 +59,14 @@ export default function AmountInput({
   const words = num >= 1000 ? formatIndianWords(num) : "";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        ...wrapperStyle,
+      }}
+    >
       <div style={{ position: "relative", width: "100%" }}>
         <input
           type="text"
