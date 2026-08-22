@@ -291,238 +291,70 @@ async function getSpreadsheetMeta(accessToken, spreadsheetId) {
   return metaRes.json();
 }
 
-async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetName, totalCols) {
-  try {
-    const meta = await getSpreadsheetMeta(accessToken, spreadsheetId);
-    if (!meta) return;
+async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
+  const meta = await getSpreadsheetMeta(accessToken, spreadsheetId);
+  if (!meta) return null;
 
-    const sheets = meta.sheets || [];
-    let sheetObj = sheets.find((s) => s.properties?.title === sheetName);
-    let sheetId;
+  const sheets = meta.sheets || [];
+  let sheetObj = sheets.find((s) => s.properties?.title === sheetName);
+  let sheetId;
 
-    if (!sheetObj) {
-      // Add sheet
-      const addRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            requests: [{ addSheet: { properties: { title: sheetName } } }],
-          }),
-          signal: AbortSignal.timeout(10_000),
+  if (!sheetObj) {
+    // Add sheet
+    const addRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
         },
-      );
-      if (addRes.ok) {
-        const addData = await addRes.json();
-        sheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
-      }
-    } else {
-      sheetId = sheetObj.properties?.sheetId;
+        body: JSON.stringify({
+          requests: [{ addSheet: { properties: { title: sheetName } } }],
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (addRes.ok) {
+      const addData = await addRes.json();
+      sheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
     }
+  } else {
+    sheetId = sheetObj.properties?.sheetId;
+  }
 
-    // Auto-cleanup legacy deprecated tabs (e.g. Transactions_P1, Sheet1) when writing AI-ready tabs
-    const LEGACY_TABS_TO_DELETE = [
-      "Transactions_P1",
-      "Transactions_P2",
-      "Budget_P1",
-      "Budget_P2",
-      "Investments_P1",
-      "Investments_P2",
-      "Goals",
-      "NetWorth",
-      "Sheet1",
-    ];
-    const isAiTab = [
-      "Monthly_Summary",
-      "All_Transactions",
-      "Budget_vs_Actual",
-      "Investments_&_Assets",
-      "Goals_Tracker",
-      "Net_Worth_History",
-      "AI_Prompts_&_Formulas",
-    ].includes(sheetName);
+  // Auto-cleanup legacy deprecated tabs when writing AI-ready tabs
+  const LEGACY_TABS_TO_DELETE = [
+    "Transactions_P1",
+    "Transactions_P2",
+    "Budget_P1",
+    "Budget_P2",
+    "Investments_P1",
+    "Investments_P2",
+    "Goals",
+    "NetWorth",
+    "Sheet1",
+  ];
+  const isAiTab = [
+    "Monthly_Summary",
+    "All_Transactions",
+    "Budget_vs_Actual",
+    "Investments_&_Assets",
+    "Goals_Tracker",
+    "Net_Worth_History",
+    "AI_Prompts_&_Formulas",
+  ].includes(sheetName);
 
-    if (isAiTab && sheets.length > 1) {
-      const legacySheetsToDelete = sheets.filter(
-        (s) =>
-          LEGACY_TABS_TO_DELETE.includes(s.properties?.title) &&
-          s.properties?.sheetId !== sheetId,
-      );
-      // Ensure we leave at least 1 sheet in the workbook before deleting
-      if (legacySheetsToDelete.length > 0 && sheets.length > legacySheetsToDelete.length) {
-        const deleteRequests = legacySheetsToDelete.map((s) => ({
-          deleteSheet: { sheetId: s.properties.sheetId },
-        }));
-        await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ requests: deleteRequests }),
-            signal: AbortSignal.timeout(10_000),
-          },
-        );
-      }
-    }
-
-    if (sheetId !== undefined) {
-      // Format sheet: Tab Color, Freeze Row 1, Header Styling, Reset Old Format Cache, Apply Column Formats
-      const tabColor = TAB_COLORS[sheetName] || { red: 0.2, green: 0.4, blue: 0.8 };
-      const requests = [
-        // 1. Set Tab Color & Freeze Row 1
-        {
-          updateSheetProperties: {
-            properties: {
-              sheetId,
-              tabColorStyle: { rgbColor: tabColor },
-              gridProperties: { frozenRowCount: 1 },
-            },
-            fields: "tabColorStyle,gridProperties.frozenRowCount",
-          },
-        },
-        // 2. Format Header Row (Dark Slate Background, Bold White Text, Centered)
-        {
-          repeatCell: {
-            range: {
-              sheetId,
-              startRowIndex: 0,
-              endRowIndex: 1,
-              startColumnIndex: 0,
-              endColumnIndex: totalCols,
-            },
-            cell: {
-              userEnteredFormat: {
-                backgroundColor: { red: 0.118, green: 0.161, blue: 0.231 }, // #1E293B
-                textFormat: {
-                  foregroundColor: { red: 1.0, green: 1.0, blue: 1.0 },
-                  bold: true,
-                  fontSize: 10,
-                },
-                horizontalAlignment: "CENTER",
-                verticalAlignment: "MIDDLE",
-                wrapStrategy: "CLIP",
-              },
-            },
-            fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
-          },
-        },
-        // 3. Reset all data cell formatting to clean slate (wipes obsolete date/percent cache from prior schemas)
-        {
-          repeatCell: {
-            range: {
-              sheetId,
-              startRowIndex: 1,
-              endRowIndex: 1000,
-              startColumnIndex: 0,
-              endColumnIndex: Math.max(totalCols, 30),
-            },
-            cell: {
-              userEnteredFormat: {
-                numberFormat: {
-                  type: "TEXT",
-                },
-                horizontalAlignment: "LEFT",
-              },
-            },
-            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
-          },
-        },
-        // 4. Auto-resize all columns to fit contents
-        {
-          autoResizeDimensions: {
-            dimensions: {
-              sheetId,
-              dimension: "COLUMNS",
-              startIndex: 0,
-              endIndex: totalCols,
-            },
-          },
-        },
-      ];
-
-      // 5. Apply explicit Number & Currency formatting per column
-      const cols = SHEET_COLUMNS[sheetName] || [];
-      cols.forEach((col, cIdx) => {
-        if (CURRENCY_COLUMNS.has(col)) {
-          requests.push({
-            repeatCell: {
-              range: {
-                sheetId,
-                startRowIndex: 1,
-                startColumnIndex: cIdx,
-                endColumnIndex: cIdx + 1,
-              },
-              cell: {
-                userEnteredFormat: {
-                  numberFormat: {
-                    type: "CURRENCY",
-                    pattern: "₹#,##,##0",
-                  },
-                  horizontalAlignment: "RIGHT",
-                },
-              },
-              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
-            },
-          });
-        } else if (PERCENTAGE_COLUMNS.has(col)) {
-          requests.push({
-            repeatCell: {
-              range: {
-                sheetId,
-                startRowIndex: 1,
-                startColumnIndex: cIdx,
-                endColumnIndex: cIdx + 1,
-              },
-              cell: {
-                userEnteredFormat: {
-                  numberFormat: {
-                    type: "NUMBER",
-                    pattern: "0\"%\"",
-                  },
-                  horizontalAlignment: "RIGHT",
-                },
-              },
-              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
-            },
-          });
-        } else if (
-          col === "month" ||
-          col === "date" ||
-          col === "startDate" ||
-          col === "targetDeadline" ||
-          col === "year" ||
-          col === "monthsRemaining" ||
-          col === "isSplit"
-        ) {
-          requests.push({
-            repeatCell: {
-              range: {
-                sheetId,
-                startRowIndex: 1,
-                startColumnIndex: cIdx,
-                endColumnIndex: cIdx + 1,
-              },
-              cell: {
-                userEnteredFormat: {
-                  numberFormat: {
-                    type: "TEXT",
-                  },
-                  horizontalAlignment: "CENTER",
-                },
-              },
-              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
-            },
-          });
-        }
-      });
-
+  if (isAiTab && sheets.length > 1) {
+    const legacySheetsToDelete = sheets.filter(
+      (s) =>
+        LEGACY_TABS_TO_DELETE.includes(s.properties?.title) &&
+        s.properties?.sheetId !== sheetId,
+    );
+    if (legacySheetsToDelete.length > 0 && sheets.length > legacySheetsToDelete.length) {
+      const deleteRequests = legacySheetsToDelete.map((s) => ({
+        deleteSheet: { sheetId: s.properties.sheetId },
+      }));
       await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
         {
@@ -531,13 +363,195 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ requests }),
+          body: JSON.stringify({ requests: deleteRequests }),
           signal: AbortSignal.timeout(10_000),
         },
-      );
+      ).catch(() => {});
+    }
+  }
+
+  return sheetId;
+}
+
+async function formatSheet(accessToken, spreadsheetId, sheetName, totalCols) {
+  try {
+    const meta = await getSpreadsheetMeta(accessToken, spreadsheetId);
+    if (!meta) return;
+
+    const sheets = meta.sheets || [];
+    const sheetObj = sheets.find((s) => s.properties?.title === sheetName);
+    if (!sheetObj) return;
+    const sheetId = sheetObj.properties?.sheetId;
+    if (sheetId === undefined) return;
+
+    const tabColor = TAB_COLORS[sheetName] || { red: 0.2, green: 0.4, blue: 0.8 };
+    const cols = SHEET_COLUMNS[sheetName] || [];
+
+    const requests = [
+      // 1. Set Tab Color & Freeze Row 1
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            tabColorStyle: { rgbColor: tabColor },
+            gridProperties: { frozenRowCount: 1 },
+          },
+          fields: "tabColorStyle,gridProperties.frozenRowCount",
+        },
+      },
+      // 2. Format Header Row (Dark Slate Background, Bold White Text, Centered)
+      {
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: 0,
+            endRowIndex: 1,
+            startColumnIndex: 0,
+            endColumnIndex: totalCols,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: { red: 0.118, green: 0.161, blue: 0.231 },
+              textFormat: {
+                foregroundColor: { red: 1.0, green: 1.0, blue: 1.0 },
+                bold: true,
+                fontSize: 10,
+              },
+              horizontalAlignment: "CENTER",
+              verticalAlignment: "MIDDLE",
+              wrapStrategy: "CLIP",
+            },
+          },
+          fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
+        },
+      },
+      // 3. Reset all data cell formatting within exact column bounds to clean slate
+      {
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: 1,
+            startColumnIndex: 0,
+            endColumnIndex: totalCols,
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: "TEXT",
+              },
+              horizontalAlignment: "LEFT",
+            },
+          },
+          fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+        },
+      },
+    ];
+
+    // 4. Apply explicit column formats
+    cols.forEach((col, cIdx) => {
+      if (CURRENCY_COLUMNS.has(col)) {
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              startColumnIndex: cIdx,
+              endColumnIndex: cIdx + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: "CURRENCY",
+                  pattern: "₹#,##,##0",
+                },
+                horizontalAlignment: "RIGHT",
+              },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        });
+      } else if (PERCENTAGE_COLUMNS.has(col)) {
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              startColumnIndex: cIdx,
+              endColumnIndex: cIdx + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: "NUMBER",
+                  pattern: "0\"%\"",
+                },
+                horizontalAlignment: "RIGHT",
+              },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        });
+      } else if (
+        col === "month" ||
+        col === "date" ||
+        col === "startDate" ||
+        col === "targetDeadline" ||
+        col === "year" ||
+        col === "monthsRemaining" ||
+        col === "isSplit"
+      ) {
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              startColumnIndex: cIdx,
+              endColumnIndex: cIdx + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: "TEXT",
+                },
+                horizontalAlignment: "CENTER",
+              },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        });
+      }
+    });
+
+    // 5. Auto-resize all columns to fit contents
+    requests.push({
+      autoResizeDimensions: {
+        dimensions: {
+          sheetId,
+          dimension: "COLUMNS",
+          startIndex: 0,
+          endIndex: totalCols,
+        },
+      },
+    });
+
+    const batchRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ requests }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!batchRes.ok) {
+      const errText = await batchRes.text();
+      console.warn(`[sheets-push] formatSheet warning (${sheetName}):`, errText);
     }
   } catch (err) {
-    console.warn(`[sheets-push] ensureSheetTabExistsAndFormat(${sheetName}):`, err.message);
+    console.warn(`[sheets-push] formatSheet error (${sheetName}):`, err.message);
   }
 }
 
@@ -663,11 +677,10 @@ export default async function handler(req, res) {
     const columns = SHEET_COLUMNS[sheetName];
     const values = buildValues(sheetName, columns, rows);
 
-    await ensureSheetTabExistsAndFormat(
+    await ensureSheetTabExists(
       accessToken,
       spreadsheetId,
       sheetName,
-      columns.length + (sheetName.startsWith("Transactions_") ? 1 : 0),
     );
     await clearSheet(accessToken, spreadsheetId, sheetName);
     const updatedRows = await writeSheet(
@@ -675,6 +688,12 @@ export default async function handler(req, res) {
       spreadsheetId,
       sheetName,
       values,
+    );
+    await formatSheet(
+      accessToken,
+      spreadsheetId,
+      sheetName,
+      columns.length + (LEGACY_TABS_SET.has(sheetName) ? 1 : 0),
     );
 
     await snap.ref.update({ lastSyncedAt: new Date().toISOString() }).catch(() => {});
