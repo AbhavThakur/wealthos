@@ -373,7 +373,7 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
     }
 
     if (sheetId !== undefined) {
-      // Format sheet: Tab Color, Freeze Row 1, Header Styling, Auto Resize
+      // Format sheet: Tab Color, Freeze Row 1, Header Styling, Reset Old Format Cache, Apply Column Formats
       const tabColor = TAB_COLORS[sheetName] || { red: 0.2, green: 0.4, blue: 0.8 };
       const requests = [
         // 1. Set Tab Color & Freeze Row 1
@@ -413,7 +413,28 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
             fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
           },
         },
-        // 3. Auto-resize all columns to fit contents
+        // 3. Reset all data cell formatting to clean slate (wipes obsolete date/percent cache from prior schemas)
+        {
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              endRowIndex: 1000,
+              startColumnIndex: 0,
+              endColumnIndex: Math.max(totalCols, 30),
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: "TEXT",
+                },
+                horizontalAlignment: "LEFT",
+              },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        },
+        // 4. Auto-resize all columns to fit contents
         {
           autoResizeDimensions: {
             dimensions: {
@@ -426,7 +447,7 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
         },
       ];
 
-      // 4. Number & Currency formatting per column
+      // 5. Apply explicit Number & Currency formatting per column
       const cols = SHEET_COLUMNS[sheetName] || [];
       cols.forEach((col, cIdx) => {
         if (CURRENCY_COLUMNS.has(col)) {
@@ -466,6 +487,34 @@ async function ensureSheetTabExistsAndFormat(accessToken, spreadsheetId, sheetNa
                     pattern: "0\"%\"",
                   },
                   horizontalAlignment: "RIGHT",
+                },
+              },
+              fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+            },
+          });
+        } else if (
+          col === "month" ||
+          col === "date" ||
+          col === "startDate" ||
+          col === "targetDeadline" ||
+          col === "year" ||
+          col === "monthsRemaining" ||
+          col === "isSplit"
+        ) {
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: 1,
+                startColumnIndex: cIdx,
+                endColumnIndex: cIdx + 1,
+              },
+              cell: {
+                userEnteredFormat: {
+                  numberFormat: {
+                    type: "TEXT",
+                  },
+                  horizontalAlignment: "CENTER",
                 },
               },
               fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
@@ -523,8 +572,19 @@ async function writeSheet(accessToken, spreadsheetId, sheetName, values) {
 }
 
 // ── Convert row objects → 2D array with clean human-readable headers ──────────
+const LEGACY_TABS_SET = new Set([
+  "Transactions_P1",
+  "Transactions_P2",
+  "Budget_P1",
+  "Budget_P2",
+  "Investments_P1",
+  "Investments_P2",
+  "Goals",
+  "NetWorth",
+]);
+
 function buildValues(sheetName, columns, rows) {
-  const isLegacy = sheetName.startsWith("Transactions_") || sheetName.startsWith("Budget_") || sheetName.startsWith("Investments_");
+  const isLegacy = LEGACY_TABS_SET.has(sheetName);
   
   const headers = isLegacy
     ? [...columns, "_synced_at"]
