@@ -323,7 +323,13 @@ export default function Sidebar({
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
   const [moreOpen, setMoreOpen] = useState(false);
   const [swapSlot, setSwapSlot] = useState(null); // which slot (1-3) is being swapped
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const moreSheetRef = useRef(null);
+
+  const handleRequestSignOut = () => {
+    setMoreOpen(false);
+    setShowSignOutConfirm(true);
+  };
 
   // Customizable bottom tabs (slots 1-3)
   const [customTabs, setCustomTabs] = useState(getCustomTabs);
@@ -537,11 +543,24 @@ export default function Sidebar({
               </div>
             )}
 
+            {/* Hint when swapping */}
+            {swapSlot !== null && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--gold)",
+                  padding: "0 1rem 8px",
+                }}
+              >
+                Tap any page below to place it in your bottom bar
+              </div>
+            )}
+
             <div className="mobile-more-grid">
               {moreItems.map(({ id, icon: Icon, label }) => (
                 <button
                   key={id}
-                  className={`mobile-more-item${page === id && swapSlot === null ? " active" : ""}${swapSlot !== null ? " swap-target" : ""}`}
+                  className={`mobile-more-item${page === id && swapSlot === null ? " active" : ""}`}
                   onClick={() => {
                     if (swapSlot !== null) {
                       handleSwap(id);
@@ -588,14 +607,70 @@ export default function Sidebar({
             </button>
             <button
               className="mobile-more-signout"
-              onClick={() => {
-                setMoreOpen(false);
-                logout();
-              }}
+              onClick={handleRequestSignOut}
             >
               <LogOut size={16} />
               Sign out
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sign Out Confirmation Modal ── */}
+      {showSignOutConfirm && (
+        <div
+          className="confirm-overlay"
+          onClick={() => setShowSignOutConfirm(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm Sign Out"
+        >
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "rgba(239, 68, 68, 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--red)",
+                }}
+              >
+                <LogOut size={16} />
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 16 }}>Sign out of WealthOS?</div>
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text-secondary)",
+                marginBottom: "1.25rem",
+                lineHeight: 1.6,
+              }}
+            >
+              Are you sure you want to sign out? You will need to sign back in with your account to access your financial dashboard and data.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowSignOutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                style={{ background: "var(--red)", borderColor: "var(--red)", color: "#fff" }}
+                onClick={() => {
+                  setShowSignOutConfirm(false);
+                  logout();
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -607,7 +682,7 @@ export default function Sidebar({
           setPage={setPage}
           profile={profile}
           setProfile={setProfile}
-          logout={logout}
+          logout={handleRequestSignOut}
           badges={badges}
           personNames={personNames}
           isAdmin={isAdmin}

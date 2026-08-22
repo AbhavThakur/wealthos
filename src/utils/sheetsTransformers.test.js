@@ -35,8 +35,8 @@ describe("Google Sheets AI Transformers", () => {
       },
     ],
     investments: [
-      { id: 1, name: "Parag Parikh Flexi Cap", type: "Mutual Fund", amount: 25000, frequency: "monthly", existingCorpus: 500000, app: "Groww" },
-      { id: 2, name: "PPF", type: "PPF", amount: 12500, frequency: "monthly", existingCorpus: 300000, app: "SBI" },
+      { id: 1, name: "Parag Parikh Flexi Cap", type: "Mutual Fund", amount: 25000, frequency: "monthly", totalInvested: 400000, existingCorpus: 500000, app: "Groww", returnPct: 15 },
+      { id: 2, name: "PPF", type: "PPF", amount: 12500, frequency: "monthly", totalInvested: 250000, existingCorpus: 300000, app: "SBI", returnPct: 7.1 },
     ],
     savingsAccounts: [
       { id: 1, bankName: "HDFC Bank", balance: 150000 },
@@ -54,7 +54,7 @@ describe("Google Sheets AI Transformers", () => {
       { id: 102, name: "Dining & Swiggy", category: "Food", amount: 8000, recurrence: "monthly" },
     ],
     investments: [
-      { id: 101, name: "UTI Nifty 50 Index", type: "Mutual Fund", amount: 20000, frequency: "monthly", existingCorpus: 400000, app: "Zerodha / Kite" },
+      { id: 101, name: "UTI Nifty 50 Index", type: "Mutual Fund", amount: 20000, frequency: "monthly", totalInvested: 350000, existingCorpus: 400000, app: "Zerodha / Kite", returnPct: 12 },
     ],
     savingsAccounts: [
       { id: 101, bankName: "ICICI Bank", balance: 100000 },
@@ -66,8 +66,8 @@ describe("Google Sheets AI Transformers", () => {
 
   const mockShared = {
     goals: [
-      { id: 1, name: "Emergency Fund", target: 500000, p1Saved: 200000, p2Saved: 150000, deadline: "2026-12" },
-      { id: 2, name: "Europe Trip", target: 400000, p1Saved: 100000, p2Saved: 100000, deadline: "2027-06" },
+      { id: 1, name: "Emergency Fund", category: "Safety", target: 500000, p1Saved: 200000, p2Saved: 150000, deadline: "2026-12" },
+      { id: 2, name: "Europe Trip", category: "Travel", target: 400000, p1Saved: 100000, p2Saved: 100000, deadline: "2027-06" },
     ],
     trips: [
       {
@@ -113,6 +113,9 @@ describe("Google Sheets AI Transformers", () => {
     expect(augRow.p1Income).toBeGreaterThan(0);
     expect(augRow.p2Income).toBeGreaterThan(0);
     expect(augRow.needsSpent).toBeGreaterThan(0);
+    expect(augRow).toHaveProperty("needsPct");
+    expect(augRow).toHaveProperty("wantsPct");
+    expect(augRow).toHaveProperty("monthlySurplus");
     expect(augRow.totalSips).toBe(57500); // 25000 + 12500 + 20000
     expect(augRow.netWorth).toBe(2100000); // 2500000 - 400000
   });
@@ -146,7 +149,7 @@ describe("Google Sheets AI Transformers", () => {
     expect(foodRow).toHaveProperty("status");
   });
 
-  it("generates Investments_&_Assets with asset classes, platforms, and allocation %", () => {
+  it("generates Investments_&_Assets with investedCorpus, currentCorpus, unrealizedGain, and returnPct", () => {
     const rows = toInvestmentAssetRows(mockP1, mockP2, mockShared, mockPersonNames);
     // 3 investments + 2 savings accounts = 5 rows
     expect(rows.length).toBe(5);
@@ -156,33 +159,44 @@ describe("Google Sheets AI Transformers", () => {
     expect(flexiCap.owner).toBe("Abhav");
     expect(flexiCap.assetClass).toBe("Equity");
     expect(flexiCap.monthlySip).toBe(25000);
+    expect(flexiCap.investedCorpus).toBe(400000);
     expect(flexiCap.currentCorpus).toBe(500000);
+    expect(flexiCap.unrealizedGain).toBe(100000);
+    expect(flexiCap.returnPct).toBe(15);
+    expect(flexiCap).toHaveProperty("subType");
+    expect(flexiCap).toHaveProperty("frequency");
     expect(flexiCap.platform).toBe("Groww");
 
     const ppf = rows.find((r) => r.assetName === "PPF");
     expect(ppf).toBeDefined();
     expect(ppf.assetClass).toBe("Debt / Fixed Income");
+    expect(ppf.investedCorpus).toBe(250000);
+    expect(ppf.currentCorpus).toBe(300000);
+    expect(ppf.unrealizedGain).toBe(50000);
 
     const hdfc = rows.find((r) => r.assetName === "HDFC Bank Savings Account");
     expect(hdfc).toBeDefined();
     expect(hdfc.assetClass).toBe("Liquid Cash");
+    expect(hdfc.investedCorpus).toBe(150000);
     expect(hdfc.currentCorpus).toBe(150000);
   });
 
-  it("generates Goals_Tracker with completion progress and required monthly contributions", () => {
-    const rows = toGoalsTrackerRows(mockP1, mockP2, mockShared, mockPersonNames);
+  it("generates Goals_Tracker with completion progress, category, months remaining, and required monthly contributions", () => {
+    const rows = toGoalsTrackerRows(mockP1, mockP2, mockShared);
     expect(rows.length).toBe(2);
 
     const emergGoal = rows.find((r) => r.goalName === "Emergency Fund");
     expect(emergGoal).toBeDefined();
+    expect(emergGoal.category).toBe("Safety");
     expect(emergGoal.targetAmount).toBe(500000);
     expect(emergGoal.currentSaved).toBe(350000); // 200000 + 150000
     expect(emergGoal.progressPct).toBe(70);
     expect(emergGoal.remainingAmount).toBe(150000);
+    expect(emergGoal).toHaveProperty("monthsRemaining");
     expect(emergGoal.monthlyContributionNeeded).toBeGreaterThan(0);
   });
 
-  it("generates Net_Worth_History with MoM growth calculations", () => {
+  it("generates Net_Worth_History with MoM growth and amount calculations", () => {
     const rows = toNetWorthTimelineRows(mockP1, mockP2, mockShared);
     expect(rows.length).toBeGreaterThanOrEqual(3);
 
@@ -193,6 +207,7 @@ describe("Google Sheets AI Transformers", () => {
     expect(aug.netWorth).toBe(2100000);
     expect(jul.netWorth).toBe(1980000);
     expect(aug.momGrowthPct).toBeCloseTo(6.1, 1);
+    expect(aug.momGrowthAmount).toBe(120000); // 2100000 - 1980000
   });
 
   it("provides AI_Prompts_&_Formulas cheat sheet rows", () => {

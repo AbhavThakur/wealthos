@@ -203,6 +203,9 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
       else wantsSpent += amt;
     });
 
+    const needsPct = financials.totalIncome > 0 ? Math.round((needsSpent / financials.totalIncome) * 100) : 0;
+    const wantsPct = financials.totalIncome > 0 ? Math.round((wantsSpent / financials.totalIncome) * 100) : 0;
+
     // Net worth for month: use snapshot if valid, otherwise use live calculated portfolio
     const nwEntry = (shared?.netWorthHistory || []).find((h) => h && h.date && h.date.slice(0, 7) === ym);
     const nextNwEntry = sortedMonths[idx + 1]
@@ -232,9 +235,12 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
       p2Expenses: p2Exp,
       sharedExpenses: sharedExp,
       needsSpent,
+      needsPct,
       wantsSpent,
+      wantsPct,
       savingsInvested: financials.monthlySurplus > 0 ? financials.monthlySurplus : 0,
       savingsRatePct: financials.savingsRate,
+      monthlySurplus: financials.monthlySurplus,
       budgetVariance: financials.monthlySurplus,
       totalSips,
       totalAssets: assets,
@@ -477,6 +483,12 @@ export function toInvestmentAssetRows(p1, p2, shared, personNames = { p1: "Perso
     (investments || []).forEach((inv) => {
       const row = computeInvRow(inv);
       const corpus = row.cur > 0 ? Math.round(row.cur) : Math.round(getInvested(inv) || Number(inv.amount || 0));
+      const invested = Math.round(getInvested(inv) || Number(inv.amount || 0));
+      const unrealizedGain = corpus - invested;
+      const returnPct = Number(inv.returnPct || 0);
+      const subType = inv.type || "Mutual Fund";
+      const frequency = inv.frequency || "monthly";
+
       const sip = isFD(inv.type) || inv.frequency === "onetime"
         ? 0
         : Math.round(freqToMonthly(Number(inv.amount || inv.sipMonthly || 0), inv.frequency || "monthly"));
@@ -499,8 +511,13 @@ export function toInvestmentAssetRows(p1, p2, shared, personNames = { p1: "Perso
         owner,
         assetName: inv.name || "Investment",
         assetClass,
+        subType,
+        frequency,
         monthlySip: sip,
+        investedCorpus: invested,
         currentCorpus: corpus,
+        unrealizedGain,
+        returnPct,
         allocationPct: 0, // computed below
         targetAllocationPct: Number(inv.targetAlloc) || 0,
         platform: inv.app || inv.broker || inv.platform || "—",
@@ -521,8 +538,13 @@ export function toInvestmentAssetRows(p1, p2, shared, personNames = { p1: "Perso
           owner,
           assetName: `${acc.bankName || "Bank"} Savings Account`,
           assetClass: "Liquid Cash",
+          subType: "Savings Account",
+          frequency: "Liquid",
           monthlySip: 0,
+          investedCorpus: bal,
           currentCorpus: bal,
+          unrealizedGain: 0,
+          returnPct: Number(acc.interestRate || 3.5),
           allocationPct: 0,
           targetAllocationPct: 0,
           platform: acc.bankName || "Bank",
@@ -550,8 +572,13 @@ export function toInvestmentAssetRows(p1, p2, shared, personNames = { p1: "Perso
           owner,
           assetName: a.name || "Asset",
           assetClass,
+          subType: a.type || "Asset",
+          frequency: "Onetime",
           monthlySip: 0,
+          investedCorpus: val,
           currentCorpus: val,
+          unrealizedGain: 0,
+          returnPct: 0,
           allocationPct: 0,
           targetAllocationPct: 0,
           platform: "Direct Ownership",
@@ -585,11 +612,12 @@ export function toGoalsTrackerRows(p1, p2, shared) {
     const progress = target > 0 ? Math.round((currentSaved / target) * 100) : 0;
     const remaining = Math.max(0, target - currentSaved);
 
+    let monthsLeft = 0;
     let monthlyNeeded = 0;
     if (g.deadline && remaining > 0) {
       const d = new Date(g.deadline);
       const now = new Date();
-      const monthsLeft = Math.max(1, (d.getFullYear() - now.getFullYear()) * 12 + (d.getMonth() - now.getMonth()));
+      monthsLeft = Math.max(1, (d.getFullYear() - now.getFullYear()) * 12 + (d.getMonth() - now.getMonth()));
       monthlyNeeded = Math.round(remaining / monthsLeft);
     }
 
@@ -600,11 +628,13 @@ export function toGoalsTrackerRows(p1, p2, shared) {
 
     return {
       goalName: g.name || "Goal",
+      category: g.category || "General",
       targetAmount: target,
       currentSaved,
       p1Saved,
       p2Saved,
       targetDeadline: g.deadline || "—",
+      monthsRemaining: monthsLeft > 0 ? monthsLeft : "—",
       progressPct: progress,
       remainingAmount: remaining,
       monthlyContributionNeeded: monthlyNeeded,
@@ -681,6 +711,7 @@ export function toNetWorthTimelineRows(p1, p2, shared) {
     const prev = sortedList[i + 1];
     const prevNw = prev ? (Number(prev.assets || 0) - Number(prev.liabilities || 0)) : null;
     const momGrowth = prevNw && prevNw > 0 ? Number((((netWorth - prevNw) / prevNw) * 100).toFixed(1)) : 0;
+    const momGrowthAmount = prevNw !== null ? (netWorth - prevNw) : 0;
 
     return {
       month: h.date || "—",
@@ -693,6 +724,7 @@ export function toNetWorthTimelineRows(p1, p2, shared) {
       personalHomeLoans: h.loans ?? Math.round(liabilities * 0.8),
       totalLiabilities: liabilities,
       netWorth,
+      momGrowthAmount,
       momGrowthPct: momGrowth,
     };
   });
