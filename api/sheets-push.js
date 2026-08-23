@@ -291,16 +291,68 @@ async function getSpreadsheetMeta(accessToken, spreadsheetId) {
   return metaRes.json();
 }
 
-async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
+async function recreateSheetTabFresh(accessToken, spreadsheetId, sheetName) {
   const meta = await getSpreadsheetMeta(accessToken, spreadsheetId);
   if (!meta) return null;
 
   const sheets = meta.sheets || [];
-  let sheetObj = sheets.find((s) => s.properties?.title === sheetName);
+  const existingSheetObj = sheets.find((s) => s.properties?.title === sheetName);
   let sheetId;
 
-  if (!sheetObj) {
-    // Add sheet
+  if (existingSheetObj) {
+    const oldSheetId = existingSheetObj.properties?.sheetId;
+    const tempTitle = `_tmp_${Date.now()}`;
+
+    // 1. Add new fresh tab
+    const addRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requests: [{ addSheet: { properties: { title: tempTitle } } }],
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!addRes.ok) {
+      console.warn("[sheets-push] addSheet temp failed:", await addRes.text());
+      return oldSheetId;
+    }
+    const addData = await addRes.json();
+    sheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
+
+    // 2. Delete old corrupt table sheet & rename fresh sheet to target sheetName
+    const swapRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requests: [
+            { deleteSheet: { sheetId: oldSheetId } },
+            {
+              updateSheetProperties: {
+                properties: { sheetId, title: sheetName },
+                fields: "title",
+              },
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!swapRes.ok) {
+      console.warn("[sheets-push] swapSheet failed:", await swapRes.text());
+    }
+  } else {
+    // Add sheet directly
     const addRes = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
       {
@@ -319,8 +371,6 @@ async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
       const addData = await addRes.json();
       sheetId = addData.replies?.[0]?.addSheet?.properties?.sheetId;
     }
-  } else {
-    sheetId = sheetObj.properties?.sheetId;
   }
 
   // Auto-cleanup legacy deprecated tabs when writing AI-ready tabs
@@ -351,7 +401,7 @@ async function ensureSheetTabExists(accessToken, spreadsheetId, sheetName) {
         LEGACY_TABS_TO_DELETE.includes(s.properties?.title) &&
         s.properties?.sheetId !== sheetId,
     );
-    if (legacySheetsToDelete.length > 0 && sheets.length > legacySheetsToDelete.length) {
+    if (legacySheetsToDelete.length > 0) {
       const deleteRequests = legacySheetsToDelete.map((s) => ({
         deleteSheet: { sheetId: s.properties.sheetId },
       }));
@@ -425,29 +475,9 @@ async function formatSheet(accessToken, spreadsheetId, sheetName, totalCols) {
           fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)",
         },
       },
-      // 3. Reset all data cell formatting within exact column bounds to clean slate
-      {
-        repeatCell: {
-          range: {
-            sheetId,
-            startRowIndex: 1,
-            startColumnIndex: 0,
-            endColumnIndex: totalCols,
-          },
-          cell: {
-            userEnteredFormat: {
-              numberFormat: {
-                type: "TEXT",
-              },
-              horizontalAlignment: "LEFT",
-            },
-          },
-          fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
-        },
-      },
     ];
 
-    // 4. Apply explicit column formats
+    // 3. Apply explicit column formats
     cols.forEach((col, cIdx) => {
       if (CURRENCY_COLUMNS.has(col)) {
         requests.push({
@@ -522,7 +552,7 @@ async function formatSheet(accessToken, spreadsheetId, sheetName, totalCols) {
       }
     });
 
-    // 5. Auto-resize all columns to fit contents
+    // 4. Auto-resize all columns to fit contents
     requests.push({
       autoResizeDimensions: {
         dimensions: {
@@ -553,19 +583,6 @@ async function formatSheet(accessToken, spreadsheetId, sheetName, totalCols) {
   } catch (err) {
     console.warn(`[sheets-push] formatSheet error (${sheetName}):`, err.message);
   }
-}
-
-async function clearSheet(accessToken, spreadsheetId, sheetName) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}:clear`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`Sheet clear failed: ${await res.text()}`);
 }
 
 async function writeSheet(accessToken, spreadsheetId, sheetName, values) {
@@ -677,12 +694,11 @@ export default async function handler(req, res) {
     const columns = SHEET_COLUMNS[sheetName];
     const values = buildValues(sheetName, columns, rows);
 
-    await ensureSheetTabExists(
+    await recreateSheetTabFresh(
       accessToken,
       spreadsheetId,
       sheetName,
     );
-    await clearSheet(accessToken, spreadsheetId, sheetName);
     const updatedRows = await writeSheet(
       accessToken,
       spreadsheetId,
