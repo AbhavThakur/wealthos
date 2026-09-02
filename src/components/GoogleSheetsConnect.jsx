@@ -270,9 +270,39 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret`}
         </p>
       )}
       {error && !syncMsg && (
-        <p style={{ fontSize: 12, color: "var(--red)", marginBottom: 10 }}>
-          ⚠ {error}
-        </p>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--red)",
+            background: "rgba(239, 68, 68, 0.08)",
+            border: "1px solid rgba(239, 68, 68, 0.2)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>⚠ {error}</div>
+          {error.includes("invalid_grant") || error.includes("expired") || error.includes("revoked") ? (
+            <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+              Google OAuth tokens expire after 7 days if the Google Cloud app is in <em>Testing</em> mode.
+              <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  className="btn-primary"
+                  onClick={connect}
+                  style={{ fontSize: 11, padding: "4px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  <RefreshCw size={11} /> Reconnect Google Sheets
+                </button>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  (To make tokens permanent, publish your app to <strong>In Production</strong> in Google Cloud Console)
+                </span>
+              </div>
+            </div>
+          ) : null}
+        </div>
       )}
 
       {/* Action Buttons */}

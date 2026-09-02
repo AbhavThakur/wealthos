@@ -26,6 +26,8 @@ import {
 
 // ── Non-critical shell components — lazy-loaded ─────────────────────────────
 const Login = lazy(() => import("./pages/Login"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const PinLockScreen = lazy(() => import("./components/PinLockScreen"));
 const InstallBanner = lazy(() => import("./components/InstallBanner"));
 const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
@@ -326,17 +328,15 @@ function OfflineBanner() {
 function App() {
   const { user } = useAuth();
 
-  // If this window was opened as an OAuth popup, notify the parent and close.
-  // Runs before auth so it works regardless of login state.
+  // Handle OAuth popup callback: /?oauth_callback=1
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const sheetsParam = params.get("sheets");
-    if (!sheetsParam || !window.opener) return;
+    if (!params.get("oauth_callback")) return;
     try {
-      window.opener.postMessage(
+      window.opener?.postMessage(
         {
           type: "SHEETS_OAUTH",
-          status: sheetsParam,
+          success: params.get("success") === "1",
           reason: new URLSearchParams(window.location.search).get("reason"),
         },
         window.location.origin,
@@ -346,6 +346,25 @@ function App() {
     }
     window.close();
   }, []);
+
+  // Public unauthenticated routes (accessible for Google OAuth compliance)
+  const pathname = window.location.pathname;
+  const pageParam = new URLSearchParams(window.location.search).get("page");
+  if (pathname === "/privacy" || pageParam === "privacy") {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <PrivacyPolicy />
+      </Suspense>
+    );
+  }
+  if (pathname === "/terms" || pageParam === "terms") {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <TermsOfService />
+      </Suspense>
+    );
+  }
+
   if (user === undefined) return <LoadingScreen />;
   if (!user)
     return (

@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-hover: #334155;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-logo {
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      color: white;
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      letter-spacing: -0.2px;
+    }
+
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-badge.warning {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+    }
+
+    /* Navigation Tabs */
+    .tabs {
+      display: flex;
+      background: #090d16;
+      border-radius: 8px;
+      padding: 3px;
+      gap: 4px;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--card-bg);
+      color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* Content Area */
+    .tab-content {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Action Cards */
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .action-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .action-card:hover {
+      background: var(--card-hover);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .card-icon {
+      font-size: 18px;
+      width: 32px;
+      height: 32px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .card-info {
+      flex: 1;
+    }
+
+    .card-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .card-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Output Card */
+    .output-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .output-title {
+      font-weight: 700;
+      font-size: 12.5px;
+      color: #818cf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .output-body {
+      font-size: 12.5px;
+      color: #e2e8f0;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    .output-body h1, .output-body h2, .output-body h3 {
+      color: #fff;
+      margin: 12px 0 6px 0;
+      font-size: 13.5px;
+    }
+
+    .output-body ul, .output-body ol {
+      padding-left: 18px;
+      margin-bottom: 8px;
+    }
+
+    .output-body li {
+      margin-bottom: 4px;
+    }
+
+    .output-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-size: 11.5px;
+    }
+
+    .output-body th, .output-body td {
+      border: 1px solid var(--border);
+      padding: 5px 8px;
+      text-align: left;
+    }
+
+    .output-body th {
+      background: #0f172a;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    .output-body strong {
+      color: #fff;
+    }
+
+    /* Chat Input */
+    .chat-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-textarea {
+      background: #090d16;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      resize: none;
+      font-size: 12px;
+      outline: none;
+      min-height: 55px;
+    }
+
+    .chat-textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.06);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+
+    /* Loader */
+    .loader {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 18px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Settings View */
+    .settings-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .input-field {
+      background: #090d16;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+    }
+    .input-field:focus {
+      border-color: var(--accent);
+    }
+
+    .help-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .help-link {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .help-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-logo">✦</div>
+      <div class="brand-title">WealthOS AI Copilot</div>
+    </div>
+    <div id="statusBadge" class="status-badge">
+      <span>●</span> Ready
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('audits')">Quick Audits</button>
+    <button class="tab-btn" onclick="switchTab('chat')">Ask AI Chat</button>
+    <button class="tab-btn" onclick="switchTab('settings')">Settings</button>
+  </div>
+
+  <!-- Tab 1: Quick Audits -->
+  <div id="tab-audits" class="tab-content active">
+    <div class="section-title">One-Click Portfolio Audits</div>
+    <div class="quick-grid">
+      <div class="action-card" onclick="runAudit('asset_allocation')">
+        <div class="card-icon">🛡️</div>
+        <div class="card-info">
+          <div class="card-title">Asset Allocation & Overlap</div>
+          <div class="card-desc">Audits Equity vs FD drag & Nifty 50 overlap</div>
+        </div>
+      </div>
+      <div class="action-card" onclick="runAudit('cashflow')">
+        <div class="card-icon">💰</div>
+        <div class="card-info">
+          <div class="card-title">Cashflow & Savings Rate</div>
+          <div class="card-desc">Needs vs Wants vs Monthly SIP capacity</div>
+        </div>
+      </div>
+      <div class="action-card" onclick="runAudit('goals')">
+        <div class="card-icon">🎯</div>
+        <div class="card-info">
+          <div class="card-title">Goal Readiness & Timelines</div>
+          <div class="card-desc">Simulate SIP compounding to target deadlines</div>
+        </div>
+      </div>
+      <div class="action-card" onclick="runAudit('tax')">
+        <div class="card-icon">🧾</div>
+        <div class="card-info">
+          <div class="card-title">Tax & Rebalancing Roadmap</div>
+          <div class="card-desc">LTCG ₹1.25L tax harvest & FD deployment plan</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Custom Chat -->
+  <div id="tab-chat" class="tab-content">
+    <div class="section-title">Ask Anything About Your Finances</div>
+    <div class="help-text" style="margin-bottom: 6px;">
+      Gemini inspects all 7 tabs (Investments, Goals, Cashflow, Net Worth) to give exact answers.
+    </div>
+  </div>
+
+  <!-- Tab 3: Settings -->
+  <div id="tab-settings" class="tab-content">
+    <div class="section-title">Gemini API Key Configuration</div>
+    <div class="settings-card">
+      <label style="font-size: 11.5px; font-weight: 600; color: #fff;">Google Gemini API Key</label>
+      <input id="apiKeyInput" type="password" class="input-field" placeholder="AIzaSy...">
+      <div class="help-text">
+        Get your free API key in 30 seconds from <a href="https://aistudio.google.com/app/apikey" target="_blank" class="help-link">Google AI Studio</a>.
+      </div>
+      <button class="btn-primary" onclick="saveApiKey()">Save API Key</button>
+    </div>
+  </div>
+
+  <!-- Output / Results Container -->
+  <div id="loader" class="loader">
+    <div class="spinner"></div>
+    <span id="loaderText">Analyzing portfolio across 7 tabs...</span>
+  </div>
+
+  <div id="outputContainer" class="output-container">
+    <div class="output-header">
+      <div id="outputTitle" class="output-title">✦ Strategic Analysis</div>
+      <button class="btn-secondary" onclick="copyOutput()">Copy</button>
+    </div>
+    <div id="outputBody" class="output-body"></div>
+  </div>
+
+  <!-- Bottom Chat Bar (Available on Audits & Chat tabs) -->
+  <div id="chatBox" class="chat-box">
+    <textarea id="chatInput" class="chat-textarea" placeholder="Ask e.g. 'How much should I shift from FDs into equity this month?'"></textarea>
+    <button id="sendBtn" class="btn-primary" onclick="sendCustomQuery()">
+      <span>Ask Copilot</span> ✦
+    </button>
+  </div>
+
+  <script>
+    let currentRawOutput = "";
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      event.target.classList.add('active');
+      document.getElementById('tab-' + tabId).classList.add('active');
+
+      const chatBox = document.getElementById('chatBox');
+      chatBox.style.display = (tabId === 'settings') ? 'none' : 'flex';
+    }
+
+    function showLoader(msg) {
+      document.getElementById('loader').style.display = 'flex';
+      document.getElementById('loaderText').innerText = msg || 'Analyzing portfolio data...';
+      document.getElementById('outputContainer').style.display = 'none';
+      document.getElementById('sendBtn').disabled = true;
+    }
+
+    function hideLoader() {
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('sendBtn').disabled = false;
+    }
+
+    function displayResult(title, markdown) {
+      hideLoader();
+      currentRawOutput = markdown;
+      document.getElementById('outputTitle').innerHTML = '✦ ' + title;
+      document.getElementById('outputBody').innerHTML = marked.parse(markdown);
+      document.getElementById('outputContainer').style.display = 'flex';
+      document.getElementById('outputContainer').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function runAudit(type) {
+      const prompts = {
+        asset_allocation: "Perform a thorough Asset Allocation & Risk Diagnostic. Calculate our exact % Equity, % Debt/FDs, % Gold, and % ULIP. Identify mutual fund overlaps across large-cap holdings, calculate the FD drag on net returns vs inflation, and provide a concrete rebalancing roadmap.",
+        cashflow: "Audit our household Monthly Cashflow & Savings Efficiency. Review our income vs expenses, calculate our Needs vs Wants ratio, identify any spending leakages, and determine how much additional monthly SIP we can systematically invest.",
+        goals: "Perform a Goal Readiness & Timeline Simulation for every goal in Goals_Tracker. Using current corpus and monthly SIPs compounding at standard expected rates, calculate if each target will be met by its deadline, identify any shortfall, and provide the exact monthly top-up needed.",
+        tax: "Provide a Tax & Rebalancing Strategy for our portfolio. Highlight opportunities for Section 112A LTCG tax harvesting (under the ₹1.25L exemption), evaluate our high FD interest tax drag, audit our ULIP policy fees, and provide a 3-step action plan."
+      };
+
+      const titles = {
+        asset_allocation: "Asset Allocation & Overlap Audit",
+        cashflow: "Cashflow & Savings Health",
+        goals: "Goal Readiness & Timeline Projection",
+        tax: "Tax & Rebalancing Roadmap"
+      };
+
+      showLoader("Running " + titles[type] + "...");
+      google.script.run
+        .withSuccessHandler(res => displayResult(titles[type], res.text))
+        .withFailureHandler(err => {
+          hideLoader();
+          alert("Error: " + err.message);
+        })
+        .callGemini(prompts[type]);
+    }
+
+    function sendCustomQuery() {
+      const input = document.getElementById('chatInput');
+      const q = input.value.trim();
+      if (!q) return;
+
+      showLoader("Analyzing question against your workbook...");
+      google.script.run
+        .withSuccessHandler(res => {
+          displayResult("Insight", res.text);
+          input.value = "";
+        })
+        .withFailureHandler(err => {
+          hideLoader();
+          alert("Error: " + err.message);
+        })
+        .callGemini(q);
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (!key) {
+        alert("Please enter a valid Gemini API key.");
+        return;
+      }
+      showLoader("Saving API key...");
+      google.script.run
+        .withSuccessHandler(() => {
+          hideLoader();
+          alert("Gemini API key saved securely!");
+          document.getElementById('statusBadge').innerHTML = "<span>●</span> Configured";
+          document.getElementById('statusBadge').classList.remove('warning');
+        })
+        .withFailureHandler(err => {
+          hideLoader();
+          alert("Failed to save: " + err.message);
+        })
+        .saveApiKeyFromUi(key);
+    }
+
+    function copyOutput() {
+      if (!currentRawOutput) return;
+      navigator.clipboard.writeText(currentRawOutput).then(() => {
+        alert("Analysis copied to clipboard!");
+      });
+    }
+  </script>
+</body>
+</html>

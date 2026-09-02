@@ -387,9 +387,39 @@ export default function Login() {
             lineHeight: 1.7,
           }}
         >
-          Open-source household finance tracker.
+          Private household finance & wealth management.
           <br />
-          Your data stays in your Firebase project.
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <a
+              href="/privacy"
+              style={{
+                color: "var(--text-secondary)",
+                textDecoration: "underline",
+                fontSize: 11,
+              }}
+            >
+              Privacy Policy
+            </a>
+            <span style={{ color: "var(--text-muted)", fontSize: 10 }}>•</span>
+            <a
+              href="/terms"
+              style={{
+                color: "var(--text-secondary)",
+                textDecoration: "underline",
+                fontSize: 11,
+              }}
+            >
+              Terms of Service
+            </a>
+          </div>
         </div>
       </div>
     </main>
