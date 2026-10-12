@@ -1,4 +1,4 @@
-import { parseLocalDate } from "./date.js";
+import { parseLocalDate, parseDateRangeString } from "./date.js";
 
 export const isFD = (t) => t === "FD" || t === "Fixed Deposit";
 
@@ -77,8 +77,17 @@ export const onetimeMatchesMonth = (exp, ym) => {
 
 export const tripMatchesMonth = (trip, ym) => {
   if (!trip || !ym) return false;
-  const startYm = (trip.startDate || trip.date || "").slice(0, 7);
-  const endYm = (trip.endDate || "").slice(0, 7);
+  let startYm = (trip.startDate || trip.date || "").slice(0, 7);
+  let endYm = (trip.endDate || "").slice(0, 7);
+
+  // If start date is a human-readable text string e.g. "Oct 2 – 4, 2026", resolve its month
+  if (startYm && !/^\d{4}-\d{2}/.test(startYm)) {
+    const parsed = parseDateRangeString(trip.startDate || trip.date || "");
+    if (parsed.startDate && /^\d{4}-\d{2}/.test(parsed.startDate)) {
+      startYm = parsed.startDate.slice(0, 7);
+      endYm = (parsed.endDate || parsed.startDate).slice(0, 7);
+    }
+  }
 
   // Direct match on start month
   if (startYm && startYm === ym) return true;

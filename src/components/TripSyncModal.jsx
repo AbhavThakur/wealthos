@@ -36,6 +36,8 @@ export default function TripSyncModal({
   sharedTrips = [],
   updatePerson,
   updateShared,
+  currentMonth,
+  onSelectMonth,
 }) {
   const [tab, setTab] = useState("cloud"); // "cloud" | "import" | "export" | "webhook"
   const [rawJson, setRawJson] = useState("");
@@ -50,6 +52,7 @@ export default function TripSyncModal({
   const [supabaseTrips, setSupabaseTrips] = useState([]);
   const [supabaseError, setSupabaseError] = useState(null);
   const [syncingTripId, setSyncingTripId] = useState(null);
+  const [splitMode, setSplitMode] = useState("couple_share"); // "couple_share" (Mode A) | "full"
 
   const allAvailableTrips = useMemo(() => {
     const list = [];
@@ -84,7 +87,12 @@ export default function TripSyncModal({
   // Pull from Supabase into WealthOS
   const handlePullFromSupabase = (row, targetMode = "shared", mergeTargetKey = "") => {
     try {
-      const parsed = parseSupabaseTripToWealthOS(row);
+      const parsed = parseSupabaseTripToWealthOS(row, {
+        mode: splitMode,
+        couplePax: 2,
+        p1Name: "Abhav",
+        p2Name: "Aanya",
+      });
       if (!parsed) {
         toast.error("Could not parse trip from Supabase");
         return;
@@ -139,6 +147,12 @@ export default function TripSyncModal({
         ]);
         toast.success(`Imported "${parsed.name}" as Shared Trip!`);
       }
+
+      const targetYm = (parsed.startDate || "").slice(0, 7);
+      if (targetYm && onSelectMonth && targetYm !== currentMonth) {
+        onSelectMonth(targetYm);
+        toast.info(`Switched budget view to ${targetYm}`);
+      }
     } catch (err) {
       toast.error(`Import failed: ${err.message}`);
     }
@@ -173,7 +187,12 @@ export default function TripSyncModal({
     const supabaseTripId = row.id;
     setSyncingTripId(supabaseTripId);
     try {
-      const parsedSupabase = parseSupabaseTripToWealthOS(row);
+      const parsedSupabase = parseSupabaseTripToWealthOS(row, {
+        mode: splitMode,
+        couplePax: 2,
+        p1Name: "Abhav",
+        p2Name: "Aanya",
+      });
 
       // 1. Merge items locally
       const mergedLocal = mergeTripItems(existingWealthOSTrip, parsedSupabase.items, {
@@ -196,6 +215,10 @@ export default function TripSyncModal({
       await syncWealthOSTripToSupabase(mergedLocal, supabaseTripId);
 
       toast.success(`2-way sync complete! ${mergedLocal.items.length} items reconciled.`);
+      const targetYm = (mergedLocal.startDate || parsedSupabase.startDate || "").slice(0, 7);
+      if (targetYm && onSelectMonth && targetYm !== currentMonth) {
+        onSelectMonth(targetYm);
+      }
       await loadSupabaseTrips();
     } catch (err) {
       toast.error(`2-way sync failed: ${err.message}`);
@@ -631,6 +654,79 @@ export default function TripSyncModal({
                 </div>
               )}
 
+              {/* Multi-Pax Split Allocation Mode Selector */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  marginBottom: 16,
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>Multi-Pax Allocation Mode:</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                        background: splitMode === "couple_share" ? "rgba(99, 102, 241, 0.2)" : "rgba(255,255,255,0.08)",
+                        color: splitMode === "couple_share" ? "var(--primary, #6366f1)" : "var(--text-muted)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {splitMode === "couple_share" ? "Mode A (Our Share Only)" : "Mode B (Full Cost)"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                    {splitMode === "couple_share"
+                      ? "Calculates Abhav & Aanya liability (2 pax) for group trips > 2 travelers"
+                      : "Imports 100% total group expense without scaling"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSplitMode("couple_share")}
+                    style={{
+                      padding: "5px 11px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      fontWeight: splitMode === "couple_share" ? 600 : 400,
+                      background: splitMode === "couple_share" ? "var(--primary, #6366f1)" : "rgba(255,255,255,0.06)",
+                      color: splitMode === "couple_share" ? "#fff" : "var(--text-muted)",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Mode A: Our Share (2 Pax)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitMode("full")}
+                    style={{
+                      padding: "5px 11px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      fontWeight: splitMode === "full" ? 600 : 400,
+                      background: splitMode === "full" ? "var(--primary, #6366f1)" : "rgba(255,255,255,0.06)",
+                      color: splitMode === "full" ? "#fff" : "var(--text-muted)",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Mode B: Full Total
+                  </button>
+                </div>
+              </div>
+
               {/* Trip Cards from Supabase */}
               <div style={{ marginBottom: 18 }}>
                 <h4
@@ -668,7 +764,16 @@ export default function TripSyncModal({
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {supabaseTrips.map((row) => {
-                    const parsed = parseSupabaseTripToWealthOS(row);
+                    const parsed = parseSupabaseTripToWealthOS(row, {
+                      mode: splitMode,
+                      couplePax: 2,
+                      p1Name: "Abhav",
+                      p2Name: "Aanya",
+                    });
+                    const rawData = row.data || row;
+                    const tripPaxCount = rawData?.budget?.paxCount || (Array.isArray(rawData?.travelersList) ? rawData.travelersList.length : 2);
+                    const isMultiPax = tripPaxCount > 2;
+                    const targetYm = (parsed?.startDate || "").slice(0, 7);
                     const tripId = row.id;
 
                     // Match with local WealthOS trip
@@ -731,16 +836,52 @@ export default function TripSyncModal({
                                 display: "flex",
                                 gap: 10,
                                 flexWrap: "wrap",
+                                alignItems: "center",
                               }}
                             >
                               {parsed?.startDate && (
-                                <span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                                   📅 {parsed.startDate}
                                   {parsed.endDate ? ` to ${parsed.endDate}` : ""}
+                                  {targetYm && currentMonth && targetYm !== currentMonth && onSelectMonth && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onSelectMonth(targetYm);
+                                        toast.info(`Switched view to ${targetYm}`);
+                                      }}
+                                      style={{
+                                        background: "rgba(99, 102, 241, 0.15)",
+                                        border: "1px solid rgba(99, 102, 241, 0.3)",
+                                        borderRadius: 4,
+                                        color: "var(--primary, #6366f1)",
+                                        fontSize: 10,
+                                        padding: "1px 6px",
+                                        cursor: "pointer",
+                                        marginLeft: 4,
+                                      }}
+                                    >
+                                      Go to ${targetYm}
+                                    </button>
+                                  )}
                                 </span>
                               )}
                               <span>💰 Budget: {fmt(parsed?.budget || 0)}</span>
                               <span>📋 {parsed?.items?.length || 0} items ({fmt(parsed?.amount || 0)})</span>
+                              {isMultiPax && (
+                                <span
+                                  style={{
+                                    color: "var(--amber, #f59e0b)",
+                                    fontWeight: 500,
+                                    fontSize: 10,
+                                    background: "rgba(245, 158, 11, 0.1)",
+                                    padding: "1px 6px",
+                                    borderRadius: 4,
+                                  }}
+                                >
+                                  👥 {tripPaxCount} pax ({splitMode === "couple_share" ? "2 pax share" : "full total"})
+                                </span>
+                              )}
                             </div>
                           </div>
 

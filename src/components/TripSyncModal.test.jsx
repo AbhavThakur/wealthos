@@ -79,4 +79,53 @@ describe("TripSyncModal Component", () => {
       expect.any(Function),
     );
   });
+  it("renders Split Mode toggle defaulting to Mode A and allows switching to Mode B", async () => {
+    render(
+      <TripSyncModal
+        open={true}
+        onClose={vi.fn()}
+        expenses={[]}
+        sharedTrips={[]}
+        updatePerson={vi.fn()}
+        updateShared={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Mode A \(Our Share Only\)/i)).toBeDefined();
+    expect(screen.getByText(/Mode B: Full Total/i)).toBeDefined();
+
+    const modeBBtn = screen.getByRole("button", { name: /Mode B: Full Total/i });
+    fireEvent.click(modeBBtn);
+    expect(screen.getByText(/Mode B \(Full Cost\)/i)).toBeDefined();
+  });
+
+  it("automatically switches view month when importing a trip belonging to a future month", async () => {
+    const updateSharedMock = vi.fn();
+    const onSelectMonthMock = vi.fn();
+
+    render(
+      <TripSyncModal
+        open={true}
+        onClose={vi.fn()}
+        expenses={[]}
+        sharedTrips={[]}
+        updatePerson={vi.fn()}
+        updateShared={updateSharedMock}
+        currentMonth="2026-04"
+        onSelectMonth={onSelectMonthMock}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Vietnam Master Expedition/i)).toBeDefined();
+    });
+
+    // Click Import as Shared Trip
+    const importBtn = screen.getByRole("button", { name: /Import as Shared Trip/i });
+    fireEvent.click(importBtn);
+
+    expect(updateSharedMock).toHaveBeenCalledTimes(1);
+    // Should trigger month switch to 2026-12 (trip start date)
+    expect(onSelectMonthMock).toHaveBeenCalledWith("2026-12");
+  });
 });

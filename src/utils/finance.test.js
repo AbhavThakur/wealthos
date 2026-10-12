@@ -157,6 +157,11 @@ describe("freqToMonthly — frequency conversion", () => {
 });
 
 describe("tripMatchesMonth — robust trip date & multi-month matching", () => {
+  it("matches human-readable date strings like Oct 2 – 4, 2026 to October 2026", () => {
+    const trip = { id: 8, name: "Hampi Trip", startDate: "Oct 2 – 4, 2026" };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+    expect(tripMatchesMonth(trip, "2026-09")).toBe(false);
+  });
   it("matches when trip startDate is in the given month", () => {
     const trip = { id: 1, name: "Goa Trip", startDate: "2026-10-15", endDate: "2026-10-20" };
     expect(tripMatchesMonth(trip, "2026-10")).toBe(true);

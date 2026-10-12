@@ -10,6 +10,8 @@ import {
   buildSupabaseBudgetDataFromWealthOS,
   fetchSupabaseTrips,
   pingSupabaseKeepAlive,
+  parseDateRangeString,
+  resolvePayerAndPaxShare,
   syncWealthOSTripToSupabase,
 } from "./tripSync.js";
 
@@ -387,5 +389,135 @@ describe("tripSync - pingSupabaseKeepAlive", () => {
     // Second call immediately after should skip ping (throttled)
     await pingSupabaseKeepAlive("https://example.supabase.co", "test-key");
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("tripSync - parseDateRangeString", () => {
+  it("converts text date ranges into ISO YYYY-MM-DD", () => {
+    const r1 = parseDateRangeString("Oct 2 – 4, 2026");
+    expect(r1.startDate).toBe("2026-10-02");
+    expect(r1.endDate).toBe("2026-10-04");
+
+    const r2 = parseDateRangeString("Sep 12 – 14, 2026");
+    expect(r2.startDate).toBe("2026-09-12");
+    expect(r2.endDate).toBe("2026-09-14");
+
+    const r3 = parseDateRangeString("2026-12-03");
+    expect(r3.startDate).toBe("2026-12-03");
+
+    const r4 = parseDateRangeString("2026-12-03 to 2026-12-10");
+    expect(r4.startDate).toBe("2026-12-03");
+    expect(r4.endDate).toBe("2026-12-10");
+  });
+});
+
+describe("tripSync - resolvePayerAndPaxShare (Multi-Pax Mode A: Our Share Only)", () => {
+  it("scales 5-pax expenses to 2-pax for Abhav and Aanya in Mode A", () => {
+    // Hotel paid by Abhav for 5 people
+    const hotelItem = {
+      item: "Da Nang Hotel",
+      total: 48000,
+      pax: 5,
+      paidBy: "Abhav",
+      details: "Beachfront suites",
+    };
+    const res1 = resolvePayerAndPaxShare(hotelItem, {
+      mode: "couple_share",
+      couplePax: 2,
+      p1Name: "Abhav",
+      p2Name: "Aanya",
+    });
+
+    expect(res1.amount).toBe(19200); // (48000 / 5) * 2 = 9600 * 2 = 19200
+    expect(res1.paidBy).toBe("p1"); // Matched to Abhav
+    expect(res1.notes).toContain("5 Pax Split");
+    expect(res1.notes).toContain("Original: ₹48,000");
+
+    // Flight paid by Sundeep (friend) for 5 people
+    const flightItem = {
+      item: "Flights",
+      total: 85000,
+      pax: 5,
+      paidBy: "Sundeep",
+    };
+    const res2 = resolvePayerAndPaxShare(flightItem, {
+      mode: "couple_share",
+      couplePax: 2,
+      p1Name: "Abhav",
+      p2Name: "Aanya",
+    });
+
+    expect(res2.amount).toBe(34000); // (85000 / 5) * 2 = 17000 * 2 = 34000
+    expect(res2.paidBy).toBe("external"); // Friend paid
+    expect(res2.notes).toContain("Sundeep");
+  });
+
+  it("leaves 2-pax expenses unscaled (100% belongs to couple)", () => {
+    const hampiStay = {
+      item: "Durga Comfort",
+      total: 3200,
+      pax: 2,
+      paidBy: "Shared",
+    };
+    const res = resolvePayerAndPaxShare(hampiStay, {
+      mode: "couple_share",
+      couplePax: 2,
+    });
+    expect(res.amount).toBe(3200);
+    expect(res.paidBy).toBe("shared");
+  });
+});
+
+describe("tripSync - parseSupabaseTripToWealthOS with Multi-Pax & Date Parsing", () => {
+  it("parses Hampi with text date and 2 pax", () => {
+    const row = {
+      id: "hampi-2026",
+      data: {
+        id: "hampi-2026",
+        title: "Hampi Boulder Trails",
+        dates: "Oct 2 – 4, 2026",
+        budget: {
+          total: 11500,
+          paxCount: 2,
+          breakdown: [
+            { item: "Durga Comfort", cost: 3200, category: "stays", paidBy: "Abhav" },
+            { item: "Scooty Rental", cost: 1800, category: "transport", paidBy: "Shared" },
+          ],
+        },
+      },
+    };
+
+    const trip = parseSupabaseTripToWealthOS(row, { mode: "couple_share" });
+    expect(trip.startDate).toBe("2026-10-02");
+    expect(trip.endDate).toBe("2026-10-04");
+    expect(trip.items).toHaveLength(2);
+    expect(trip.items[0].paidBy).toBe("p1");
+    expect(trip.items[0].amount).toBe(3200);
+    expect(trip.amount).toBe(5000); // 3200 + 1800
+  });
+
+  it("parses Vietnam with 5 pax in Mode A (Our Share Only: 2 Pax)", () => {
+    const row = {
+      id: "vietnam-dec-2026",
+      data: {
+        id: "vietnam-dec-2026",
+        title: "Vietnam Master Expedition",
+        startDate: "2026-12-03",
+        endDate: "2026-12-10",
+        budget: {
+          total: 406000,
+          paxCount: 5,
+          items: [
+            { item: "Flights", total: 85000, pax: 5, category: "flights", paidBy: "Sundeep" },
+            { item: "Da Nang Hotel", total: 48000, pax: 5, category: "stays", paidBy: "Abhav" },
+          ],
+        },
+      },
+    };
+
+    const trip = parseSupabaseTripToWealthOS(row, { mode: "couple_share", couplePax: 2 });
+    expect(trip.items[0].amount).toBe(34000); // 17000 * 2
+    expect(trip.items[1].amount).toBe(19200); // 9600 * 2
+    expect(trip.amount).toBe(53200); // 34000 + 19200
   });
 });

@@ -6536,6 +6536,8 @@ export default function Budget({
         sharedTrips={sharedTrips}
         updatePerson={updatePerson}
         updateShared={updateShared}
+        currentMonth={expMonth}
+        onSelectMonth={setExpMonth}
       />
       <SmartStatementModal
         open={statementModalOpen}

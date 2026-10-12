@@ -198,49 +198,175 @@ export function normalizeTripPayload(input) {
  * - Breakdown style: budget.breakdown = [{ item, cost }]
  * - Categories style: budget.categories = [{ name, amount, icon }]
  */
-export function parseSupabaseTripToWealthOS(supabaseRow) {
+
+const MONTH_MAP = {
+  jan: "01", january: "01",
+  feb: "02", february: "02",
+  mar: "03", march: "03",
+  apr: "04", april: "04",
+  may: "05",
+  jun: "06", june: "06",
+  jul: "07", july: "07",
+  aug: "08", august: "08",
+  sep: "09", sept: "09", september: "09",
+  oct: "10", october: "10",
+  nov: "11", november: "11",
+  dec: "12", december: "12",
+};
+
+/**
+ * Parses freeform and text date ranges into standard ISO YYYY-MM-DD
+ */
+export function parseDateRangeString(raw) {
+  if (!raw || typeof raw !== "string") return { startDate: "", endDate: "" };
+  const str = raw.trim();
+
+  // Pattern 1: ISO dates (e.g. "2026-10-02" or "2026-10-02 to 2026-10-04")
+  const isoMatches = str.match(/(\d{4}-\d{2}-\d{2})/g);
+  if (isoMatches && isoMatches.length > 0) {
+    return {
+      startDate: isoMatches[0],
+      endDate: isoMatches[1] || isoMatches[0],
+    };
+  }
+
+  // Pattern 2: "Oct 2 – 4, 2026" or "Sep 12 – 14, 2026"
+  const m1 = str.match(/([A-Za-z]+)\s+(\d{1,2})(?:\s*[–-]\s*(?:([A-Za-z]+)\s+)?(\d{1,2}))?,?\s+(\d{4})/);
+  if (m1) {
+    const startMonthStr = m1[1].toLowerCase().slice(0, 3);
+    const startMonth = MONTH_MAP[startMonthStr] || "01";
+    const startDay = m1[2].padStart(2, "0");
+    const endMonthStr = (m1[3] ? m1[3].toLowerCase().slice(0, 3) : startMonthStr);
+    const endMonth = MONTH_MAP[endMonthStr] || startMonth;
+    const endDay = (m1[4] || m1[2]).padStart(2, "0");
+    const year = m1[5];
+
+    return {
+      startDate: `${year}-${startMonth}-${startDay}`,
+      endDate: `${year}-${endMonth}-${endDay}`,
+    };
+  }
+
+  return { startDate: str, endDate: str };
+}
+
+/**
+ * Resolves multi-pax liability and assigns payer attribution for Abhav (p1) & Aanya (p2)
+ */
+export function resolvePayerAndPaxShare(item, options = {}) {
+  const mode = options.mode || "couple_share"; // "couple_share" | "full"
+  const couplePax = options.couplePax || 2;
+  const p1Name = (options.p1Name || "Abhav").toLowerCase();
+  const p2Name = (options.p2Name || "Aanya").toLowerCase();
+
+  const rawCost = parseCurrencyAmount(item.total ?? item.cost ?? item.amount);
+  const itemPax = Math.max(1, parseInt(item.pax, 10) || options.tripPax || 2);
+  const pp = item.pp || (itemPax > 0 ? Math.round(rawCost / itemPax) : rawCost);
+
+  // Mode A: Couple Share Only
+  let amount = rawCost;
+  if (mode === "couple_share" && itemPax > couplePax) {
+    amount = pp * couplePax;
+  }
+
+  // Payer Detection
+  const rawPayer = String(item.paidBy || item.payer || "Shared").trim();
+  const payerLower = rawPayer.toLowerCase();
+
+  let paidBy = "shared";
+  if (payerLower === p1Name || /me|p1|abhav/i.test(payerLower)) {
+    paidBy = "p1";
+  } else if (payerLower === p2Name || /partner|p2|aanya/i.test(payerLower)) {
+    paidBy = "p2";
+  } else if (/shared|both|couple|all/i.test(payerLower)) {
+    paidBy = "shared";
+  } else {
+    paidBy = "external"; // Co-traveler paid
+  }
+
+  let noteParts = [];
+  if (item.details || item.notes || item.note) {
+    noteParts.push(item.details || item.notes || item.note);
+  }
+  if (itemPax > couplePax) {
+    noteParts.push(`${itemPax} Pax Split • Original: ₹${rawCost.toLocaleString("en-IN")}`);
+    if (paidBy === "external") {
+      noteParts.push(`Paid by ${rawPayer}`);
+    } else {
+      noteParts.push(`Fronted by ${rawPayer}`);
+    }
+  }
+
+  return {
+    amount,
+    paidBy,
+    notes: noteParts.join(" • "),
+    originalCost: rawCost,
+    itemPax,
+    pp,
+  };
+}
+
+export function parseSupabaseTripToWealthOS(supabaseRow, options = { mode: "couple_share", couplePax: 2 }) {
   if (!supabaseRow) return null;
   const data = supabaseRow.data || supabaseRow;
   const supabaseTripId = String(supabaseRow.id || data.id || "");
 
   const name = String(data.title || data.name || data.destination || "Trip").trim();
-  const startDate = String(data.startDate || data.start || (typeof data.dates === "string" ? data.dates : "") || "").trim();
-  const endDate = String(data.endDate || data.end || "").trim();
+  const parsedStart = parseDateRangeString(
+    data.startDate || data.dates || data.start || "",
+  );
+  const parsedEnd = data.endDate ? parseDateRangeString(data.endDate) : null;
+  const startDate = parsedStart.startDate || "";
+  const endDate = parsedEnd ? (parsedEnd.startDate || parsedEnd.endDate) : (parsedStart.endDate || "");
   const itineraryUrl = String(data.url || data.itineraryUrl || "").trim();
 
   const rawBudget = data.budget || {};
+  const tripPax = rawBudget.paxCount || (Array.isArray(data.travelersList) ? data.travelersList.length : 2);
   const budget = parseCurrencyAmount(
     rawBudget.total ?? rawBudget.totalEstimate ?? rawBudget.target ?? 0,
   );
 
   let rawItems = [];
   if (Array.isArray(rawBudget.items) && rawBudget.items.length > 0) {
-    rawItems = rawBudget.items.map((b) => ({
-      id: b.id || genTripItemId(),
-      name: b.item || b.name || "Expense",
-      amount: parseCurrencyAmount(b.total ?? b.amount ?? b.cost),
-      category: mapToWealthOSCategory(b.category || b.item || ""),
-      date: b.date || startDate || "",
-      notes: b.details || b.notes || "",
-    }));
+    rawItems = rawBudget.items.map((b) => {
+      const share = resolvePayerAndPaxShare(b, { ...options, tripPax });
+      return {
+        id: b.id || genTripItemId(),
+        name: b.item || b.name || "Expense",
+        amount: share.amount,
+        category: mapToWealthOSCategory(b.category || b.item || ""),
+        date: b.date || startDate || "",
+        paidBy: share.paidBy,
+        notes: share.notes,
+      };
+    });
   } else if (Array.isArray(rawBudget.breakdown) && rawBudget.breakdown.length > 0) {
-    rawItems = rawBudget.breakdown.map((b) => ({
-      id: genTripItemId(),
-      name: b.item || "Expense",
-      amount: parseCurrencyAmount(b.cost ?? b.total ?? b.amount),
-      category: mapToWealthOSCategory(b.category || b.item || ""),
-      date: startDate || "",
-      notes: b.note || "",
-    }));
+    rawItems = rawBudget.breakdown.map((b) => {
+      const share = resolvePayerAndPaxShare(b, { ...options, tripPax });
+      return {
+        id: genTripItemId(),
+        name: b.item || "Expense",
+        amount: share.amount,
+        category: mapToWealthOSCategory(b.category || b.item || ""),
+        date: b.date || startDate || "",
+        paidBy: share.paidBy,
+        notes: share.notes,
+      };
+    });
   } else if (Array.isArray(rawBudget.categories) && rawBudget.categories.length > 0) {
-    rawItems = rawBudget.categories.map((b) => ({
-      id: genTripItemId(),
-      name: b.name || b.title || "Category",
-      amount: parseCurrencyAmount(b.amount ?? b.cost ?? b.total),
-      category: mapToWealthOSCategory(b.name || b.icon || ""),
-      date: startDate || "",
-      notes: b.note || "",
-    }));
+    rawItems = rawBudget.categories.map((b) => {
+      const share = resolvePayerAndPaxShare(b, { ...options, tripPax });
+      return {
+        id: genTripItemId(),
+        name: b.name || b.title || "Category",
+        amount: share.amount,
+        category: mapToWealthOSCategory(b.name || b.icon || ""),
+        date: startDate || "",
+        paidBy: share.paidBy,
+        notes: share.notes,
+      };
+    });
   }
 
   const totalAmount = rawItems.reduce((s, i) => s + (i.amount || 0), 0);
