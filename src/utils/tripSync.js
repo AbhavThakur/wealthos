@@ -447,3 +447,40 @@ export async function syncWealthOSTripToSupabase(
 
   return updatedData;
 }
+
+/**
+ * Automatically pings Supabase Cloud if more than 48 hours have elapsed since the last ping.
+ * Prevents Supabase project from auto-pausing on the free tier.
+ */
+export async function pingSupabaseKeepAlive(
+  supabaseUrl = DEFAULT_SUPABASE_URL,
+  anonKey = DEFAULT_SUPABASE_ANON_KEY,
+) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+
+  const PING_INTERVAL_MS = 48 * 60 * 60 * 1000; // 48 hours
+  const STORAGE_KEY = "wealthos_supabase_last_keepalive";
+  const lastPing = Number(localStorage.getItem(STORAGE_KEY) || 0);
+  const now = Date.now();
+
+  if (now - lastPing < PING_INTERVAL_MS) {
+    return; // Already pinged recently
+  }
+
+  try {
+    const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/trips?select=id&limit=1`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+    });
+
+    if (res.ok) {
+      localStorage.setItem(STORAGE_KEY, String(now));
+    }
+  } catch {
+    // Fail silently in background
+  }
+}

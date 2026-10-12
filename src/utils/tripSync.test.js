@@ -9,6 +9,7 @@ import {
   parseSupabaseTripToWealthOS,
   buildSupabaseBudgetDataFromWealthOS,
   fetchSupabaseTrips,
+  pingSupabaseKeepAlive,
   syncWealthOSTripToSupabase,
 } from "./tripSync.js";
 
@@ -364,5 +365,27 @@ describe("tripSync - Supabase API calls", () => {
     expect(synced.itinerary).toEqual([{ day: 1, title: "Hanoi" }]);
     expect(synced.budget.total).toBe(5000);
     expect(synced.budget.items[0].item).toBe("Halong Cruise");
+  });
+});
+
+describe("tripSync - pingSupabaseKeepAlive", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    localStorage.clear();
+  });
+
+  it("pings Supabase and records timestamp if > 48 hours elapsed", async () => {
+    localStorage.clear();
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    await pingSupabaseKeepAlive("https://example.supabase.co", "test-key");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem("wealthos_supabase_last_keepalive")).toBeDefined();
+
+    // Second call immediately after should skip ping (throttled)
+    await pingSupabaseKeepAlive("https://example.supabase.co", "test-key");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

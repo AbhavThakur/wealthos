@@ -47,6 +47,7 @@ import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
 import TripSyncModal from "../components/TripSyncModal";
+import { pingSupabaseKeepAlive } from "../utils/tripSync.js";
 import SettlementCard from "../components/SettlementCard";
 import ExecutivePulseCard from "../components/ExecutivePulseCard";
 import AmountInput from "../components/AmountInput";
@@ -1083,6 +1084,10 @@ export default function Budget({
   const [tripSyncOpen, setTripSyncOpen] = useState(false);
   const [trendCategory, setTrendCategory] = useState(null);
   const [trendRange, setTrendRange] = useState(6);
+
+  useEffect(() => {
+    pingSupabaseKeepAlive();
+  }, []);
 
   // ── Month selector for expense tabs ────────────────────────────────────
   const _now = new Date();
