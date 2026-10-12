@@ -47,7 +47,15 @@ import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
 import TripSyncModal from "../components/TripSyncModal";
-import { pingSupabaseKeepAlive } from "../utils/tripSync.js";
+import { toast } from "sonner";
+import {
+  pingSupabaseKeepAlive,
+  fetchSupabaseTrips,
+  syncWealthOSTripToSupabase,
+  syncWealthOSTripToLocalhost,
+  parseSupabaseTripToWealthOS,
+  mergeTripItems,
+} from "../utils/tripSync.js";
 import SettlementCard from "../components/SettlementCard";
 import ExecutivePulseCard from "../components/ExecutivePulseCard";
 import AmountInput from "../components/AmountInput";
@@ -1292,6 +1300,128 @@ export default function Budget({
           x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
         ),
       );
+    }
+  };
+
+  // Trip item inline editing state
+  const [editingTripItemId, setEditingTripItemId] = useState(null);
+  const [editTripItemForm, setEditTripItemForm] = useState({ name: "", amount: "", category: "Food" });
+  const [syncingCardTripId, setSyncingCardTripId] = useState(null);
+
+  const startEditTripItem = (trip, item, isShared) => {
+    setEditingTripItemId(`${isShared ? "shared_" : ""}${trip.id}_${item.id}`);
+    setEditTripItemForm({
+      name: item.name || "",
+      amount: String(item.amount || ""),
+      category: item.category || "Food",
+    });
+  };
+
+  const saveEditTripItem = (trip, itemId, isShared = false) => {
+    if (!editTripItemForm.name.trim() || !editTripItemForm.amount) return;
+    const numAmt = Number(editTripItemForm.amount);
+    const newItems = (trip.items || []).map((i) =>
+      i.id === itemId
+        ? {
+            ...i,
+            name: editTripItemForm.name.trim(),
+            amount: numAmt,
+            category: editTripItemForm.category || i.category || "Others",
+          }
+        : i,
+    );
+    const newAmount = newItems.reduce((s, i) => s + (i.amount || 0), 0);
+    const updatedTrip = { ...trip, items: newItems, amount: newAmount };
+
+    if (isShared) {
+      updateShared("trips", (prev) =>
+        (prev || []).map((x) => (x.id === trip.id ? updatedTrip : x)),
+      );
+    } else {
+      updatePerson("expenses", (prev) =>
+        (prev || []).map((x) => (x.id === trip.id ? updatedTrip : x)),
+      );
+    }
+    setEditingTripItemId(null);
+    toast.success("Trip item updated!");
+  };
+
+  // 1-Click quick sync for a specific trip card
+  const handleQuickSyncTripCard = async (e, trip, isShared = false) => {
+    e.stopPropagation();
+    const tripId = trip.supabaseTripId || trip.id;
+    if (!tripId) {
+      toast.info("Link this trip with Trip Architect first");
+      setTripSyncOpen(true);
+      return;
+    }
+
+    setSyncingCardTripId(trip.id);
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1");
+
+    try {
+      toast.info(`Syncing "${trip.name}" with Trip Architect...`);
+      let remoteRow = null;
+      if (isLocalhost) {
+        try {
+          const res = await fetch(`http://localhost:5174/api/trips/${encodeURIComponent(tripId)}`);
+          if (res.ok) {
+            remoteRow = await res.json();
+          }
+        } catch {
+          // ignore localhost fetch error and fallback to cloud
+        }
+      }
+
+      if (!remoteRow) {
+        try {
+          const cloudTrips = await fetchSupabaseTrips();
+          remoteRow = (cloudTrips || []).find((t) => t.id === tripId || t.data?.id === tripId);
+        } catch {
+          // ignore cloud fetch error
+        }
+      }
+
+      if (!remoteRow) {
+        toast.error(`Could not reach Trip Architect for "${tripId}". Make sure server is running.`);
+        return;
+      }
+
+      const parsedRemote = parseSupabaseTripToWealthOS(remoteRow, {
+        mode: "couple_share",
+        couplePax: 2,
+        p1Name: "Abhav",
+        p2Name: "Aanya",
+      });
+
+      const mergedLocal = mergeTripItems(trip, parsedRemote.items, { deduplicate: true });
+      mergedLocal.supabaseTripId = tripId;
+      if (parsedRemote.itineraryUrl) mergedLocal.itineraryUrl = parsedRemote.itineraryUrl;
+
+      if (isShared) {
+        updateShared("trips", (prev = []) =>
+          prev.map((t) => (t.id === trip.id ? mergedLocal : t)),
+        );
+      } else {
+        updatePerson("expenses", (prev = []) =>
+          prev.map((e) => (e.id === trip.id ? mergedLocal : e)),
+        );
+      }
+
+      if (isLocalhost) {
+        await syncWealthOSTripToLocalhost(mergedLocal, tripId, "http://localhost:5174");
+      } else {
+        await syncWealthOSTripToSupabase(mergedLocal, tripId);
+      }
+
+      toast.success(`Synced "${trip.name}"! (${mergedLocal.items.length} items up to date)`);
+    } catch (err) {
+      toast.error(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingCardTripId(null);
     }
   };
   // per-income-id expanded state + pending salary-change form
@@ -5030,7 +5160,34 @@ export default function Budget({
                               🗺️ Itinerary <ExternalLink size={9} />
                             </a>
                           )}
-                          {trip.supabaseTripId && (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickSyncTripCard(e, trip, isShared)}
+                              disabled={syncingCardTripId === trip.id}
+                              style={{
+                                fontSize: 10,
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background: "rgba(99, 102, 241, 0.15)",
+                                color: "var(--primary, #6366f1)",
+                                border: "1px solid rgba(99, 102, 241, 0.35)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                cursor: "pointer",
+                                fontWeight: 600,
+                              }}
+                              title="1-Click 2-Way Sync with Trip Architect"
+                            >
+                              <RefreshCw
+                                size={9}
+                                style={{
+                                  animation: syncingCardTripId === trip.id ? "spin 1s linear infinite" : "none",
+                                }}
+                              />
+                              {syncingCardTripId === trip.id ? "Syncing..." : "Sync"}
+                            </button>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -5039,22 +5196,22 @@ export default function Budget({
                               }}
                               style={{
                                 fontSize: 10,
-                                padding: "2px 7px",
+                                padding: "2px 6px",
                                 borderRadius: 4,
-                                background: "rgba(16, 185, 129, 0.12)",
-                                color: "var(--green, #10b981)",
-                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                background: trip.supabaseTripId ? "rgba(16, 185, 129, 0.12)" : "rgba(255, 255, 255, 0.06)",
+                                color: trip.supabaseTripId ? "var(--green, #10b981)" : "var(--text-muted)",
+                                border: trip.supabaseTripId ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid var(--border)",
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: 3,
                                 cursor: "pointer",
                                 fontWeight: 500,
                               }}
-                              title={`Linked to Supabase Trip: ${trip.supabaseTripId}. Click to open Cloud Sync.`}
+                              title={trip.supabaseTripId ? `Linked: ${trip.supabaseTripId}. Click to open full sync modal.` : "Link with Trip Architect"}
                             >
-                              ⚡ Cloud Synced
+                              {trip.supabaseTripId ? "⚡ Synced" : "🔗 Link"}
                             </button>
-                          )}
+                          </div>
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -5380,79 +5537,173 @@ export default function Budget({
                                           sortedCats.length > 1 ? 18 : 0,
                                       }}
                                     >
-                                      {catItems.map((item) => (
-                                        <div
-                                          key={item.id}
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 8,
-                                            padding: "5px 0",
-                                            borderBottom:
-                                              "1px solid var(--border)",
-                                            fontSize: 12,
-                                          }}
-                                        >
-                                          <span
+                                      {catItems.map((item) => {
+                                        const itemEditKey = `${isShared ? 'shared_' : ''}${trip.id}_${item.id}`;
+                                        const isEditingThisItem = editingTripItemId === itemEditKey;
+                                        return isEditingThisItem ? (
+                                          <div
+                                            key={item.id}
                                             style={{
-                                              flex: 1,
-                                              color: "var(--text-secondary)",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 6,
+                                              padding: "4px 0",
+                                              borderBottom: "1px solid var(--border)",
+                                              fontSize: 12,
+                                              width: "100%",
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <input
+                                              type="text"
+                                              value={editTripItemForm.name}
+                                              onChange={(e) => setEditTripItemForm(f => ({ ...f, name: e.target.value }))}
+                                              placeholder="Item name"
+                                              style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
+                                              autoFocus
+                                            />
+                                            <input
+                                              type="number"
+                                              value={editTripItemForm.amount}
+                                              onChange={(e) => setEditTripItemForm(f => ({ ...f, amount: e.target.value }))}
+                                              placeholder="₹ Amount"
+                                              style={{ width: 85, padding: "3px 6px", fontSize: 11 }}
+                                            />
+                                            <select
+                                              value={editTripItemForm.category}
+                                              onChange={(e) => setEditTripItemForm(f => ({ ...f, category: e.target.value }))}
+                                              style={{ width: 90, padding: "3px 4px", fontSize: 11 }}
+                                            >
+                                              {TRIP_CATEGORIES.map((c) => (
+                                                <option key={c} value={c}>{c}</option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              type="button"
+                                              onClick={() => saveEditTripItem(trip, item.id, isShared)}
+                                              style={{
+                                                background: "rgba(16, 185, 129, 0.15)",
+                                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                                borderRadius: 4,
+                                                color: "var(--green, #10b981)",
+                                                cursor: "pointer",
+                                                padding: "3px 6px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                              }}
+                                              title="Save item"
+                                            >
+                                              <Check size={11} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingTripItemId(null)}
+                                              style={{
+                                                background: "none",
+                                                border: "none",
+                                                color: "var(--text-muted)",
+                                                cursor: "pointer",
+                                                padding: "3px 4px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                              }}
+                                              title="Cancel"
+                                            >
+                                              <X size={11} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div
+                                            key={item.id}
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 8,
+                                              padding: "5px 0",
+                                              borderBottom:
+                                                "1px solid var(--border)",
+                                              fontSize: 12,
                                             }}
                                           >
-                                            {item.name}
-                                          </span>
-                                          {isShared && item.addedBy && (
                                             <span
                                               style={{
-                                                fontSize: 9,
-                                                padding: "1px 5px",
-                                                borderRadius: 3,
-                                                background:
-                                                  "rgba(255,255,255,0.06)",
-                                                color: "var(--text-muted)",
+                                                flex: 1,
+                                                color: "var(--text-secondary)",
+                                              }}
+                                            >
+                                              {item.name}
+                                            </span>
+                                            {isShared && item.addedBy && (
+                                              <span
+                                                style={{
+                                                  fontSize: 9,
+                                                  padding: "1px 5px",
+                                                  borderRadius: 3,
+                                                  background:
+                                                    "rgba(255,255,255,0.06)",
+                                                  color: "var(--text-muted)",
+                                                  flexShrink: 0,
+                                                }}
+                                              >
+                                                {item.addedBy}
+                                              </span>
+                                            )}
+                                            <span
+                                              style={{
+                                                fontWeight: 600,
+                                                color: "var(--red)",
                                                 flexShrink: 0,
                                               }}
                                             >
-                                              {item.addedBy}
+                                              {fmt(item.amount)}
                                             </span>
-                                          )}
-                                          <span
-                                            style={{
-                                              fontWeight: 600,
-                                              color: "var(--red)",
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            {fmt(item.amount)}
-                                          </span>
-                                          <button
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              if (
-                                                await confirm(
-                                                  "Delete item?",
-                                                  `Remove "${item.name}" (${fmt(item.amount)}) from this trip?`,
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                startEditTripItem(trip, item, isShared);
+                                              }}
+                                              style={{
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: "var(--text-muted)",
+                                                padding: 2,
+                                                flexShrink: 0,
+                                              }}
+                                              title="Edit item"
+                                            >
+                                              <Edit3 size={11} />
+                                            </button>
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (
+                                                  await confirm(
+                                                    "Delete item?",
+                                                    `Remove "${item.name}" (${fmt(item.amount)}) from this trip?`,
+                                                  )
                                                 )
-                                              )
-                                                deleteTripItem(
-                                                  trip,
-                                                  item.id,
-                                                  isShared,
-                                                );
-                                            }}
-                                            style={{
-                                              background: "none",
-                                              border: "none",
-                                              cursor: "pointer",
-                                              color: "var(--text-muted)",
-                                              padding: 2,
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            <X size={11} />
-                                          </button>
-                                        </div>
-                                      ))}
+                                                  deleteTripItem(
+                                                    trip,
+                                                    item.id,
+                                                    isShared,
+                                                  );
+                                              }}
+                                              style={{
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: "var(--text-muted)",
+                                                padding: 2,
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              <X size={11} />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

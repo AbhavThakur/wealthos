@@ -24,8 +24,11 @@ import {
   exportTripToArchitectureFormat,
   fetchSupabaseTrips,
   syncWealthOSTripToSupabase,
+  fetchLocalhostTrips,
+  syncWealthOSTripToLocalhost,
   parseSupabaseTripToWealthOS,
   DEFAULT_SUPABASE_URL,
+  DEFAULT_LOCALHOST_TRIP_URL,
 } from "../utils/tripSync.js";
 import { fmt, nextId } from "../utils/finance.js";
 
@@ -47,7 +50,14 @@ export default function TripSyncModal({
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [selectedExportTripKey, setSelectedExportTripKey] = useState("");
 
-  // Supabase Cloud State
+  const isLocalhostHost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1");
+
+  // Sync Environment: "localhost" (Port 5174) | "cloud" (Supabase)
+  const [syncEnv, setSyncEnv] = useState(isLocalhostHost ? "localhost" : "cloud");
+  const localhostUrl = DEFAULT_LOCALHOST_TRIP_URL;
   const [supabaseLoading, setSupabaseLoading] = useState(false);
   const [supabaseTrips, setSupabaseTrips] = useState([]);
   const [supabaseError, setSupabaseError] = useState(null);
@@ -65,20 +75,32 @@ export default function TripSyncModal({
     return list;
   }, [expenses, sharedTrips]);
 
-  // Load trips from Supabase when modal opens or cloud tab is selected
+  // Load trips from selected environment when modal opens or syncEnv changes
   useEffect(() => {
     if (!open) return;
-    loadSupabaseTrips();
-  }, [open]);
+    loadSupabaseTrips(syncEnv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, syncEnv]);
 
-  const loadSupabaseTrips = async () => {
+  const loadSupabaseTrips = async (env = syncEnv) => {
     setSupabaseLoading(true);
     setSupabaseError(null);
     try {
-      const rows = await fetchSupabaseTrips();
-      setSupabaseTrips(rows || []);
+      if (env === "localhost") {
+        const rows = await fetchLocalhostTrips(localhostUrl);
+        setSupabaseTrips(rows || []);
+      } else {
+        const rows = await fetchSupabaseTrips();
+        setSupabaseTrips(rows || []);
+      }
     } catch (err) {
-      setSupabaseError(err.message || "Failed to connect to Supabase");
+      if (env === "localhost") {
+        setSupabaseError(
+          `Cannot reach Local Trip Architect at ${localhostUrl}. Make sure 'npm run dev' is running in the trip-architect directory. (${err.message})`,
+        );
+      } else {
+        setSupabaseError(err.message || "Failed to connect to Supabase");
+      }
     } finally {
       setSupabaseLoading(false);
     }
@@ -158,23 +180,32 @@ export default function TripSyncModal({
     }
   };
 
-  // Push WealthOS trip to Supabase
+  // Push WealthOS trip to Remote (Localhost or Supabase Cloud)
   const handlePushToSupabase = async (wealthOSTrip, supabaseTripId) => {
     const targetId = supabaseTripId || wealthOSTrip.supabaseTripId;
     if (!targetId) {
-      toast.error("Please specify which Supabase trip to sync with");
+      toast.error("Please specify which trip to sync with");
       return;
     }
 
     setSyncingTripId(targetId);
     try {
-      await syncWealthOSTripToSupabase(wealthOSTrip, targetId);
-      toast.success(
-        `Successfully pushed ${wealthOSTrip.items?.length || 0} expenses (${fmt(
-          wealthOSTrip.amount,
-        )}) to Trip Architect!`,
-      );
-      await loadSupabaseTrips();
+      if (syncEnv === "localhost") {
+        await syncWealthOSTripToLocalhost(wealthOSTrip, targetId, localhostUrl);
+        toast.success(
+          `Successfully pushed ${wealthOSTrip.items?.length || 0} expenses (${fmt(
+            wealthOSTrip.amount,
+          )}) to Localhost Trip Architect!`,
+        );
+      } else {
+        await syncWealthOSTripToSupabase(wealthOSTrip, targetId);
+        toast.success(
+          `Successfully pushed ${wealthOSTrip.items?.length || 0} expenses (${fmt(
+            wealthOSTrip.amount,
+          )}) to Trip Architect Cloud!`,
+        );
+      }
+      await loadSupabaseTrips(syncEnv);
     } catch (err) {
       toast.error(`Push failed: ${err.message}`);
     } finally {
@@ -182,7 +213,7 @@ export default function TripSyncModal({
     }
   };
 
-  // 2-Way Sync: Merge Supabase items + WealthOS items, update both sides
+  // 2-Way Sync: Merge items + WealthOS items, update both sides
   const handleTwoWaySync = async (row, existingWealthOSTrip) => {
     const supabaseTripId = row.id;
     setSyncingTripId(supabaseTripId);
@@ -211,15 +242,20 @@ export default function TripSyncModal({
         );
       }
 
-      // 3. Push merged set back to Supabase
-      await syncWealthOSTripToSupabase(mergedLocal, supabaseTripId);
+      // 3. Push merged set back
+      if (syncEnv === "localhost") {
+        await syncWealthOSTripToLocalhost(mergedLocal, supabaseTripId, localhostUrl);
+      } else {
+        await syncWealthOSTripToSupabase(mergedLocal, supabaseTripId);
+      }
 
-      toast.success(`2-way sync complete! ${mergedLocal.items.length} items reconciled.`);
+      const envName = syncEnv === "localhost" ? "Localhost (5174)" : "Supabase Cloud";
+      toast.success(`2-way sync complete with ${envName}! ${mergedLocal.items.length} items reconciled.`);
       const targetYm = (mergedLocal.startDate || parsedSupabase.startDate || "").slice(0, 7);
       if (targetYm && onSelectMonth && targetYm !== currentMonth) {
         onSelectMonth(targetYm);
       }
-      await loadSupabaseTrips();
+      await loadSupabaseTrips(syncEnv);
     } catch (err) {
       toast.error(`2-way sync failed: ${err.message}`);
     } finally {
@@ -560,9 +596,108 @@ export default function TripSyncModal({
 
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: "auto", paddingRight: 4 }}>
-          {/* TAB: Supabase Cloud Live Sync */}
+          {/* TAB: Supabase Cloud & Localhost Live Sync */}
           {tab === "cloud" && (
             <div>
+              {/* Sync Environment Selector: Localhost vs Cloud */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 14px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  marginBottom: 12,
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>Sync Target Environment:</span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                        background:
+                          syncEnv === "localhost"
+                            ? "rgba(16, 185, 129, 0.2)"
+                            : "rgba(99, 102, 241, 0.2)",
+                        color:
+                          syncEnv === "localhost"
+                            ? "var(--green, #10b981)"
+                            : "var(--primary, #6366f1)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {syncEnv === "localhost" ? "🟢 Localhost (Port 5174)" : "☁️ Supabase Cloud (Live)"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                    {syncEnv === "localhost"
+                      ? "Testing mode: Syncs directly with local Trip Architect site (Zero impact on production)"
+                      : "Production mode: Syncs with live Supabase database"}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSyncEnv("localhost")}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      fontWeight: syncEnv === "localhost" ? 600 : 400,
+                      background:
+                        syncEnv === "localhost"
+                          ? "rgba(16, 185, 129, 0.2)"
+                          : "rgba(255,255,255,0.05)",
+                      color:
+                        syncEnv === "localhost" ? "var(--green, #10b981)" : "var(--text-muted)",
+                      border:
+                        syncEnv === "localhost"
+                          ? "1px solid rgba(16, 185, 129, 0.4)"
+                          : "1px solid rgba(255,255,255,0.08)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <span>🟢 Localhost (5174)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSyncEnv("cloud")}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: 11,
+                      borderRadius: 6,
+                      fontWeight: syncEnv === "cloud" ? 600 : 400,
+                      background:
+                        syncEnv === "cloud"
+                          ? "rgba(99, 102, 241, 0.2)"
+                          : "rgba(255,255,255,0.05)",
+                      color:
+                        syncEnv === "cloud" ? "var(--primary, #6366f1)" : "var(--text-muted)",
+                      border:
+                        syncEnv === "cloud"
+                          ? "1px solid rgba(99, 102, 241, 0.4)"
+                          : "1px solid rgba(255,255,255,0.08)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <span>☁️ Supabase Cloud</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Connection Status Banner */}
               <div
                 style={{
@@ -570,8 +705,14 @@ export default function TripSyncModal({
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "10px 14px",
-                  background: "rgba(16, 185, 129, 0.08)",
-                  border: "1px solid rgba(16, 185, 129, 0.2)",
+                  background:
+                    syncEnv === "localhost"
+                      ? "rgba(16, 185, 129, 0.08)"
+                      : "rgba(99, 102, 241, 0.08)",
+                  border:
+                    syncEnv === "localhost"
+                      ? "1px solid rgba(16, 185, 129, 0.25)"
+                      : "1px solid rgba(99, 102, 241, 0.25)",
                   borderRadius: 10,
                   marginBottom: 16,
                   fontSize: 12,
@@ -583,23 +724,38 @@ export default function TripSyncModal({
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: "var(--green, #10b981)",
-                      boxShadow: "0 0 8px #10b981",
+                      background:
+                        syncEnv === "localhost"
+                          ? "var(--green, #10b981)"
+                          : "var(--primary, #6366f1)",
+                      boxShadow:
+                        syncEnv === "localhost"
+                          ? "0 0 8px #10b981"
+                          : "0 0 8px #6366f1",
                     }}
                   />
                   <span>
-                    Connected to <strong>Supabase Cloud</strong> (<code>eqciatcascbstrohqbnp</code>)
+                    Connected to{" "}
+                    <strong>
+                      {syncEnv === "localhost"
+                        ? "Localhost Trip Architect"
+                        : "Supabase Cloud"}
+                    </strong>{" "}
+                    (<code>{syncEnv === "localhost" ? localhostUrl : "eqciatcascbstrohqbnp"}</code>)
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <button
                     type="button"
-                    onClick={loadSupabaseTrips}
+                    onClick={() => loadSupabaseTrips(syncEnv)}
                     disabled={supabaseLoading}
                     style={{
                       background: "transparent",
                       border: "none",
-                      color: "var(--primary, #6366f1)",
+                      color:
+                        syncEnv === "localhost"
+                          ? "var(--green, #10b981)"
+                          : "var(--primary, #6366f1)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -616,21 +772,39 @@ export default function TripSyncModal({
                     />
                     Refresh
                   </button>
-                  <a
-                    href="https://supabase.com/dashboard/project/eqciatcascbstrohqbnp"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "var(--text-muted)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 2,
-                      fontSize: 11,
-                      textDecoration: "none",
-                    }}
-                  >
-                    Dashboard <ExternalLink size={10} />
-                  </a>
+                  {syncEnv === "localhost" ? (
+                    <a
+                      href={localhostUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: "var(--text-muted)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 2,
+                        fontSize: 11,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Local Site <ExternalLink size={10} />
+                    </a>
+                  ) : (
+                    <a
+                      href="https://supabase.com/dashboard/project/eqciatcascbstrohqbnp"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: "var(--text-muted)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 2,
+                        fontSize: 11,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Dashboard <ExternalLink size={10} />
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -739,7 +913,7 @@ export default function TripSyncModal({
                     alignItems: "center",
                   }}
                 >
-                  <span>Trips in Trip Architect Database ({supabaseTrips.length})</span>
+                  <span>Trips in {syncEnv === "localhost" ? "Local Trip Architect (Port 5174)" : "Trip Architect Database"} ({supabaseTrips.length})</span>
                   {supabaseLoading && (
                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       Loading trips...

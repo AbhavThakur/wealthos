@@ -610,3 +610,70 @@ export async function pingSupabaseKeepAlive(
     // Fail silently in background
   }
 }
+
+export const DEFAULT_LOCALHOST_TRIP_URL = "http://localhost:5174";
+
+/**
+ * Localhost Dev Trip Sync API Client (Port 5174)
+ * Allows 100% isolated local end-to-end testing without touching Supabase PROD data.
+ */
+export async function fetchLocalhostTrips(baseUrl = DEFAULT_LOCALHOST_TRIP_URL) {
+  const url = `${baseUrl.replace(/\/$/, "")}/api/trips`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to connect to local Trip Architect at ${baseUrl}: ${res.status} ${res.statusText}`,
+    );
+  }
+
+  return await res.json();
+}
+
+/**
+ * Syncs a WealthOS trip directly to Localhost Trip Architect (Port 5174)
+ */
+export async function syncWealthOSTripToLocalhost(
+  wealthOSTrip,
+  tripId,
+  baseUrl = DEFAULT_LOCALHOST_TRIP_URL,
+) {
+  if (!tripId) {
+    throw new Error("Missing Trip ID for local sync.");
+  }
+
+  // 1. Fetch current local trip
+  const getUrl = `${baseUrl.replace(/\/$/, "")}/api/trips/${encodeURIComponent(tripId)}`;
+  let existingData = {};
+  try {
+    const getRes = await fetch(getUrl);
+    if (getRes.ok) {
+      const row = await getRes.json();
+      existingData = row.data || row || {};
+    }
+  } catch {
+    /* fallback to empty */
+  }
+
+  // 2. Build updated data
+  const updatedData = buildSupabaseBudgetDataFromWealthOS(wealthOSTrip, existingData);
+
+  // 3. Post to local endpoint
+  const postRes = await fetch(
+    `${baseUrl.replace(/\/$/, "")}/api/trips/${encodeURIComponent(tripId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: tripId, data: updatedData }),
+    },
+  );
+
+  if (!postRes.ok) {
+    throw new Error(`Failed to save to local Trip Architect: ${postRes.status}`);
+  }
+
+  return await postRes.json();
+}

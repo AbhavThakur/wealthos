@@ -128,4 +128,28 @@ describe("TripSyncModal Component", () => {
     // Should trigger month switch to 2026-12 (trip start date)
     expect(onSelectMonthMock).toHaveBeenCalledWith("2026-12");
   });
+  it("renders Sync Target Environment toggle and allows switching between Localhost and Supabase Cloud", async () => {
+    render(
+      <TripSyncModal
+        open={true}
+        onClose={vi.fn()}
+        expenses={[]}
+        sharedTrips={[]}
+        updatePerson={vi.fn()}
+        updateShared={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Sync Target Environment:/i)).toBeDefined();
+    expect(screen.getByRole("button", { name: /Localhost/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /☁️ Supabase Cloud/i })).toBeDefined();
+
+    // Click Supabase Cloud toggle
+    const cloudBtn = screen.getByRole("button", { name: /☁️ Supabase Cloud/i });
+    fireEvent.click(cloudBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Connected to/i)).toBeDefined();
+    });
+  });
 });

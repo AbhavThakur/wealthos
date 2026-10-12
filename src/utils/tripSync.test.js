@@ -13,6 +13,8 @@ import {
   parseDateRangeString,
   resolvePayerAndPaxShare,
   syncWealthOSTripToSupabase,
+  fetchLocalhostTrips,
+  syncWealthOSTripToLocalhost,
 } from "./tripSync.js";
 
 describe("tripSync - mapToWealthOSCategory", () => {
@@ -519,5 +521,46 @@ describe("tripSync - parseSupabaseTripToWealthOS with Multi-Pax & Date Parsing",
     expect(trip.items[0].amount).toBe(34000); // 17000 * 2
     expect(trip.items[1].amount).toBe(19200); // 9600 * 2
     expect(trip.amount).toBe(53200); // 34000 + 19200
+  });
+});
+
+describe("tripSync - Localhost Dev Sync (Port 5174)", () => {
+  it("fetches trips from local Trip Architect dev server", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { id: "hampi-2026", data: { title: "Local Hampi" } },
+      ],
+    });
+
+    const trips = await fetchLocalhostTrips("http://localhost:5174");
+    expect(trips).toHaveLength(1);
+    expect(trips[0].id).toBe("hampi-2026");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://localhost:5174/api/trips",
+      expect.objectContaining({ method: "GET" })
+    );
+  });
+
+  it("syncs WealthOS trip to local Trip Architect dev server", async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "hampi-2026", data: { title: "Existing" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
+
+    const trip = {
+      id: "hampi-local",
+      name: "Hampi Trip",
+      items: [{ name: "Stay", amount: 3500 }],
+    };
+
+    const res = await syncWealthOSTripToLocalhost(trip, "hampi-2026");
+    expect(res.success).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
