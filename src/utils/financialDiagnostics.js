@@ -5,6 +5,7 @@ import {
   freqToMonthly,
   expAmount,
   onetimeMatchesMonth,
+  tripMatchesMonth,
 } from "./finance.js";
 import { getInvestmentCurrentValue } from "./goalFunding.js";
 
@@ -83,8 +84,7 @@ export function calculateHouseholdMonthFinancials({
           }
         }
       } else if (isTrip) {
-        const tripDate = (exp.startDate || exp.date || "").slice(0, 7);
-        if (tripDate === ym) {
+        if (tripMatchesMonth(exp, ym)) {
           const amt = Number(exp.amount || 0);
           if (amt > 0) {
             expenseItems.push({
@@ -135,7 +135,7 @@ export function calculateHouseholdMonthFinancials({
 
   // 4. Shared trips
   for (const trip of shared?.trips || []) {
-    if ((trip.startDate || "").slice(0, 7) === ym) {
+    if (tripMatchesMonth(trip, ym)) {
       const amt = Number(trip.amount || 0);
       if (amt > 0) {
         expenseItems.push({

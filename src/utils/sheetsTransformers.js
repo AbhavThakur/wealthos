@@ -2,6 +2,7 @@ import {
   expAmount,
   freqToMonthly,
   EXPENSE_CATEGORIES,
+  tripMatchesMonth,
 } from "./finance.js";
 import { calculateHouseholdMonthFinancials } from "./financialDiagnostics.js";
 import { calculateNetWorth } from "./netWorth.js";
@@ -189,7 +190,7 @@ export function toMonthlySummaryRows(p1, p2, shared, personNames = { p1: "Person
     const p1Exp = (p1?.expenses || []).reduce((s, e) => s + expAmount(e, ym), 0);
     const p2Exp = (p2?.expenses || []).reduce((s, e) => s + expAmount(e, ym), 0);
     const sharedExp = (shared?.trips || []).reduce((s, t) => {
-      if ((t.startDate || t.date || "").slice(0, 7) === ym) return s + Number(t.amount || 0);
+      if (tripMatchesMonth(t, ym)) return s + Number(t.amount || 0);
       return s;
     }, 0);
 
@@ -435,7 +436,7 @@ export function toBudgetVsActualRows(p1, p2, shared) {
 
     // Add shared trip items to actual
     (shared?.trips || []).forEach((trip) => {
-      if ((trip.startDate || trip.date || "").slice(0, 7) === ym) {
+      if (tripMatchesMonth(trip, ym)) {
         (trip.items || []).forEach((item) => {
           const cat = item.category || "Travel";
           if (!catMap[cat]) catMap[cat] = { budgeted: 0, actual: 0 };

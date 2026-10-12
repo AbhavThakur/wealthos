@@ -18,6 +18,7 @@ import {
   insuranceAdequacy,
   onetimeEffective,
   onetimeMatchesMonth,
+  tripMatchesMonth,
   expAmount,
   estimateExpenseRatio,
 } from "../utils/finance";
@@ -198,10 +199,8 @@ export function personStats(data, ym) {
       return s + (onetimeMatchesMonth(x, ym) ? expAmount(x, ym) : 0);
     }
     if (x.expenseType === "trip") {
-      // Only include if startDate falls in selected month
-      return (
-        s + ((x.startDate || x.date || "").slice(0, 7) === ym ? x.amount : 0)
-      );
+      // Include if trip is active in selected month
+      return s + (tripMatchesMonth(x, ym) ? Number(x.amount || 0) : 0);
     }
     // Monthly/recurring: check recurrence gating
     if (x.recurrence === "yearly" && (x.recurrenceMonth ?? 0) !== curMonth)
@@ -1371,8 +1370,8 @@ export default function Dashboard({
   const b = recalc(bStanding);
 
   // Shared trips (joint trips visible to both persons) — filter by selected month
-  const sharedTrips = (shared?.trips || []).filter(
-    (t) => (t.startDate || "").slice(0, 7) === selectedMonth,
+  const sharedTrips = (shared?.trips || []).filter((t) =>
+    tripMatchesMonth(t, selectedMonth),
   );
   const sharedTripTotal = sharedTrips.reduce((s, x) => s + (x.amount || 0), 0);
 
@@ -1395,9 +1394,7 @@ export default function Dashboard({
     .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const p1Trips = (p1?.expenses || [])
     .filter(
-      (e) =>
-        e.expenseType === "trip" &&
-        (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
+      (e) => e.expenseType === "trip" && tripMatchesMonth(e, selectedMonth),
     )
     .reduce((s, x) => s + x.amount, 0);
   const p1Onetime = (p1?.expenses || [])
@@ -1414,9 +1411,7 @@ export default function Dashboard({
     .reduce((s, x) => s + expAmount(x, selectedMonth), 0);
   const p2Trips = (p2?.expenses || [])
     .filter(
-      (e) =>
-        e.expenseType === "trip" &&
-        (e.startDate || e.date || "").slice(0, 7) === selectedMonth,
+      (e) => e.expenseType === "trip" && tripMatchesMonth(e, selectedMonth),
     )
     .reduce((s, x) => s + x.amount, 0);
   const p2Onetime = (p2?.expenses || [])

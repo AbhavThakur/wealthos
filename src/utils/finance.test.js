@@ -17,6 +17,7 @@ import {
   setPrivacyMode,
   sumMoney,
   toMinorUnits,
+  tripMatchesMonth,
 } from "./finance";
 
 afterEach(() => setPrivacyMode(false));
@@ -152,5 +153,57 @@ describe("freqToMonthly — frequency conversion", () => {
 
   it("returns same amount for monthly", () => {
     expect(freqToMonthly(5000, "monthly")).toBe(5000);
+  });
+});
+
+describe("tripMatchesMonth — robust trip date & multi-month matching", () => {
+  it("matches when trip startDate is in the given month", () => {
+    const trip = { id: 1, name: "Goa Trip", startDate: "2026-10-15", endDate: "2026-10-20" };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+    expect(tripMatchesMonth(trip, "2026-11")).toBe(false);
+  });
+
+  it("matches when trip spans across month boundaries", () => {
+    // Trip from Sept 28 to Oct 4 should match both September and October
+    const trip = { id: 2, name: "Cross-month Trip", startDate: "2026-09-28", endDate: "2026-10-04" };
+    expect(tripMatchesMonth(trip, "2026-09")).toBe(true);
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+    expect(tripMatchesMonth(trip, "2026-08")).toBe(false);
+    expect(tripMatchesMonth(trip, "2026-11")).toBe(false);
+  });
+
+  it("matches when trip endDate is in the given month", () => {
+    const trip = { id: 3, name: "Autumn Break", startDate: "2026-09-25", endDate: "2026-10-02" };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+  });
+
+  it("matches when trip has an item with date in the given month", () => {
+    const trip = {
+      id: 4,
+      name: "Europe",
+      startDate: "2026-08-01",
+      endDate: "2026-08-10",
+      items: [
+        { id: 101, name: "Post-trip settlement", amount: 500, date: "2026-10-05" },
+      ],
+    };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+  });
+
+  it("matches undated trip so it does not get lost", () => {
+    const trip = { id: 5, name: "Draft Trip", startDate: "", endDate: "" };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+  });
+
+  it("handles legacy date field", () => {
+    const trip = { id: 6, name: "Old Trip", date: "2026-10-12" };
+    expect(tripMatchesMonth(trip, "2026-10")).toBe(true);
+    expect(tripMatchesMonth(trip, "2026-09")).toBe(false);
+  });
+
+  it("handles null or undefined safely", () => {
+    expect(tripMatchesMonth(null, "2026-10")).toBe(false);
+    expect(tripMatchesMonth(undefined, "2026-10")).toBe(false);
+    expect(tripMatchesMonth({ id: 7 }, "")).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import {
   freqToMonthly,
   EXPENSE_CATEGORIES,
   onetimeEffective,
+  tripMatchesMonth,
 } from "../utils/finance";
 
 // ── Compute per-person stats for a given YYYY-MM ──────────────────────────
@@ -43,7 +44,7 @@ function monthStats(data, ym) {
     if (x.expenseType === "onetime") {
       amt = x.date?.slice(0, 7) === ym ? onetimeEffective(x) : 0;
     } else if (x.expenseType === "trip") {
-      amt = (x.startDate || x.date || "").slice(0, 7) === ym ? x.amount : 0;
+      amt = tripMatchesMonth(x, ym) ? x.amount : 0;
     } else {
       if (x.recurrence === "yearly" && (x.recurrenceMonth ?? 0) !== curMonth)
         amt = 0;

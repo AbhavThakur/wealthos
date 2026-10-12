@@ -732,7 +732,11 @@ export function DataProvider({ children }) {
         );
         return;
       }
-      const updated = { ...current, [key]: value };
+      let resolvedValue = value;
+      if (typeof value === "function") {
+        resolvedValue = value(current[key]);
+      }
+      const updated = { ...current, [key]: resolvedValue };
       sharedRef.current = updated;
       setShared(updated);
       scheduleSave("shared", updated, current);

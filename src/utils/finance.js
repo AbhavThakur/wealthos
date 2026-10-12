@@ -75,6 +75,26 @@ export const onetimeMatchesMonth = (exp, ym) => {
   return entries.some((entry) => (entry.date || "").slice(0, 7) === ym);
 };
 
+export const tripMatchesMonth = (trip, ym) => {
+  if (!trip || !ym) return false;
+  const startYm = (trip.startDate || trip.date || "").slice(0, 7);
+  const endYm = (trip.endDate || "").slice(0, 7);
+
+  // Direct match on start month
+  if (startYm && startYm === ym) return true;
+  // Direct match on end month
+  if (endYm && endYm === ym) return true;
+  // Multi-month span (e.g. startDate <= ym && endDate >= ym)
+  if (startYm && endYm && startYm <= ym && endYm >= ym) return true;
+  // Any individual item incurred in this month
+  const items = trip.items || [];
+  if (items.some((item) => (item.date || "").slice(0, 7) === ym)) return true;
+  // If no dates set at all, retain visibility so the trip is never lost in limbo
+  if (!startYm && !endYm) return true;
+
+  return false;
+};
+
 /**
  * Resolve a recurring expense's amount as it was in a past month, by walking
  * `amountHistory` (sorted by date). Falls back to the original pre-history
