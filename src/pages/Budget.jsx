@@ -10,6 +10,7 @@ import {
   onetimeEffective,
   expAmount,
   onetimeMatchesMonth,
+  tripMatchesMonth,
   EXPENSE_CATEGORIES,
   EXPENSE_SUBCATEGORIES,
   EXPENSE_TYPES,
@@ -24,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  Compass,
   X,
   Check,
   MapPin,
@@ -37,11 +39,14 @@ import {
   ClipboardPaste,
   GitMerge,
   TrendingUp,
+  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { useConfirm } from "../hooks/useConfirm";
 import { InfoModal } from "../components/InfoModal";
 import EmptyState from "../components/EmptyState";
 import SmartPaste from "../components/SmartPaste";
+import TripSyncModal from "../components/TripSyncModal";
 import SettlementCard from "../components/SettlementCard";
 import ExecutivePulseCard from "../components/ExecutivePulseCard";
 import AmountInput from "../components/AmountInput";
@@ -495,8 +500,7 @@ const monthlyExpenseActiveInMonth = (e, ym) => {
 const expensesActiveInMonth = (expenses, ym) =>
   (expenses || []).filter((x) => {
     if (x.expenseType === "onetime") return onetimeMatchesMonth(x, ym);
-    if (x.expenseType === "trip")
-      return (x.startDate || x.date || "").slice(0, 7) === ym;
+    if (x.expenseType === "trip") return tripMatchesMonth(x, ym);
     return monthlyExpenseActiveInMonth(x, ym);
   });
 
@@ -524,7 +528,7 @@ const buildCategoryTrend = (
     const monthExp = [
       ...expenseLists.flatMap((list) => expensesActiveInMonth(list, ym)),
       ...(sharedTrips || [])
-        .filter((t) => (t.startDate || "").slice(0, 7) === ym)
+        .filter((t) => tripMatchesMonth(t, ym))
         .map((t) => ({ ...t, expenseType: "trip" })),
     ];
     const label = yearMonthToDate(ym).toLocaleString("en-IN", {
@@ -1076,6 +1080,7 @@ export default function Budget({
   const [rule, setRule] = useState("50/30/20");
   const { confirm, dialog } = useConfirm();
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
+  const [tripSyncOpen, setTripSyncOpen] = useState(false);
   const [trendCategory, setTrendCategory] = useState(null);
   const [trendRange, setTrendRange] = useState(6);
 
@@ -1166,8 +1171,24 @@ export default function Budget({
     setExpandedExp((s) => ({ ...s, [newId]: true }));
     setEF(newId, { date, amount: "", note: "" });
   };
-  const filteredTripExps = tripExps.filter(
-    (e) => (e.startDate || e.date || "").slice(0, 7) === expMonth,
+  const [tripFilter, setTripFilterState] = useState(() => {
+    try {
+      return localStorage.getItem("budget-trip-view-filter") || "all";
+    } catch {
+      return "all";
+    }
+  });
+  const setTripFilterPersisted = (mode) => {
+    setTripFilterState(mode);
+    try {
+      localStorage.setItem("budget-trip-view-filter", mode);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const filteredTripExps = tripExps.filter((e) =>
+    tripMatchesMonth(e, expMonth),
   );
   const _expMonthNum = parseInt(expMonth.split("-")[1], 10) - 1;
   const filteredMonthlyExps = monthlyExps.filter((e) => {
@@ -1182,14 +1203,31 @@ export default function Budget({
 
   // Shared trips (visible to both persons)
   const sharedTrips = shared?.trips || [];
-  const filteredSharedTrips = sharedTrips.filter(
-    (t) => (t.startDate || "").slice(0, 7) === expMonth,
+  const filteredSharedTrips = sharedTrips.filter((t) =>
+    tripMatchesMonth(t, expMonth),
   );
-  // Combined trip list for display (tagged with _isShared for rendering) — filtered by month
-  const allTrips = [
+
+  // Month-specific trips
+  const monthTrips = [
     ...filteredTripExps.map((t) => ({ ...t, _isShared: false })),
     ...filteredSharedTrips.map((t) => ({ ...t, _isShared: true })),
   ];
+  // All trips across all time
+  const allSavedTrips = [
+    ...tripExps.map((t) => ({ ...t, _isShared: false })),
+    ...sharedTrips.map((t) => ({ ...t, _isShared: true })),
+  ];
+  // Active trip list based on filter
+  const allTrips = (tripFilter === "all" ? allSavedTrips : monthTrips).sort(
+    (a, b) => {
+      const dA = a.startDate || a.date || "";
+      const dB = b.startDate || b.date || "";
+      if (!dA && !dB) return 0;
+      if (!dA) return 1;
+      if (!dB) return -1;
+      return dB.localeCompare(dA);
+    },
+  );
 
   // ── Trip management ────────────────────────────────────────────────────
   const [expandedTrips, setExpandedTrips] = useState({});
@@ -1215,18 +1253,16 @@ export default function Budget({
       addedBy: personName,
     };
     const newItems = [...(trip.items || []), item];
-    const newAmount = newItems.reduce((s, i) => s + i.amount, 0);
+    const newAmount = newItems.reduce((s, i) => s + (i.amount || 0), 0);
     if (isShared) {
-      updateShared(
-        "trips",
-        sharedTrips.map((x) =>
+      updateShared("trips", (prev) =>
+        (prev || []).map((x) =>
           x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
         ),
       );
     } else {
-      updatePerson(
-        "expenses",
-        expenses.map((x) =>
+      updatePerson("expenses", (prev) =>
+        (prev || []).map((x) =>
           x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
         ),
       );
@@ -1238,18 +1274,16 @@ export default function Budget({
   };
   const deleteTripItem = (trip, itemId, isShared = false) => {
     const newItems = (trip.items || []).filter((i) => i.id !== itemId);
-    const newAmount = newItems.reduce((s, i) => s + i.amount, 0);
+    const newAmount = newItems.reduce((s, i) => s + (i.amount || 0), 0);
     if (isShared) {
-      updateShared(
-        "trips",
-        sharedTrips.map((x) =>
+      updateShared("trips", (prev) =>
+        (prev || []).map((x) =>
           x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
         ),
       );
     } else {
-      updatePerson(
-        "expenses",
-        expenses.map((x) =>
+      updatePerson("expenses", (prev) =>
+        (prev || []).map((x) =>
           x.id === trip.id ? { ...x, items: newItems, amount: newAmount } : x,
         ),
       );
@@ -1655,12 +1689,12 @@ export default function Budget({
   const monthFilteredExpenses = expenses.filter((x) => {
     if (x.expenseType === "onetime") return onetimeMatchesMonth(x, expMonth);
     if (x.expenseType === "trip")
-      return (x.startDate || x.date || "").slice(0, 7) === expMonth;
+      return tripMatchesMonth(x, expMonth);
     // monthly: apply recurrence gating
     return _isMonthlyActiveForOverview(x);
   });
   const monthFilteredSharedTrips = sharedTrips.filter(
-    (t) => (t.startDate || "").slice(0, 7) === expMonth,
+    (t) => tripMatchesMonth(t, expMonth),
   );
   const sharedTripTotal = monthFilteredSharedTrips.reduce(
     (s, x) => s + (x.amount || 0),
@@ -1718,7 +1752,7 @@ export default function Budget({
     ]);
   const addTrip = () => {
     const newId = nextId(expenses);
-    updatePerson("expenses", [
+    updatePerson("expenses", (prev = []) => [
       {
         id: newId,
         expenseType: "trip",
@@ -1730,15 +1764,16 @@ export default function Budget({
         budget: 0,
         items: [],
       },
-      ...expenses,
+      ...prev,
     ]);
     setExpandedTrips((s) => ({ ...s, [newId]: true }));
   };
   const addSharedTrip = () => {
     const newId = nextId(sharedTrips);
-    updateShared("trips", [
+    updateShared("trips", (prev = []) => [
       {
         id: newId,
+        expenseType: "trip",
         name: "New shared trip",
         amount: 0,
         category: "Others",
@@ -1747,30 +1782,33 @@ export default function Budget({
         budget: 0,
         items: [],
       },
-      ...sharedTrips,
+      ...prev,
     ]);
     setExpandedTrips((s) => ({ ...s, [`shared_${newId}`]: true }));
   };
   const convertToShared = (trip) => {
-    const { _isShared, expenseType: _ET, recurrence: _R, ...tripData } = trip;
+    const { _isShared, recurrence: _R, ...tripData } = trip;
     const newId = nextId(sharedTrips);
-    updateShared("trips", [...sharedTrips, { ...tripData, id: newId }]);
+    updateShared("trips", (prev = []) => [
+      ...prev,
+      { ...tripData, expenseType: "trip", id: newId },
+    ]);
     updatePerson(
       "expenses",
-      expenses.filter((x) => x.id !== trip.id),
+      (prev = []) => prev.filter((x) => x.id !== trip.id),
     );
     setExpandedTrips((s) => ({ ...s, [`shared_${newId}`]: true }));
   };
   const convertToPersonal = (trip) => {
     const { _isShared, ...tripData } = trip;
     const newId = nextId(expenses);
-    updatePerson("expenses", [
-      ...expenses,
+    updatePerson("expenses", (prev = []) => [
+      ...prev,
       { ...tripData, id: newId, expenseType: "trip" },
     ]);
     updateShared(
       "trips",
-      sharedTrips.filter((x) => x.id !== trip.id),
+      (prev = []) => prev.filter((x) => x.id !== trip.id),
     );
     setExpandedTrips((s) => ({ ...s, [newId]: true }));
   };
@@ -3546,7 +3584,7 @@ export default function Budget({
               {
                 key: "trip",
                 icon: <Plane size={12} />,
-                count: filteredTripExps.length + filteredSharedTrips.length,
+                count: allTrips.length,
               },
               {
                 key: "monthly",
@@ -4678,13 +4716,68 @@ export default function Budget({
                   justifyContent: "space-between",
                   alignItems: "center",
                   marginBottom: "1rem",
+                  flexWrap: "wrap",
+                  gap: 10,
                 }}
               >
-                <div className="card-title" style={{ marginBottom: 0 }}>
-                  <Plane size={14} style={{ marginRight: 6, opacity: 0.5 }} />
-                  Trips & Events
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    <Plane size={14} style={{ marginRight: 6, opacity: 0.5 }} />
+                    Trips & Events
+                  </div>
+                  {/* View filter pills */}
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      background: "rgba(255,255,255,0.05)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: 2,
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setTripFilterPersisted("all")}
+                      style={{
+                        padding: "3px 10px",
+                        fontSize: 11,
+                        fontWeight: tripFilter === "all" ? 600 : 400,
+                        color: tripFilter === "all" ? "var(--text)" : "var(--text-muted)",
+                        background: tripFilter === "all" ? "rgba(255,255,255,0.12)" : "transparent",
+                        border: "none",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                      }}
+                    >
+                      All Trips ({allSavedTrips.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTripFilterPersisted("month")}
+                      style={{
+                        padding: "3px 10px",
+                        fontSize: 11,
+                        fontWeight: tripFilter === "month" ? 600 : 400,
+                        color: tripFilter === "month" ? "var(--text)" : "var(--text-muted)",
+                        background: tripFilter === "month" ? "rgba(255,255,255,0.12)" : "transparent",
+                        border: "none",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {expMonthLabel} ({monthTrips.length})
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button
+                    className="btn-secondary"
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    onClick={() => setTripSyncOpen(true)}
+                    title="Sync or import trips with Trip Architecture website"
+                  >
+                    <RefreshCw size={13} /> Sync Trip App
+                  </button>
                   <button
                     className="btn-primary"
                     style={{ display: "flex", alignItems: "center", gap: 6 }}
@@ -4703,17 +4796,75 @@ export default function Budget({
                 </div>
               </div>
 
+              {/* Informational banner when viewing month and other trips exist */}
+              {tripFilter === "month" && allSavedTrips.length > monthTrips.length && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 12px",
+                    background: "rgba(99, 102, 241, 0.08)",
+                    border: "1px solid rgba(99, 102, 241, 0.2)",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: 12,
+                    color: "var(--text)",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  <span>
+                    Showing {monthTrips.length} trip{monthTrips.length === 1 ? "" : "s"} for {expMonthLabel}. You have {allSavedTrips.length - monthTrips.length} other trip{allSavedTrips.length - monthTrips.length === 1 ? "" : "s"} in different months.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setTripFilterPersisted("all")}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--primary, #6366f1)",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      textDecoration: "underline",
+                      padding: 0,
+                    }}
+                  >
+                    View All
+                  </button>
+                </div>
+              )}
+
               {allTrips.length === 0 && (
                 <div
                   style={{
                     fontSize: 13,
                     color: "var(--text-muted)",
-                    padding: "1rem 0",
+                    padding: "1.5rem 0",
                     textAlign: "center",
                   }}
                 >
-                  No trips in {expMonthLabel}. Create one to group travel,
-                  hotel, food &amp; shopping expenses together.
+                  {tripFilter === "month" && allSavedTrips.length > 0 ? (
+                    <div>
+                      No trips scheduled in {expMonthLabel}. You have {allSavedTrips.length} trip{allSavedTrips.length === 1 ? "" : "s"} in other months.{" "}
+                      <button
+                        type="button"
+                        onClick={() => setTripFilterPersisted("all")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--primary, #6366f1)",
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          fontSize: 13,
+                          padding: 0,
+                        }}
+                      >
+                        Show all trips
+                      </button>
+                    </div>
+                  ) : (
+                    "No trips found. Create one to group travel, hotel, food & shopping expenses together."
+                  )}
                 </div>
               )}
 
@@ -4749,19 +4900,27 @@ export default function Budget({
                 const overBudget = hasBudget && total > trip.budget;
                 const updateTripField = (field, value) => {
                   if (isShared) {
-                    updateShared(
-                      "trips",
-                      sharedTrips.map((x) =>
+                    updateShared("trips", (prev = []) =>
+                      prev.map((x) =>
                         x.id === trip.id ? { ...x, [field]: value } : x,
                       ),
                     );
                   } else {
-                    updatePerson(
-                      "expenses",
-                      expenses.map((x) =>
+                    updatePerson("expenses", (prev = []) =>
+                      prev.map((x) =>
                         x.id === trip.id ? { ...x, [field]: value } : x,
                       ),
                     );
+                  }
+                  if (
+                    (field === "startDate" || field === "endDate") &&
+                    tripFilter === "month" &&
+                    value
+                  ) {
+                    const ym = value.slice(0, 7);
+                    if (ym && ym !== expMonth) {
+                      setTripFilterPersisted("all");
+                    }
                   }
                 };
 
@@ -4842,6 +5001,55 @@ export default function Budget({
                           >
                             {items.length} item{items.length !== 1 ? "s" : ""}
                           </span>
+                          {trip.itineraryUrl && (
+                            <a
+                              href={trip.itineraryUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                fontSize: 10,
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background: "rgba(99, 102, 241, 0.12)",
+                                color: "var(--primary, #6366f1)",
+                                border: "1px solid rgba(99, 102, 241, 0.3)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                textDecoration: "none",
+                                fontWeight: 500,
+                              }}
+                              title="Open Itinerary in Trip Architecture"
+                            >
+                              🗺️ Itinerary <ExternalLink size={9} />
+                            </a>
+                          )}
+                          {trip.supabaseTripId && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTripSyncOpen(true);
+                              }}
+                              style={{
+                                fontSize: 10,
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background: "rgba(16, 185, 129, 0.12)",
+                                color: "var(--green, #10b981)",
+                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 3,
+                                cursor: "pointer",
+                                fontWeight: 500,
+                              }}
+                              title={`Linked to Supabase Trip: ${trip.supabaseTripId}. Click to open Cloud Sync.`}
+                            >
+                              ⚡ Cloud Synced
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -4886,12 +5094,12 @@ export default function Budget({
                             if (isShared) {
                               updateShared(
                                 "trips",
-                                sharedTrips.filter((x) => x.id !== trip.id),
+                                (prev = []) => prev.filter((x) => x.id !== trip.id),
                               );
                             } else {
                               updatePerson(
                                 "expenses",
-                                expenses.filter((x) => x.id !== trip.id),
+                                (prev = []) => prev.filter((x) => x.id !== trip.id),
                               );
                             }
                           }
@@ -5024,6 +5232,52 @@ export default function Budget({
                             <Users size={11} />{" "}
                             {isShared ? "Make personal" : "Make shared"}
                           </button>
+                        </div>
+
+                        {/* Itinerary Link */}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            marginBottom: 12,
+                          }}
+                        >
+                          <input
+                            type="url"
+                            value={trip.itineraryUrl || ""}
+                            onChange={(e) =>
+                              updateTripField("itineraryUrl", e.target.value)
+                            }
+                            placeholder="Itinerary / Trip Architecture link (e.g. https://trip-architecture.web.app/trips/goa)"
+                            style={{ flex: 1, fontSize: 12 }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          {trip.itineraryUrl && (
+                            <a
+                              href={trip.itineraryUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "6px 12px",
+                                fontSize: 11,
+                                borderRadius: 6,
+                                background: "rgba(99, 102, 241, 0.12)",
+                                color: "var(--primary, #6366f1)",
+                                border: "1px solid rgba(99, 102, 241, 0.3)",
+                                textDecoration: "none",
+                                whiteSpace: "nowrap",
+                                fontWeight: 500,
+                              }}
+                              title="Open Trip Architecture Itinerary"
+                            >
+                              Open <ExternalLink size={11} />
+                            </a>
+                          )}
                         </div>
 
                         {/* Category accordion */}
@@ -6270,6 +6524,14 @@ export default function Budget({
         merchantMap={shared?.merchantMap || {}}
         onMerchantMapUpdate={(newMap) => updateShared("merchantMap", newMap)}
       />
+      <TripSyncModal
+        open={tripSyncOpen}
+        onClose={() => setTripSyncOpen(false)}
+        expenses={expenses}
+        sharedTrips={sharedTrips}
+        updatePerson={updatePerson}
+        updateShared={updateShared}
+      />
       <SmartStatementModal
         open={statementModalOpen}
         onClose={() => setStatementModalOpen(false)}
@@ -6339,7 +6601,7 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
     (data?.expenses || []).filter((x) => {
       if (x.expenseType === "onetime") return onetimeMatchesMonth(x, hhMonth);
       if (x.expenseType === "trip")
-        return (x.startDate || x.date || "").slice(0, 7) === hhMonth;
+        return tripMatchesMonth(x, hhMonth);
       return _hhIsActive(x);
     });
 
@@ -6352,7 +6614,7 @@ export function HouseholdBudget({ p1, p2, shared, updateShared }) {
 
   const sharedTrips = shared?.trips || [];
   const filteredSharedTrips = sharedTrips.filter(
-    (t) => (t.startDate || "").slice(0, 7) === hhMonth,
+    (t) => tripMatchesMonth(t, hhMonth),
   );
   const sharedTripTotal = filteredSharedTrips.reduce(
     (s, x) => s + (x.amount || 0),
